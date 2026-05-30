@@ -977,6 +977,31 @@ rnt_plan_t rnt_plan_take(rnt_plan_t source, size_t limit)
     return pw;
 }
 
+rnt_plan_t rnt_plan_project(rnt_plan_t source, const char** attrs)
+{
+    if (!source) return nullptr;
+
+    auto* s = static_cast<PlanWrapper*>(source);
+
+    auto  node  = std::make_unique<nt::PlanNode>();
+    node->op    = nt::PlanNode::Op::PROJECT;
+    node->left  = s->root;
+
+    if (attrs)
+        for (const char** a = attrs; *a; ++a)
+            node->project_attrs.emplace(*a);
+
+    auto* pw = new PlanWrapper();
+    pw->root = node.get();
+    pw->nodes.push_back(std::move(node));
+    for (auto& n : s->nodes) pw->nodes.push_back(std::move(n));
+    for (auto* c : s->cursors) pw->cursors.push_back(c);
+    for (auto* h : s->handles) pw->handles.push_back(h);
+
+    delete s;
+    return pw;
+}
+
 void rnt_plan_free(rnt_plan_t plan)
 {
     free_plan_wrapper(static_cast<PlanWrapper*>(plan));

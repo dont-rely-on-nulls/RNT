@@ -412,6 +412,8 @@ NT_API rnt_plan_t rnt_plan_join(rnt_plan_t left, rnt_plan_t right);
  */
 NT_API rnt_plan_t rnt_plan_take(rnt_plan_t source, size_t limit);
 
+NT_API rnt_plan_t rnt_plan_project(rnt_plan_t source, const char** attrs);
+
 /**
  * @brief Releases a plan that was built but not yet executed.
  *
