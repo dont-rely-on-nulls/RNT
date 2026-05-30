@@ -448,6 +448,8 @@ typedef struct {
  */
 NT_API rnt_plan_t rnt_plan_assemble(PlanAction action);
 
+NT_API rnt_plan_t rnt_plan_project(rnt_plan_t source, const char** attrs);
+
 /**
  * @brief Releases a plan that was built but not yet executed.
  *
