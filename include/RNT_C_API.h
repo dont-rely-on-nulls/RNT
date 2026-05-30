@@ -412,6 +412,19 @@ NT_API rnt_plan_t rnt_plan_join(rnt_plan_t left, rnt_plan_t right);
  */
 NT_API rnt_plan_t rnt_plan_take(rnt_plan_t source, size_t limit);
 
+/**
+ * @brief Creates a PROJECT plan node that keeps only the named attributes.
+ *
+ * Takes ownership of @p source. On failure @p source is freed.
+ *
+ * @p attrs is a NULL-terminated array of attribute names to retain, e.g.
+ * <tt>{ "name", "profession", NULL }</tt>. Attributes absent from the list
+ * are stripped from every tuple emitted by the source.
+ *
+ * @param source  Source plan node.
+ * @param attrs   NULL-terminated array of attribute name strings (must not be NULL).
+ * @return Plan node, or NULL on error.
+ */
 NT_API rnt_plan_t rnt_plan_project(rnt_plan_t source, const char** attrs);
 
 /**
