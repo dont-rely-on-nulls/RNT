@@ -48,10 +48,10 @@ namespace nt
 
         switch (node->op)
         {
-            case PlanNode::Op::SCAN:
+            case Operation::FOL_OPERATION_SCAN:
                 return cursors_.Next(node->scan_cursor);
 
-            case PlanNode::Op::PROJECT:
+            case Operation::FOL_OPERATION_PROJECT:
             {
                 Tuple* next = Next(node->left);
                 if (next == nullptr) return nullptr;
@@ -67,7 +67,7 @@ namespace nt
                 return &*node->project_buffer;
             }
 
-            case PlanNode::Op::JOIN:
+            case Operation::FOL_OPERATION_JOIN:
             {
                 while (true)
                 {
@@ -88,7 +88,7 @@ namespace nt
                 }
             }
 
-            case PlanNode::Op::TAKE:
+            case Operation::FOL_OPERATION_TAKE:
             {
                 if (node->take_count >= node->take_limit) return nullptr;
                 Tuple* t = Next(node->left);

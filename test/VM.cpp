@@ -104,7 +104,7 @@ TEST_CASE("SCAN returns all tuples from a stored relation", "[scan]")
     REQUIRE(cursor != nullptr);
 
     nt::PlanNode plan;
-    plan.op          = nt::PlanNode::Op::SCAN;
+    plan.op          = nt::FOL_OPERATION_SCAN;
     plan.scan_cursor = cursor;
 
     nt::VM vm(f.cursors);
@@ -152,16 +152,16 @@ TEST_CASE("JOIN filters a stored relation with eq ephemeral", "[join]")
 
     // Plan: JOIN( SCAN(people), SCAN(eq[ Var("age"), Const("25") ]) )
     nt::PlanNode right;
-    right.op          = nt::PlanNode::Op::SCAN;
+    right.op          = nt::FOL_OPERATION_SCAN;
     right.scan_cursor = eq_cursor;
     right.scan_args   = { nt::PathArg::Var("age"), nt::PathArg::Const("25") };
 
     nt::PlanNode left;
-    left.op          = nt::PlanNode::Op::SCAN;
+    left.op          = nt::FOL_OPERATION_SCAN;
     left.scan_cursor = people_cursor;
 
     nt::PlanNode root;
-    root.op    = nt::PlanNode::Op::JOIN;
+    root.op    = nt::FOL_OPERATION_JOIN;
     root.left  = &left;
     root.right = &right;
 
@@ -204,11 +204,11 @@ TEST_CASE("TAKE limits tuples emitted from a SCAN", "[take]")
     REQUIRE(cursor != nullptr);
 
     nt::PlanNode scan;
-    scan.op          = nt::PlanNode::Op::SCAN;
+    scan.op          = nt::FOL_OPERATION_SCAN;
     scan.scan_cursor = cursor;
 
     nt::PlanNode take;
-    take.op         = nt::PlanNode::Op::TAKE;
+    take.op         = nt::FOL_OPERATION_TAKE;
     take.left       = &scan;
     take.take_limit = 2;
 
@@ -237,11 +237,11 @@ TEST_CASE("PROJECT filters tuple attributes by name", "[project]")
     REQUIRE(cursor != nullptr);
 
     nt::PlanNode scan;
-    scan.op          = nt::PlanNode::Op::SCAN;
+    scan.op          = nt::FOL_OPERATION_SCAN;
     scan.scan_cursor = cursor;
 
     nt::PlanNode project;
-    project.op            = nt::PlanNode::Op::PROJECT;
+    project.op            = nt::FOL_OPERATION_PROJECT;
     project.left          = &scan;
     project.project_attrs = { "name", "city" };
 

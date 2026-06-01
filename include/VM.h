@@ -75,6 +75,13 @@ namespace nt
         static PathArg Const(std::string val) { return { Kind::Const, std::move(val) }; }
     };
 
+    enum Operation {
+      FOL_OPERATION_SCAN = 1,
+      FOL_OPERATION_JOIN,
+      FOL_OPERATION_TAKE,
+      FOL_OPERATION_PROJECT
+    };
+
     /**
      * @brief A node in the Volcano operator tree executed by the Tarski (FOL) runtime.
      *
@@ -93,9 +100,7 @@ namespace nt
      */
     struct PlanNode
     {
-        enum class Op { SCAN, JOIN, TAKE, PROJECT };
-
-        Op        op;
+        Operation op;
         PlanNode* left  = nullptr;
         PlanNode* right = nullptr;
 

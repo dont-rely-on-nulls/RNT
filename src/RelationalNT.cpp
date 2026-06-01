@@ -88,7 +88,7 @@ int main()
 
     // --- Build a SCAN plan and pull all tuples lazily through the FOL VM ---
     nt::PlanNode plan;
-    plan.op = nt::PlanNode::Op::SCAN;
+    plan.op = nt::FOL_OPERATION_SCAN;
     plan.scan_cursor = cursor;
 
     nt::VM vm(cursors);

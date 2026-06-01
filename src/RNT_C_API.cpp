@@ -459,6 +459,131 @@ namespace
             for (auto* h : handles) g_rt->handler->Close(h);
         }
     };
+
+    // ---- Plan builders --------------------------------------------------
+    // Pure construction: each builder receives only its operator's context and
+    // assumes the runtime is already initialised. rnt_plan_assemble is the sole
+    // caller and performs that check once before dispatching here.
+
+    PlanWrapper* build_scan(const PlanArgsScan& a)
+    {
+        if (!a.relation_path) return nullptr;
+
+        // Open a handle to the stored relation through the full manager pipeline.
+        // Open() runs NamespaceReferenceManager::Resolve internally, so the handle
+        // lands on the resolved /system/snapshots/<hash>/relations/<n> entry when
+        // the caller passed a branch-relative path.
+        const auto parts = split_path(a.relation_path);
+        auto* h = g_rt->handler->Open(parts, nullptr);
+        if (!h) return nullptr;
+
+        // Read the Merkle root straight from the handle's object — Resolve has
+        // already pointed it at the snapshot-bound Relation entry.
+        std::string merkle_root;
+        if (h->object && h->object->object)
+        {
+            auto* rel = dynamic_cast<nt::ObjectManager::Relation*>(h->object->object.get());
+            if (rel) merkle_root = rel->merkle_root;
+        }
+
+        auto* c = g_rt->cursors->Open(h, merkle_root);
+        if (!c)
+        {
+            g_rt->handler->Close(h);
+            return nullptr;
+        }
+
+        auto  node        = std::make_unique<nt::PlanNode>();
+        node->op          = nt::FOL_OPERATION_SCAN;
+        node->scan_cursor = c;
+
+        auto* pw = new PlanWrapper();
+        pw->root = node.get();
+        pw->nodes.push_back(std::move(node));
+        pw->cursors.push_back(c);
+        pw->handles.push_back(h);
+        return pw;
+    }
+
+    PlanWrapper* build_join(const PlanArgsJoin& a)
+    {
+        auto* l = static_cast<PlanWrapper*>(a.left);
+        auto* r = static_cast<PlanWrapper*>(a.right);
+
+        if (!l || !r)
+        {
+            free_plan_wrapper(l);
+            free_plan_wrapper(r);
+            return nullptr;
+        }
+
+        auto  node  = std::make_unique<nt::PlanNode>();
+        node->op    = nt::FOL_OPERATION_JOIN;
+        node->left  = l->root;
+        node->right = r->root;
+
+        auto* pw = new PlanWrapper();
+        pw->root = node.get();
+        pw->nodes.push_back(std::move(node));
+
+        // Absorb child resources into the new wrapper.
+        for (auto& n : l->nodes)   pw->nodes.push_back(std::move(n));
+        for (auto& n : r->nodes)   pw->nodes.push_back(std::move(n));
+        for (auto* c : l->cursors) pw->cursors.push_back(c);
+        for (auto* c : r->cursors) pw->cursors.push_back(c);
+        for (auto* h : l->handles) pw->handles.push_back(h);
+        for (auto* h : r->handles) pw->handles.push_back(h);
+
+        delete l;
+        delete r;
+        return pw;
+    }
+
+    PlanWrapper* build_take(const PlanArgsTake& a)
+    {
+        auto* s = static_cast<PlanWrapper*>(a.source);
+        if (!s) return nullptr;
+
+        auto  node       = std::make_unique<nt::PlanNode>();
+        node->op         = nt::FOL_OPERATION_TAKE;
+        node->left       = s->root;
+        node->take_limit = a.limit;
+
+        auto* pw = new PlanWrapper();
+        pw->root = node.get();
+        pw->nodes.push_back(std::move(node));
+
+        for (auto& n : s->nodes)   pw->nodes.push_back(std::move(n));
+        for (auto* c : s->cursors) pw->cursors.push_back(c);
+        for (auto* h : s->handles) pw->handles.push_back(h);
+
+        delete s;
+        return pw;
+    }
+
+    PlanWrapper* build_project(const PlanArgsProject& a)
+    {
+        auto* s = static_cast<PlanWrapper*>(a.source);
+        if (!s) return nullptr;
+
+        auto  node = std::make_unique<nt::PlanNode>();
+        node->op   = nt::FOL_OPERATION_PROJECT;
+        node->left = s->root;
+
+        if (a.attrs)
+            for (const char** p = a.attrs; *p; ++p)
+                node->project_attrs.emplace(*p);
+
+        auto* pw = new PlanWrapper();
+        pw->root = node.get();
+        pw->nodes.push_back(std::move(node));
+        for (auto& n : s->nodes)   pw->nodes.push_back(std::move(n));
+        for (auto* c : s->cursors) pw->cursors.push_back(c);
+        for (auto* h : s->handles) pw->handles.push_back(h);
+
+        delete s;
+        return pw;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -880,126 +1005,18 @@ void rnt_free_bytes(uint8_t* p) { delete[] p; }
 // VM plan builder
 // ---------------------------------------------------------------------------
 
-rnt_plan_t rnt_plan_scan(const char* relation_path)
+rnt_plan_t rnt_plan_assemble(PlanAction action)
 {
-    if (!is_initialized() || !relation_path) return nullptr;
-
-    // Open a handle to the stored relation through the full manager pipeline.
-    // Open() runs NamespaceReferenceManager::Resolve internally, so the handle
-    // lands on the resolved /system/snapshots/<hash>/relations/<n> entry when
-    // the caller passed a branch-relative path.
-    const auto parts = split_path(relation_path);
-    auto* h = g_rt->handler->Open(parts, nullptr);
-    if (!h) return nullptr;
-
-    // Read the Merkle root straight from the handle's object — Resolve has
-    // already pointed it at the snapshot-bound Relation entry.
-    std::string merkle_root;
-    if (h->object && h->object->object)
-    {
-        auto* rel = dynamic_cast<nt::ObjectManager::Relation*>(h->object->object.get());
-        if (rel) merkle_root = rel->merkle_root;
-    }
-
-    auto* c = g_rt->cursors->Open(h, merkle_root);
-    if (!c)
-    {
-        g_rt->handler->Close(h);
-        return nullptr;
-    }
-
-    auto  node        = std::make_unique<nt::PlanNode>();
-    node->op          = nt::PlanNode::Op::SCAN;
-    node->scan_cursor = c;
-
-    auto* pw       = new PlanWrapper();
-    pw->root       = node.get();
-    pw->nodes.push_back(std::move(node));
-    pw->cursors.push_back(c);
-    pw->handles.push_back(h);
-    return pw;
-}
-
-rnt_plan_t rnt_plan_join(rnt_plan_t left, rnt_plan_t right)
-{
-    if (!left || !right)
-    {
-        free_plan_wrapper(static_cast<PlanWrapper*>(left));
-        free_plan_wrapper(static_cast<PlanWrapper*>(right));
-        return nullptr;
-    }
-
-    auto* l = static_cast<PlanWrapper*>(left);
-    auto* r = static_cast<PlanWrapper*>(right);
-
-    auto  node  = std::make_unique<nt::PlanNode>();
-    node->op    = nt::PlanNode::Op::JOIN;
-    node->left  = l->root;
-    node->right = r->root;
-
-    auto* pw  = new PlanWrapper();
-    pw->root  = node.get();
-    pw->nodes.push_back(std::move(node));
-
-    // Absorb child resources into the new wrapper.
-    for (auto& n : l->nodes)   pw->nodes.push_back(std::move(n));
-    for (auto& n : r->nodes)   pw->nodes.push_back(std::move(n));
-    for (auto* c : l->cursors) pw->cursors.push_back(c);
-    for (auto* c : r->cursors) pw->cursors.push_back(c);
-    for (auto* h : l->handles) pw->handles.push_back(h);
-    for (auto* h : r->handles) pw->handles.push_back(h);
-
-    delete l;
-    delete r;
-    return pw;
-}
-
-rnt_plan_t rnt_plan_take(rnt_plan_t source, size_t limit)
-{
-    if (!source) return nullptr;
-
-    auto* s = static_cast<PlanWrapper*>(source);
-
-    auto  node         = std::make_unique<nt::PlanNode>();
-    node->op           = nt::PlanNode::Op::TAKE;
-    node->left         = s->root;
-    node->take_limit   = limit;
-
-    auto* pw  = new PlanWrapper();
-    pw->root  = node.get();
-    pw->nodes.push_back(std::move(node));
-
-    for (auto& n : s->nodes)   pw->nodes.push_back(std::move(n));
-    for (auto* c : s->cursors) pw->cursors.push_back(c);
-    for (auto* h : s->handles) pw->handles.push_back(h);
-
-    delete s;
-    return pw;
-}
-
-rnt_plan_t rnt_plan_project(rnt_plan_t source, const char** attrs)
-{
-    if (!source) return nullptr;
-
-    auto* s = static_cast<PlanWrapper*>(source);
-
-    auto  node  = std::make_unique<nt::PlanNode>();
-    node->op    = nt::PlanNode::Op::PROJECT;
-    node->left  = s->root;
-
-    if (attrs)
-        for (const char** a = attrs; *a; ++a)
-            node->project_attrs.emplace(*a);
-
-    auto* pw = new PlanWrapper();
-    pw->root = node.get();
-    pw->nodes.push_back(std::move(node));
-    for (auto& n : s->nodes) pw->nodes.push_back(std::move(n));
-    for (auto* c : s->cursors) pw->cursors.push_back(c);
-    for (auto* h : s->handles) pw->handles.push_back(h);
-
-    delete s;
-    return pw;
+  if (!is_initialized()) return nullptr;
+  
+  switch (action.operation){
+  case nt::FOL_OPERATION_SCAN:    return build_scan(action.args.scan);
+  case nt::FOL_OPERATION_JOIN:    return build_join(action.args.join);
+  case nt::FOL_OPERATION_TAKE:    return build_take(action.args.take);
+  case nt::FOL_OPERATION_PROJECT: return build_project(action.args.project);
+  }
+  
+  return nullptr;
 }
 
 void rnt_plan_free(rnt_plan_t plan)
