@@ -67,34 +67,32 @@ namespace nt {
 
         case Operation::FOL_OPERATION_JOIN: {
             while (true) {
+            again:
                 if (node->join_left == nullptr) {
                     node->join_left = Next(node->left);
-                    if (node->join_left == nullptr)
-                        return nullptr;
+                    if (node->join_left == nullptr) return nullptr;
 
-                        auto args = ResolveArgs(node->right->scan_args, node->join_left);
-                        ResetInner(node->right->scan_cursor, std::move(args));
-                    }
-
-                    Tuple* right = Next(node->right);
-                    if (right != nullptr)
-					{
-                        for (auto& attr : node->join_attrs)
-                            if ((*node->join_left)[attr] != (*right)[attr])
-                                continue;
-
-                        return MergeInto(node, node->join_left, right);
-					}
-
-                    node->join_left = nullptr;
+                    auto args = ResolveArgs(node->right->scan_args, node->join_left);
+                    ResetInner(node->right->scan_cursor, std::move(args));
                 }
 
                 Tuple* right = Next(node->right);
-                if (right != nullptr)
+                if (right != nullptr) {
+                    for (auto &attr : node->join_attrs)
+                        if ((*node->join_left)[attr] != (*right)[attr])
+                            goto again;
+
                     return MergeInto(node, node->join_left, right);
+                }
 
                 node->join_left = nullptr;
             }
+
+            Tuple* right = Next(node->right);
+            if (right != nullptr)
+                return MergeInto(node, node->join_left, right);
+
+            node->join_left = nullptr;
         }
 
         case Operation::FOL_OPERATION_TAKE: {
