@@ -142,6 +142,7 @@ namespace nt {
          */
         Tuple* join_left = nullptr;
         std::optional<Tuple> join_buffer;
+        std::unordered_set<std::string> join_attrs;
     };
 
     class VM {
