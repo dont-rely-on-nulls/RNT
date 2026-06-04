@@ -503,6 +503,10 @@ namespace {
         node->left = l->root;
         node->right = r->root;
 
+        if (a.attrs)
+            for (const char** p = a.attrs; *p; ++p)
+                node->project_attrs.emplace(*p);
+
         auto* pw = new PlanWrapper();
         pw->root = node.get();
         pw->nodes.push_back(std::move(node));

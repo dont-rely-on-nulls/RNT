@@ -397,6 +397,7 @@ typedef struct {
 typedef struct {
     rnt_plan_t left;
     rnt_plan_t right;
+    const char** attrs;
 } PlanArgsJoin;
 
 /**
