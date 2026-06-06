@@ -29,8 +29,7 @@
  * payloads to `Merkle<std::string>`.
  */
 
-namespace nt::MultigroupCodec
-{
+namespace nt::MultigroupCodec {
     /** @brief One entry in a multigroup snapshot: (relation_name, root_hex). */
     using RelationEntry = std::pair<std::string, std::string>;
 
@@ -45,8 +44,7 @@ namespace nt::MultigroupCodec
      * @param relations Entries to load. Duplicates collapse to the last value.
      * @return Root node hash (empty string when `relations` is empty).
      */
-    std::string Build(IStorageBackend& store,
-                      const std::vector<RelationEntry>& relations);
+    std::string Build(IStorageBackend& store, const std::vector<RelationEntry>& relations);
 
     /**
      * @brief Enumerate all (name, root_hex) pairs at a multigroup root.
@@ -54,8 +52,7 @@ namespace nt::MultigroupCodec
      * Pages the entire tree (offset 0, no limit). Returned entries are in
      * key-sorted order. Empty input root yields an empty list.
      */
-    std::vector<RelationEntry> List(IStorageBackend& store,
-                                     const std::string& root_hex);
+    std::vector<RelationEntry> List(IStorageBackend& store, const std::string& root_hex);
 
     /**
      * @brief Insert or overwrite one (relation_name → root_hex) entry.
@@ -65,25 +62,21 @@ namespace nt::MultigroupCodec
      * mutations. Pass an empty `root_hex` for the prior-state argument to
      * start from an empty tree.
      */
-    std::string InsertOne(IStorageBackend& store,
-                          const std::string& root_hex,
-                          const std::string& relation_name,
-                          const std::string& relation_root_hex);
+    std::string InsertOne(IStorageBackend& store, const std::string& root_hex,
+                          const std::string& relation_name, const std::string& relation_root_hex);
 
     /**
      * @brief Remove one relation entry from the multigroup tree.
      *
      * Returns the new root hash; empty when the tree becomes empty.
      */
-    std::string RemoveOne(IStorageBackend& store,
-                          const std::string& root_hex,
+    std::string RemoveOne(IStorageBackend& store, const std::string& root_hex,
                           const std::string& relation_name);
 
     /**
      * @brief Look up one relation's root hex by name.
      * @return Hex root, or empty string when the name is absent.
      */
-    std::string Lookup(IStorageBackend& store,
-                       const std::string& root_hex,
+    std::string Lookup(IStorageBackend& store, const std::string& root_hex,
                        const std::string& relation_name);
-}
+} // namespace nt::MultigroupCodec

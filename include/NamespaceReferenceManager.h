@@ -12,8 +12,7 @@
  * @brief Declares logical reference mapping and namespace isolation.
  */
 
-namespace nt
-{
+namespace nt {
     /**
      * @class NamespaceReferenceManager
      * @brief Handles the logical mapping and isolation of human-readable references.
@@ -67,9 +66,8 @@ namespace nt
      * @todo Define the batch-update API with all-or-nothing contention semantics.
      *       See docs/reactos-ob-comparison.md §8.
      */
-    class NamespaceReferenceManager
-    {
-    public:
+    class NamespaceReferenceManager {
+      public:
         /**
          * @brief Constructs a NamespaceReferenceManager bound to a registry.
          * @param objects Registry used to look up reference objects (branches,
@@ -78,8 +76,7 @@ namespace nt
          *                nodes when resolving `/system/branches/<n>/<mg>/...`
          *                paths through to their snapshot.
          */
-        NamespaceReferenceManager(ObjectManager& objects,
-                                  IStorageBackend& storage);
+        NamespaceReferenceManager(ObjectManager& objects, IStorageBackend& storage);
 
         /**
          * @brief Rewrites a logical path through reference reparse rules.
@@ -103,8 +100,8 @@ namespace nt
          */
         std::vector<std::string> Resolve(std::vector<std::string> path) const;
 
-    private:
-        ObjectManager&   objects_;
+      private:
+        ObjectManager& objects_;
         IStorageBackend& storage_;
     };
-}
+} // namespace nt

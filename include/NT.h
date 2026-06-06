@@ -5,13 +5,13 @@
  * @brief Includes for the Relational NT public API.
  */
 
-#include "Types.h"
-#include "ObjectManager.h"
-#include "PermissionsManager.h"
-#include "NamespaceReferenceManager.h"
 #include "CursorManager.h"
+#include "HandlerManager.h"
 #include "IdentityManager.h"
 #include "LifecycleManager.h"
-#include "HandlerManager.h"
-#include "VM.h"
+#include "NamespaceReferenceManager.h"
+#include "ObjectManager.h"
+#include "PermissionsManager.h"
 #include "Runtime.h"
+#include "Types.h"
+#include "VM.h"

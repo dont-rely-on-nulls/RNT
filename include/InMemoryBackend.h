@@ -19,15 +19,13 @@
  * Relation membership is tracked by the Merkle class, not this backend.
  */
 
-namespace nt
-{
-    class InMemoryBackend : public IStorageBackend
-    {
-    public:
+namespace nt {
+    class InMemoryBackend : public IStorageBackend {
+      public:
         std::string Put(std::vector<uint8_t> value) override;
         std::optional<std::vector<uint8_t>> Get(const std::string& hash) override;
 
-    private:
+      private:
         std::unordered_map<std::string, std::vector<uint8_t>> kv_;
     };
-}
+} // namespace nt

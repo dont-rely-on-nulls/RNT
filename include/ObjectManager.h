@@ -16,8 +16,7 @@
  * @brief Declares the registry responsible for runtime-managed database objects.
  */
 
-namespace nt
-{
+namespace nt {
     /**
      * @brief Owns the registry used to locate and reference database objects.
      *
@@ -25,12 +24,11 @@ namespace nt
      * the metadata needed to reason about object type, path, references, and
      * handles while the concrete storage model is still being designed.
      */
-    class ObjectManager
-    {
-    public:
+    class ObjectManager {
+      public:
         /** @brief Base type for objects stored in the registry. */
         class IObject {
-        public:
+          public:
             virtual ~IObject() = default;
         };
 
@@ -52,7 +50,7 @@ namespace nt
          * pins it, no pinned cursor still references it).
          */
         class Multigroup : public IObject {
-        public:
+          public:
             std::string merkle_root;
         };
         /**
@@ -63,7 +61,7 @@ namespace nt
          * Updated atomically by rnt_link_tuple / rnt_unlink_tuple / rnt_clear_relation.
          */
         class Relation : public IObject {
-        public:
+          public:
             std::string merkle_root;
         };
         /**
@@ -96,8 +94,8 @@ namespace nt
          *       path this remains a documentation-only contract.
          */
         class EphemeralRelation : public IObject {
-        public:
-            std::string              merkle_root;
+          public:
+            std::string merkle_root;
             std::vector<std::string> dependencies;
         };
         /** @brief Abstract registry object representing a transaction. */
@@ -125,7 +123,7 @@ namespace nt
          * the walk hot.
          */
         class Session : public IObject {
-        public:
+          public:
             void* connection_context = nullptr;
             std::map<std::string, std::string> branch_overrides;
         };
@@ -147,7 +145,7 @@ namespace nt
          * Multigroups and operate on those.
          */
         class Branch : public IObject {
-        public:
+          public:
             std::string name;
             std::string target_hash;
         };
@@ -165,7 +163,7 @@ namespace nt
          *     each multigroup it references before unregistering the entry.
          */
         class BranchTree : public IObject {
-        public:
+          public:
             std::string merkle_root;
         };
 
@@ -224,8 +222,7 @@ namespace nt
          * maps `offset` to the appropriate pair via a bijective enumeration scheme
          * (e.g. Cantor pairing); callers must bound such scans with a TAKE node.
          */
-        struct ephemeral_object_type : object_type
-        {
+        struct ephemeral_object_type : object_type {
             enum class Cardinality { Finite, ConstrainedFinite, AlephZero, Continuum };
 
             /**
@@ -235,12 +232,10 @@ namespace nt
              * @param limit  Maximum number of tuples to return.
              */
             using Generator = std::function<std::vector<Tuple>(
-                const std::vector<std::string>& args,
-                std::size_t offset,
-                std::size_t limit)>;
+                const std::vector<std::string>& args, std::size_t offset, std::size_t limit)>;
 
             Cardinality cardinality;
-            Generator   generator;
+            Generator generator;
         };
 
         /**
@@ -313,8 +308,7 @@ namespace nt
          * @param object  Object payload. Ownership is transferred to the registry.
          * @param type    Object type descriptor. Ownership is transferred to the registry.
          */
-        void Register(std::vector<std::string> path,
-                      std::unique_ptr<IObject> object,
+        void Register(std::vector<std::string> path, std::unique_ptr<IObject> object,
                       std::unique_ptr<object_type> type);
 
         /**
@@ -338,4 +332,4 @@ namespace nt
          */
         bool Unregister(const std::vector<std::string>& object_path);
     };
-}
+} // namespace nt

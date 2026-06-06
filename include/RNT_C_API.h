@@ -134,8 +134,7 @@ NT_API int rnt_session_close(const char* session_hash);
  * @param target_hash   Snapshot hash to bind, or "" to clear.
  * @return 0 on success, negative on error.
  */
-NT_API int rnt_session_set_branch(const char* session_hash,
-                                  const char* branch_name,
+NT_API int rnt_session_set_branch(const char* session_hash, const char* branch_name,
                                   const char* target_hash);
 
 /* ------------------------------------------------------------------ */
@@ -293,9 +292,7 @@ NT_API int rnt_list_snapshot_relations(const char* snapshot_hash, char** out);
  *                       Release with rnt_free_string(). NULL on error.
  * @return 0 on success, negative on error.
  */
-NT_API int rnt_link_tuple(const char* relation_path,
-                          const char* kv_attrs,
-                          char**      hash_out);
+NT_API int rnt_link_tuple(const char* relation_path, const char* kv_attrs, char** hash_out);
 
 /**
  * @brief Removes a tuple from the relation's Merkle tree and tuple store.
@@ -387,8 +384,7 @@ typedef void* rnt_plan_t;
  * @param relation_path  Absolute slash-separated path, e.g.
  *  "/system/branches/main/multigroups/warehouse/relations/public:users".
  */
-typedef struct
-{
+typedef struct {
     const char* relation_path;
 } PlanArgsScan;
 
@@ -398,8 +394,7 @@ typedef struct
  * Takes ownership of both children. They are released when the assembled plan
  * is freed or executed; on failure both are freed.
  */
-typedef struct
-{
+typedef struct {
     rnt_plan_t left;
     rnt_plan_t right;
 } PlanArgsJoin;
@@ -409,10 +404,9 @@ typedef struct
  *
  * Takes ownership of @p source; on failure @p source is freed.
  */
-typedef struct
-{
+typedef struct {
     rnt_plan_t source;
-    size_t     limit;
+    size_t limit;
 } PlanArgsTake;
 
 /**
@@ -422,26 +416,23 @@ typedef struct
  * <tt>{ "name", "profession", NULL }</tt>. Takes ownership of @p source; on
  * failure @p source is freed.
  */
-typedef struct
-{
-  rnt_plan_t   source;
-  const char** attrs;
+typedef struct {
+    rnt_plan_t source;
+    const char** attrs;
 } PlanArgsProject;
 
 /**
- * A single plan-construction request. @p op selects which union member is read;
- * each member carries only the context its operator needs.
+ * A single plan-construction request. @p operation selects which context member
+ * is read; the others are ignored. The members are laid out side by side rather
+ * than overlapped in a union so the struct maps cleanly onto OCaml ctypes, which
+ * has no union support. Only the member matching @p operation need be populated.
  */
-typedef struct
-{
-  nt::Operation operation;
-  union
-  {
+typedef struct {
+    nt::Operation operation;
     PlanArgsScan scan;
     PlanArgsJoin join;
     PlanArgsTake take;
     PlanArgsProject project;
-  } args;
 } PlanAction;
 
 /**

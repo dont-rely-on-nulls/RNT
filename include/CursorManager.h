@@ -16,8 +16,7 @@
  * @brief Declares paging and cursor orchestration for query execution.
  */
 
-namespace nt
-{
+namespace nt {
     /**
      * @class CursorManager
      * @brief Orchestrates paginated data retrieval from a storage backend.
@@ -34,9 +33,8 @@ namespace nt
      * Merkle::Page(backend, merkle_root, fetch_offset, PAGE_SIZE) to retrieve
      * the next page of tuple hashes without loading sibling subtrees.
      */
-    class CursorManager
-    {
-    public:
+    class CursorManager {
+      public:
         static constexpr std::size_t PAGE_SIZE = 1;
 
         /**
@@ -49,8 +47,7 @@ namespace nt
          * resolved snapshot for the handle's relation and Pins it for the
          * cursor's lifetime, releasing the pin in Close.
          */
-        explicit CursorManager(IStorageBackend& backend,
-                               LifecycleManager* lifecycles = nullptr,
+        explicit CursorManager(IStorageBackend& backend, LifecycleManager* lifecycles = nullptr,
                                ObjectManager* objects = nullptr);
 
         /**
@@ -88,7 +85,7 @@ namespace nt
             std::vector<std::string> args;
             std::vector<Tuple> page;
             std::size_t page_position = 0;
-            std::size_t fetch_offset  = 0;   // next Merkle::Page() call starts here
+            std::size_t fetch_offset = 0; // next Merkle::Page() call starts here
             bool exhausted = false;
             /**
              * True for EPHEMERAL_RELATION cursors; selects the generator-driven
@@ -124,8 +121,7 @@ namespace nt
          * @param merkle_root  Hex hash of the relation's Merkle root at open
          *                     time. Ignored for EPHEMERAL_RELATION handles.
          */
-        cursor* Open(HandlerManager::handle* handle,
-                     const std::string& merkle_root = "");
+        cursor* Open(HandlerManager::handle* handle, const std::string& merkle_root = "");
 
         /**
          * @brief Pulls the next tuple from the cursor.
@@ -141,10 +137,10 @@ namespace nt
          */
         void Close(cursor* cursor);
 
-    private:
-        IStorageBackend&  backend_;
+      private:
+        IStorageBackend& backend_;
         LifecycleManager* lifecycles_ = nullptr;
-        ObjectManager*    objects_    = nullptr;
+        ObjectManager* objects_ = nullptr;
 
         /**
          * Fetches a page of hashes via Merkle::Page, resolves each from the
@@ -154,4 +150,4 @@ namespace nt
          */
         void LoadPage(cursor* c);
     };
-}
+} // namespace nt

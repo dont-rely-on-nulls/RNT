@@ -14,8 +14,7 @@
  * @brief Declares the logic execution boundary for relational and higher-order workloads.
  */
 
-namespace nt
-{
+namespace nt {
     /**
      * @class VM
      * @brief Hosts the first-order logic (FOL) and second-order logic (SOL) cores.
@@ -64,22 +63,25 @@ namespace nt
      * (for EPHEMERAL_RELATION cursors) or ignored (for stored RELATION cursors,
      * which need no per-probe parameterization).
      */
-    struct PathArg
-    {
+    struct PathArg {
         enum class Kind { Var, Const };
 
-        Kind        kind;
+        Kind kind;
         std::string name; /**< Attribute name to look up (Var), or literal value (Const). */
 
-        static PathArg Var(std::string attr)  { return { Kind::Var,   std::move(attr) }; }
-        static PathArg Const(std::string val) { return { Kind::Const, std::move(val) }; }
+        static PathArg Var(std::string attr) {
+            return {Kind::Var, std::move(attr)};
+        }
+        static PathArg Const(std::string val) {
+            return {Kind::Const, std::move(val)};
+        }
     };
 
     enum Operation {
-      FOL_OPERATION_SCAN = 1,
-      FOL_OPERATION_JOIN,
-      FOL_OPERATION_TAKE,
-      FOL_OPERATION_PROJECT
+        FOL_OPERATION_SCAN = 1,
+        FOL_OPERATION_JOIN,
+        FOL_OPERATION_TAKE,
+        FOL_OPERATION_PROJECT
     };
 
     /**
@@ -98,10 +100,9 @@ namespace nt
      *           this to bound scans over AlephZero ephemeral relations.
      * - PROJECT: filters each input tuple to the named attributes in project_attrs.
      */
-    struct PlanNode
-    {
+    struct PlanNode {
         Operation op;
-        PlanNode* left  = nullptr;
+        PlanNode* left = nullptr;
         PlanNode* right = nullptr;
 
         /**
@@ -139,13 +140,12 @@ namespace nt
          * successful join. Callers must consume the returned pointer before
          * calling Next() again — same contract as a cursor page pointer.
          */
-        Tuple*               join_left   = nullptr;
+        Tuple* join_left = nullptr;
         std::optional<Tuple> join_buffer;
     };
 
-    class VM
-    {
-    public:
+    class VM {
+      public:
         // TODO: CursorManager should be injected as a shared runtime instance,
         // matching the pattern flagged for HandlerManager and LifecycleManager.
         //
@@ -172,21 +172,19 @@ namespace nt
          */
         Tuple* Next(PlanNode* node);
 
-    private:
+      private:
         CursorManager& cursors_;
 
         /**
          * Resolves a scan_args template against an outer tuple, producing the
          * concrete args vector to write into the inner cursor before probing.
          */
-        static std::vector<std::string> ResolveArgs(const std::vector<PathArg>& tmpl,
-                                                    Tuple* from);
+        static std::vector<std::string> ResolveArgs(const std::vector<PathArg>& tmpl, Tuple* from);
 
         /** Resets the inner cursor state and writes resolved args into it. */
-        static void ResetInner(CursorManager::cursor* c,
-                               std::vector<std::string> args);
+        static void ResetInner(CursorManager::cursor* c, std::vector<std::string> args);
 
         /** Merges left and right tuple attributes into node->join_buffer. */
         static Tuple* MergeInto(PlanNode* node, Tuple* left, Tuple* right);
     };
-}
+} // namespace nt

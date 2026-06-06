@@ -15,8 +15,7 @@
  * Merkle class, not by this interface.  Only Put and Get are required.
  */
 
-namespace nt
-{
+namespace nt {
     /**
      * @interface IStorageBackend
      * @brief Contract between CursorManager / Merkle and a physical storage engine.
@@ -29,9 +28,8 @@ namespace nt
      * maintains insertion-order-independent relation membership on top of these
      * two primitives.
      */
-    class IStorageBackend
-    {
-    public:
+    class IStorageBackend {
+      public:
         virtual ~IStorageBackend() = default;
 
         /**
@@ -48,4 +46,4 @@ namespace nt
          */
         virtual std::optional<std::vector<uint8_t>> Get(const std::string& hash) = 0;
     };
-}
+} // namespace nt

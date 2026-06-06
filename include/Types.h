@@ -118,8 +118,7 @@ enum AUTH_METHOD {
     PLAIN_TEXT
 };
 
-namespace nt
-{
+namespace nt {
     /** @brief A single named value in a tuple, produced by the cursor layer. */
     struct Attribute {
         std::string name;
@@ -133,9 +132,9 @@ namespace nt
      * one attribute at a time. Returns nullptr when all attributes are exhausted.
      */
     class Tuple {
-    public:
-        explicit Tuple(std::vector<Attribute> attributes)
-            : attributes_(std::move(attributes)) {}
+      public:
+        explicit Tuple(std::vector<Attribute> attributes) : attributes_(std::move(attributes)) {
+        }
 
         /** @brief Returns the next attribute, or nullptr when exhausted. */
         const Attribute* Next() {
@@ -144,13 +143,17 @@ namespace nt
             return nullptr;
         }
 
-        void Reset() { position_ = 0; }
+        void Reset() {
+            position_ = 0;
+        }
 
         /** @brief Direct read-only access to all attributes without affecting position. */
-        const std::vector<Attribute>& attrs() const { return attributes_; }
+        const std::vector<Attribute>& attrs() const {
+            return attributes_;
+        }
 
-    private:
+      private:
         std::vector<Attribute> attributes_;
         size_t position_ = 0;
     };
-}
+} // namespace nt

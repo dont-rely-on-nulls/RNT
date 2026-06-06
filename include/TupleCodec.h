@@ -23,8 +23,7 @@
  *   [uint32_le name_len][name bytes][uint32_le value_len][value bytes] ...
  */
 
-namespace nt::TupleCodec
-{
+namespace nt::TupleCodec {
     /**
      * @brief Computes the SHA256 hex digest of the serialized tuple.
      *
@@ -49,4 +48,4 @@ namespace nt::TupleCodec
      * @return Reconstructed attribute list in serialization order.
      */
     std::vector<Attribute> Deserialize(const std::vector<uint8_t>& bytes);
-}
+} // namespace nt::TupleCodec
