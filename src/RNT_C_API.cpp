@@ -505,7 +505,7 @@ namespace {
 
         if (a.attrs)
             for (const char** p = a.attrs; *p; ++p)
-                node->project_attrs.emplace(*p);
+                node->join_attrs.emplace(*p);
 
         auto* pw = new PlanWrapper();
         pw->root = node.get();
