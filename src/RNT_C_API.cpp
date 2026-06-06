@@ -488,7 +488,50 @@ namespace {
         return pw;
     }
 
-    PlanWrapper* build_join(const PlanArgsJoin& a) {
+    PlanWrapper* build_nested_loop_block_join(const PlanArgsNestedLoopBlockJoin& a) {
+        auto* l = static_cast<PlanWrapper*>(a.left);
+        auto* r = static_cast<PlanWrapper*>(a.right);
+
+        if (!l || !r || !a.block_size) {
+            free_plan_wrapper(l);
+            free_plan_wrapper(r);
+            return nullptr;
+        }
+
+        auto node = std::make_unique<nt::PlanNode>();
+        node->op = nt::FOL_OPERATION_NESTED_LOOP_BLOCK_JOIN;
+        node->left = l->root;
+        node->right = r->root;
+        node->block_size = a.block_size;
+
+        if (a.attrs)
+            for (const char** p = a.attrs; *p; ++p)
+                node->join_attrs.emplace(*p);
+
+        auto* pw = new PlanWrapper();
+        pw->root = node.get();
+        pw->nodes.push_back(std::move(node));
+
+        // Absorb child resources into the new wrapper.
+        for (auto& n : l->nodes)
+            pw->nodes.push_back(std::move(n));
+        for (auto& n : r->nodes)
+            pw->nodes.push_back(std::move(n));
+        for (auto* c : l->cursors)
+            pw->cursors.push_back(c);
+        for (auto* c : r->cursors)
+            pw->cursors.push_back(c);
+        for (auto* h : l->handles)
+            pw->handles.push_back(h);
+        for (auto* h : r->handles)
+            pw->handles.push_back(h);
+
+        delete l;
+        delete r;
+        return pw;
+    }
+
+    PlanWrapper* build_nested_loop_join(const PlanArgsNestedLoopJoin& a) {
         auto* l = static_cast<PlanWrapper*>(a.left);
         auto* r = static_cast<PlanWrapper*>(a.right);
 
@@ -499,7 +542,7 @@ namespace {
         }
 
         auto node = std::make_unique<nt::PlanNode>();
-        node->op = nt::FOL_OPERATION_JOIN;
+        node->op = nt::FOL_OPERATION_NESTED_LOOP_JOIN;
         node->left = l->root;
         node->right = r->root;
 
@@ -1040,8 +1083,10 @@ rnt_plan_t rnt_plan_assemble(PlanAction action) {
     switch (action.operation) {
     case nt::FOL_OPERATION_SCAN:
         return build_scan(action.scan);
-    case nt::FOL_OPERATION_JOIN:
-        return build_join(action.join);
+    case nt::FOL_OPERATION_NESTED_LOOP_JOIN:
+        return build_nested_loop_join(action.nested_loop_join);
+    case nt::FOL_OPERATION_NESTED_LOOP_BLOCK_JOIN:
+        return build_nested_loop_block_join(action.nested_loop_block_join);
     case nt::FOL_OPERATION_TAKE:
         return build_take(action.take);
     case nt::FOL_OPERATION_PROJECT:

@@ -1,6 +1,8 @@
 #include "VM.h"
 #include "Types.h"
 
+#include <iostream>
+
 namespace nt {
     VM::VM(CursorManager& cursors) : cursors_(cursors) {
     }
@@ -98,7 +100,7 @@ namespace nt {
             return &*node->project_buffer;
         }
 
-        case Operation::FOL_OPERATION_JOIN: {
+        case Operation::FOL_OPERATION_NESTED_LOOP_JOIN: {
             while (true) {
             again:
                 if (node->join_left == nullptr) {
@@ -118,6 +120,66 @@ namespace nt {
                 }
 
                 node->join_left = nullptr;
+            }
+        }
+
+        case Operation::FOL_OPERATION_NESTED_LOOP_BLOCK_JOIN: {
+            while (true) {
+                std::cout << std::endl;
+                printf("%p, %p\n", node->right, node->left);
+                if (node->join_inner == nullptr) {
+                    std::cout << "Resetting inner" << std::endl;
+
+                    ResetInner(node->right->scan_cursor, {});
+                    if (!(node->join_inner = Next(node->right)))
+                        return nullptr;
+
+                    std::cout << "Reserving " << node->block_size << std::endl;
+
+                    node->join_block.reserve(node->block_size);
+
+                    Tuple* outer;
+                    for (size_t s = 0; s < node->block_size; s++) {
+                        if (!(outer = Next(node->left)))
+                            break;
+                        node->join_block.push_back(*outer);
+                    }
+
+                    std::cout << "Block has " << node->join_block.size() << " elements" << std::endl;
+
+                    if (node->join_block.empty())
+                        return nullptr;
+
+                    node->join_block_position = 0;
+                }
+
+                std::cout << "Iterating over block" << std::endl;
+
+                while (node->join_block_position < node->join_block.size()) {
+                    Tuple& outer = node->join_block[node->join_block_position++];
+                    bool match = true;
+
+                    for (auto &attr : node->join_attrs) {
+                        std::cout << "Attribute " << attr
+                                  << ", outer = " << outer[attr]
+                                  << ", inner = " << (*node->join_inner)[attr]
+                                  << std::endl;
+
+                        if (outer[attr] != (*node->join_inner)[attr]) {
+                            std::cout << "No dice." << std::endl;
+                            match = false;
+                            break;
+                        }
+                    }
+
+                    if (match) {
+                        std::cout << "Match!" << std::endl;
+                        return MergeInto(node, &outer, node->join_inner);
+                    }
+                }
+
+                std::cout << "Next inner" << std::endl;
+                node->join_inner = Next(node->right);
             }
         }
 

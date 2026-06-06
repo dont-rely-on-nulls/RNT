@@ -113,7 +113,7 @@ TEST_CASE("SCAN returns all tuples from a stored relation", "[scan]") {
     f.handler.Close(handle);
 }
 
-TEST_CASE("JOIN filters a stored relation with eq ephemeral", "[join]") {
+void test_join(std::function<nt::PlanNode(nt::PlanNode&, nt::PlanNode&)> make_join) {
     Fixture f;
     const std::vector<std::string> people_path = {"relations", "people"};
     const std::vector<std::string> eq_path = {"builtins", "eq"};
@@ -152,10 +152,7 @@ TEST_CASE("JOIN filters a stored relation with eq ephemeral", "[join]") {
     left.op = nt::FOL_OPERATION_SCAN;
     left.scan_cursor = people_cursor;
 
-    nt::PlanNode root;
-    root.op = nt::FOL_OPERATION_JOIN;
-    root.left = &left;
-    root.right = &right;
+    nt::PlanNode root = make_join(left, right);
 
     // Execute and collect matched names
     nt::VM vm(f.cursors);
@@ -166,7 +163,7 @@ TEST_CASE("JOIN filters a stored relation with eq ephemeral", "[join]") {
                 matched.push_back(attr.value);
     }
 
-    // Jude (age=25) and Peter (age=25) should match; Jogn (age=30) should not
+    // Jude (age=25) and Peter (age=25) should match; John (age=30) should not
     REQUIRE(matched.size() == 2);
     REQUIRE(std::find(matched.begin(), matched.end(), "Jude") != matched.end());
     REQUIRE(std::find(matched.begin(), matched.end(), "Peter") != matched.end());
@@ -176,6 +173,26 @@ TEST_CASE("JOIN filters a stored relation with eq ephemeral", "[join]") {
     f.cursors.Close(eq_cursor);
     f.handler.Close(people_handle);
     f.handler.Close(eq_handle);
+}
+
+TEST_CASE("NESTED_LOOP_JOIN filters a stored relation with eq ephemeral", "[join]") {
+    test_join([](nt::PlanNode& left, nt::PlanNode& right) -> nt::PlanNode {
+        nt::PlanNode root;
+        root.op = nt::FOL_OPERATION_NESTED_LOOP_JOIN;
+        root.left = &left;
+        root.right = &right;
+        return root;
+    });
+}
+
+TEST_CASE("NESTED_LOOP_BLOCK_JOIN filters a stored relation with eq ephemeral", "[join]") {
+    test_join([](nt::PlanNode& left, nt::PlanNode& right) -> nt::PlanNode {
+        nt::PlanNode root;
+        root.op = nt::FOL_OPERATION_NESTED_LOOP_BLOCK_JOIN;
+        root.left = &left;
+        root.right = &right;
+        return root;
+    });
 }
 
 TEST_CASE("TAKE limits tuples emitted from a SCAN", "[take]") {

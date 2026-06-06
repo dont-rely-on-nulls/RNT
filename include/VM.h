@@ -79,10 +79,11 @@ namespace nt {
 
     enum Operation {
         FOL_OPERATION_SCAN = 1,
-        FOL_OPERATION_JOIN,
+        FOL_OPERATION_NESTED_LOOP_JOIN,
         FOL_OPERATION_TAKE,
         FOL_OPERATION_PROJECT,
-        FOL_OPERATION_MATERIALIZE
+        FOL_OPERATION_MATERIALIZE,
+        FOL_OPERATION_NESTED_LOOP_BLOCK_JOIN
     };
 
     /**
@@ -151,7 +152,6 @@ namespace nt {
          * successful join. Callers must consume the returned pointer before
          * calling Next() again — same contract as a cursor page pointer.
          */
-        Tuple* join_left = nullptr;
         std::optional<Tuple> join_buffer;
         std::unordered_set<std::string> join_attrs;
 
@@ -165,6 +165,19 @@ namespace nt {
         std::vector<Tuple> mat_buffer;
         std::size_t mat_pos = 0;
         bool mat_done = false;
+
+        /**
+         * NESTED_LOOP_BLOCK_JOIN runtime state
+         *
+         * join_block holds the current block from the outer relation being scanned. join_inner
+         * contains the tuple from the inner relation that is currently being matched against the
+         * outer relation.
+         */
+        Tuple* join_left = nullptr;
+
+        std::vector<Tuple> join_block;
+        size_t join_block_position = 0, block_size = 1024;
+        Tuple* join_inner = nullptr;
     };
 
     class VM {

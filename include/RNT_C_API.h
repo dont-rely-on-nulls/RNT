@@ -398,7 +398,14 @@ typedef struct {
     rnt_plan_t left;
     rnt_plan_t right;
     const char** attrs;
-} PlanArgsJoin;
+} PlanArgsNestedLoopJoin;
+
+typedef struct {
+    rnt_plan_t left;
+    rnt_plan_t right;
+    const char** attrs;
+    size_t block_size;
+} PlanArgsNestedLoopBlockJoin;
 
 /**
  * TAKE context: passes at most @p limit tuples from @p source, then stops.
@@ -445,7 +452,8 @@ typedef struct {
 typedef struct {
     nt::Operation operation;
     PlanArgsScan scan;
-    PlanArgsJoin join;
+    PlanArgsNestedLoopJoin nested_loop_join;
+    PlanArgsNestedLoopBlockJoin nested_loop_block_join;
     PlanArgsTake take;
     PlanArgsProject project;
     PlanArgsMaterialize materialize;
