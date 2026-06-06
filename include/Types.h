@@ -160,7 +160,8 @@ namespace nt {
           auto view =
               attributes_ |
               std::views::transform([](std::pair<std::string, std::string> p) {
-                  return (Attribute){ p.first, p.second };
+                  Attribute attr { p.first, p.second };
+                  return attr;
               });
           return view;
         }
