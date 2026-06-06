@@ -1,11 +1,8 @@
 #include "ObjectManager.h"
 
-namespace nt
-{
-    void ObjectManager::Register(std::vector<std::string> path,
-                                 std::unique_ptr<IObject> object,
-                                 std::unique_ptr<object_type> type)
-    {
+namespace nt {
+    void ObjectManager::Register(std::vector<std::string> path, std::unique_ptr<IObject> object,
+                                 std::unique_ptr<object_type> type) {
         auto head = std::make_unique<registry_head>();
         head->reference_count = 0;
         head->handle_count = 0;
@@ -19,11 +16,9 @@ namespace nt
         entries = std::move(entry);
     }
 
-    ObjectManager::registry* ObjectManager::Find(const std::vector<std::string> object_path)
-    {
+    ObjectManager::registry* ObjectManager::Find(const std::vector<std::string> object_path) {
         registry* current = entries.get();
-        while (current != nullptr)
-        {
+        while (current != nullptr) {
             if (current->head->path == object_path)
                 return current;
             current = current->next.get();
@@ -31,13 +26,10 @@ namespace nt
         return nullptr;
     }
 
-    bool ObjectManager::Unregister(const std::vector<std::string>& object_path)
-    {
+    bool ObjectManager::Unregister(const std::vector<std::string>& object_path) {
         std::unique_ptr<registry>* slot = &entries;
-        while (slot->get() != nullptr)
-        {
-            if ((*slot)->head->path == object_path)
-            {
+        while (slot->get() != nullptr) {
+            if ((*slot)->head->path == object_path) {
                 *slot = std::move((*slot)->next);
                 return true;
             }
@@ -45,4 +37,4 @@ namespace nt
         }
         return false;
     }
-}
+} // namespace nt

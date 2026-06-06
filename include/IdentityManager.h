@@ -8,8 +8,7 @@
  * @brief Declares object capability checks.
  */
 
-namespace nt
-{
+namespace nt {
     /**
      * @brief Checks whether an object supports identity-level operations.
      *
@@ -21,9 +20,8 @@ namespace nt
      *       so that error logs identify the type without dereferencing the pointer.
      *       See docs/reactos-ob-comparison.md §2.
      */
-    class IdentityManager
-    {
-    public:
+    class IdentityManager {
+      public:
         /**
          * @brief Returns true when the object's type supports being opened.
          *
@@ -46,4 +44,4 @@ namespace nt
          */
         const bool CanClose(ObjectManager::registry* object);
     };
-}
+} // namespace nt

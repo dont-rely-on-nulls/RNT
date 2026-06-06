@@ -21,11 +21,9 @@
  * via Merkle::Page which reads only the KV store.
  */
 
-namespace nt
-{
-    class SqliteBackend : public IStorageBackend
-    {
-    public:
+namespace nt {
+    class SqliteBackend : public IStorageBackend {
+      public:
         /**
          * @brief Opens (or creates) a SQLite database at @p path.
          * @param path File path, or ":memory:" for an in-process database.
@@ -37,7 +35,7 @@ namespace nt
         std::string Put(std::vector<uint8_t> value) override;
         std::optional<std::vector<uint8_t>> Get(const std::string& hash) override;
 
-    private:
+      private:
         sqlite3* db_ = nullptr;
     };
-}
+} // namespace nt

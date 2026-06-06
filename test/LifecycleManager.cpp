@@ -16,22 +16,18 @@
 // unpin every Relation registered under their snapshot subtree.
 // ---------------------------------------------------------------------------
 
-namespace
-{
-    std::unique_ptr<nt::ObjectManager::object_type> make_type(OBJECT_TYPE label)
-    {
-        auto t      = std::make_unique<nt::ObjectManager::object_type>();
-        t->label    = label;
-        t->methods  = { OPEN, CLOSE };
+namespace {
+    std::unique_ptr<nt::ObjectManager::object_type> make_type(OBJECT_TYPE label) {
+        auto t = std::make_unique<nt::ObjectManager::object_type>();
+        t->label = label;
+        t->methods = {OPEN, CLOSE};
         return t;
     }
-}
+} // namespace
 
-TEST_CASE("Pin and Unpin adjust reference_count symmetrically",
-          "[step6][lifecycle][pin]")
-{
+TEST_CASE("Pin and Unpin adjust reference_count symmetrically", "[step6][lifecycle][pin]") {
     nt::InMemoryBackend store;
-    nt::ObjectManager   om;
+    nt::ObjectManager om;
     nt::LifecycleManager lm(om, store);
     om.Register({"r1"}, std::make_unique<nt::ObjectManager::Relation>(), make_type(RELATION));
     auto* entry = om.Find({"r1"});
@@ -48,19 +44,17 @@ TEST_CASE("Pin and Unpin adjust reference_count symmetrically",
     REQUIRE(om.Find({"r1"}) != nullptr);
 }
 
-TEST_CASE("Pin on nullptr is a no-op", "[step6][lifecycle][pin]")
-{
+TEST_CASE("Pin on nullptr is a no-op", "[step6][lifecycle][pin]") {
     nt::InMemoryBackend store;
-    nt::ObjectManager   om;
+    nt::ObjectManager om;
     nt::LifecycleManager lm(om, store);
     REQUIRE_NOTHROW(lm.Pin(nullptr));
     REQUIRE_NOTHROW(lm.Unpin(nullptr));
 }
 
-TEST_CASE("Unpin below zero does not underflow", "[step6][lifecycle][pin]")
-{
+TEST_CASE("Unpin below zero does not underflow", "[step6][lifecycle][pin]") {
     nt::InMemoryBackend store;
-    nt::ObjectManager   om;
+    nt::ObjectManager om;
     nt::LifecycleManager lm(om, store);
     om.Register({"r1"}, std::make_unique<nt::ObjectManager::Relation>(), make_type(RELATION));
     auto* entry = om.Find({"r1"});
@@ -69,10 +63,9 @@ TEST_CASE("Unpin below zero does not underflow", "[step6][lifecycle][pin]")
     REQUIRE(entry->head->reference_count == 0);
 }
 
-TEST_CASE("GC is gated on both counters reaching zero", "[step6][lifecycle][gc]")
-{
+TEST_CASE("GC is gated on both counters reaching zero", "[step6][lifecycle][gc]") {
     nt::InMemoryBackend store;
-    nt::ObjectManager   om;
+    nt::ObjectManager om;
     nt::LifecycleManager lm(om, store);
     om.Register({"r1"}, std::make_unique<nt::ObjectManager::Relation>(), make_type(RELATION));
     auto* entry = om.Find({"r1"});
@@ -81,22 +74,21 @@ TEST_CASE("GC is gated on both counters reaching zero", "[step6][lifecycle][gc]"
     lm.Pin(entry);
 
     // handle_count=1, ref_count=1.
-    lm.Unpin(entry);          // ref_count → 0, but handle_count still 1.
+    lm.Unpin(entry); // ref_count → 0, but handle_count still 1.
     REQUIRE(om.Find({"r1"}) != nullptr);
 
     lm.Pin(entry);
-    lm.Unmonitor(entry);      // handle_count → 0, but ref_count still 1.
+    lm.Unmonitor(entry); // handle_count → 0, but ref_count still 1.
     REQUIRE(om.Find({"r1"}) != nullptr);
 
-    lm.Unpin(entry);          // both zero → GC.
+    lm.Unpin(entry); // both zero → GC.
     REQUIRE(om.Find({"r1"}) == nullptr);
 }
 
 TEST_CASE("Unmonitor that brings both counters to zero collects the entry",
-          "[step6][lifecycle][gc]")
-{
+          "[step6][lifecycle][gc]") {
     nt::InMemoryBackend store;
-    nt::ObjectManager   om;
+    nt::ObjectManager om;
     nt::LifecycleManager lm(om, store);
     om.Register({"r1"}, std::make_unique<nt::ObjectManager::Relation>(), make_type(RELATION));
     auto* entry = om.Find({"r1"});
@@ -107,11 +99,9 @@ TEST_CASE("Unmonitor that brings both counters to zero collects the entry",
     REQUIRE(om.Find({"r1"}) == nullptr);
 }
 
-TEST_CASE("IsEligibleForGC reflects the joint-zero rule",
-          "[step6][lifecycle][gc]")
-{
+TEST_CASE("IsEligibleForGC reflects the joint-zero rule", "[step6][lifecycle][gc]") {
     nt::InMemoryBackend store;
-    nt::ObjectManager   om;
+    nt::ObjectManager om;
     nt::LifecycleManager lm(om, store);
     om.Register({"r1"}, std::make_unique<nt::ObjectManager::Relation>(), make_type(RELATION));
     auto* entry = om.Find({"r1"});
@@ -122,21 +112,18 @@ TEST_CASE("IsEligibleForGC reflects the joint-zero rule",
 }
 
 TEST_CASE("CascadeMultigroup unpins child Relations on snapshot collection",
-          "[step6][lifecycle][cascade]")
-{
+          "[step6][lifecycle][cascade]") {
     nt::InMemoryBackend store;
-    nt::ObjectManager   om;
+    nt::ObjectManager om;
     nt::LifecycleManager lm(om, store);
 
-    om.Register({"system", "snapshots", "H1"},
-                std::make_unique<nt::ObjectManager::Multigroup>(), make_type(MULTIGROUP));
+    om.Register({"system", "snapshots", "H1"}, std::make_unique<nt::ObjectManager::Multigroup>(),
+                make_type(MULTIGROUP));
     auto* mg_entry = om.Find({"system", "snapshots", "H1"});
 
-    for (const auto& n : { std::string{"foo"}, std::string{"bar"} })
-    {
+    for (const auto& n : {std::string{"foo"}, std::string{"bar"}}) {
         om.Register({"system", "snapshots", "H1", "relations", n},
-                    std::make_unique<nt::ObjectManager::Relation>(),
-                    make_type(RELATION));
+                    std::make_unique<nt::ObjectManager::Relation>(), make_type(RELATION));
         // The parent Multigroup's pin on each child, mirroring what
         // register_snapshot does in the C API layer.
         lm.Pin(om.Find({"system", "snapshots", "H1", "relations", n}));
@@ -148,38 +135,35 @@ TEST_CASE("CascadeMultigroup unpins child Relations on snapshot collection",
     lm.Pin(mg_entry);
     lm.Unpin(mg_entry);
 
-    REQUIRE(om.Find({"system", "snapshots", "H1"})                       == nullptr);
-    REQUIRE(om.Find({"system", "snapshots", "H1", "relations", "foo"})   == nullptr);
-    REQUIRE(om.Find({"system", "snapshots", "H1", "relations", "bar"})   == nullptr);
+    REQUIRE(om.Find({"system", "snapshots", "H1"}) == nullptr);
+    REQUIRE(om.Find({"system", "snapshots", "H1", "relations", "foo"}) == nullptr);
+    REQUIRE(om.Find({"system", "snapshots", "H1", "relations", "bar"}) == nullptr);
 }
 
-TEST_CASE("Cascade survives a child with an open handle",
-          "[step6][lifecycle][cascade]")
-{
+TEST_CASE("Cascade survives a child with an open handle", "[step6][lifecycle][cascade]") {
     nt::InMemoryBackend store;
-    nt::ObjectManager   om;
+    nt::ObjectManager om;
     nt::LifecycleManager lm(om, store);
 
-    om.Register({"system", "snapshots", "H2"},
-                std::make_unique<nt::ObjectManager::Multigroup>(), make_type(MULTIGROUP));
+    om.Register({"system", "snapshots", "H2"}, std::make_unique<nt::ObjectManager::Multigroup>(),
+                make_type(MULTIGROUP));
     auto* mg_entry = om.Find({"system", "snapshots", "H2"});
 
     om.Register({"system", "snapshots", "H2", "relations", "live"},
-                std::make_unique<nt::ObjectManager::Relation>(),
-                make_type(RELATION));
+                std::make_unique<nt::ObjectManager::Relation>(), make_type(RELATION));
     auto* child = om.Find({"system", "snapshots", "H2", "relations", "live"});
-    lm.Pin(child);             // parent's pin
-    lm.Monitor(child);         // simulate an open handle on the child
+    lm.Pin(child);     // parent's pin
+    lm.Monitor(child); // simulate an open handle on the child
 
     // Drop the Multigroup's external ref: cascade unpins child (ref → 0),
     // but handle_count is still 1 — child must survive.
     lm.Pin(mg_entry);
     lm.Unpin(mg_entry);
 
-    REQUIRE(om.Find({"system", "snapshots", "H2"})                       == nullptr);
-    REQUIRE(om.Find({"system", "snapshots", "H2", "relations", "live"})  != nullptr);
+    REQUIRE(om.Find({"system", "snapshots", "H2"}) == nullptr);
+    REQUIRE(om.Find({"system", "snapshots", "H2", "relations", "live"}) != nullptr);
 
     // Closing the handle now releases the child.
     lm.Unmonitor(child);
-    REQUIRE(om.Find({"system", "snapshots", "H2", "relations", "live"})  == nullptr);
+    REQUIRE(om.Find({"system", "snapshots", "H2", "relations", "live"}) == nullptr);
 }

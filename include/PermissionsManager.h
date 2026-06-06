@@ -11,8 +11,7 @@
  * @brief Declares authentication and object-access checks.
  */
 
-namespace nt
-{
+namespace nt {
     /**
      * @class Capability-based permission manager
      * @brief Evaluates connection claims and object permissions.
@@ -37,9 +36,8 @@ namespace nt
      *       rather than re-evaluating the descriptor on every call.
      *       See docs/reactos-ob-comparison.md §4.
      */
-    class PermissionsManager
-    {
-    public:
+    class PermissionsManager {
+      public:
         /**
          * @brief Validates a connection during login.
          * @param method Authentication method used by the connection.
@@ -62,7 +60,7 @@ namespace nt
          * 3 other stored relations, while you can access the ephemeral relation,
          * you cannot directly access the other 3 relations. You need explicit
          * permission to create a handle on the others.
-         * 
+         *
          * Here's an example tree:
          * /system
          *     /multigroups
@@ -70,22 +68,21 @@ namespace nt
          *             /relations
          *                 /user {type : stored}
          *                 /order {type : stored}
-         *                 /user_and_order {type : ephemeral; deps = [/system/multigroups/coffee_shop/relations/users, /system/multigroups/coffee_shop/relations/orders]}
-         *     /users
-         *         /peter
-         *             /permissions
+         *                 /user_and_order {type : ephemeral; deps =
+         * [/system/multigroups/coffee_shop/relations/users,
+         * /system/multigroups/coffee_shop/relations/orders]} /users /peter /permissions
          *                 /multigroups/coffee_shop/relations/user_and_order {descriptor : [read]}
          *         /paul
          *             /permissions
          *                 /multigroups/coffee_shop/relations/user {descriptor : [write, read]}
-         * 
+         *
          * Meaning that `peter` has access to read the `user_and_order` ephemeral
          * relation, but cannot open a handle on `user` and `order`.
-         * 
+         *
          * @param object Object being accessed.
          * @param connection_context Connection metadata for the caller.
          * @return True when access is allowed.
          */
         const bool Access(const ObjectManager::registry* object, const void* connection_context);
     };
-}
+} // namespace nt

@@ -36,6 +36,7 @@
 #include <stdint.h>
 
 #include "Api.h"
+#include "VM.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -133,8 +134,7 @@ NT_API int rnt_session_close(const char* session_hash);
  * @param target_hash   Snapshot hash to bind, or "" to clear.
  * @return 0 on success, negative on error.
  */
-NT_API int rnt_session_set_branch(const char* session_hash,
-                                  const char* branch_name,
+NT_API int rnt_session_set_branch(const char* session_hash, const char* branch_name,
                                   const char* target_hash);
 
 /* ------------------------------------------------------------------ */
@@ -292,9 +292,7 @@ NT_API int rnt_list_snapshot_relations(const char* snapshot_hash, char** out);
  *                       Release with rnt_free_string(). NULL on error.
  * @return 0 on success, negative on error.
  */
-NT_API int rnt_link_tuple(const char* relation_path,
-                          const char* kv_attrs,
-                          char**      hash_out);
+NT_API int rnt_link_tuple(const char* relation_path, const char* kv_attrs, char** hash_out);
 
 /**
  * @brief Removes a tuple from the relation's Merkle tree and tuple store.
@@ -377,40 +375,78 @@ NT_API int rnt_cursor_close(rnt_cursor_t cursor);
 /* VM plan builder                                                      */
 /* ------------------------------------------------------------------ */
 
-/** Opaque plan node tree, built incrementally via rnt_plan_* calls. */
+/** Opaque plan node tree, built via rnt_plan_assemble calls. */
 typedef void* rnt_plan_t;
 
 /**
- * @brief Creates a SCAN plan node that reads all tuples from a stored relation.
+ * SCAN context: reads all tuples from a stored relation.
  *
- * Opens a RELATION handle and cursor internally. Both are transferred to the
- * plan and released when the resulting VM cursor is closed.
- *
- * @param relation_path  Absolute slash-separated path to the relation, e.g.
+ * @param relation_path  Absolute slash-separated path, e.g.
  *  "/system/branches/main/multigroups/warehouse/relations/public:users".
- * @return Plan node, or NULL when the relation does not exist or cannot be opened.
  */
-NT_API rnt_plan_t rnt_plan_scan(const char* relation_path);
+typedef struct {
+    const char* relation_path;
+} PlanArgsScan;
 
 /**
- * @brief Creates a nested-loop JOIN plan node.
+ * JOIN context: nested-loop join of two child plans.
  *
- * Takes ownership of both @p left and @p right. On success the caller must not
- * free either child; they are released when the returned plan is freed or
- * executed. On failure (NULL return) both children are freed.
- *
- * @return Plan node, or NULL on error.
+ * Takes ownership of both children. They are released when the assembled plan
+ * is freed or executed; on failure both are freed.
  */
-NT_API rnt_plan_t rnt_plan_join(rnt_plan_t left, rnt_plan_t right);
+typedef struct {
+    rnt_plan_t left;
+    rnt_plan_t right;
+} PlanArgsJoin;
 
 /**
- * @brief Creates a TAKE plan node that limits output to at most @p limit tuples.
+ * TAKE context: passes at most @p limit tuples from @p source, then stops.
  *
- * Takes ownership of @p source. On failure @p source is freed.
- *
- * @return Plan node, or NULL on error.
+ * Takes ownership of @p source; on failure @p source is freed.
  */
-NT_API rnt_plan_t rnt_plan_take(rnt_plan_t source, size_t limit);
+typedef struct {
+    rnt_plan_t source;
+    size_t limit;
+} PlanArgsTake;
+
+/**
+ * PROJECT context: keeps only the named attributes of @p source.
+ *
+ * @p attrs is a NULL-terminated array of attribute names to retain, e.g.
+ * <tt>{ "name", "profession", NULL }</tt>. Takes ownership of @p source; on
+ * failure @p source is freed.
+ */
+typedef struct {
+    rnt_plan_t source;
+    const char** attrs;
+} PlanArgsProject;
+
+/**
+ * A single plan-construction request. @p operation selects which context member
+ * is read; the others are ignored. The members are laid out side by side rather
+ * than overlapped in a union so the struct maps cleanly onto OCaml ctypes, which
+ * has no union support. Only the member matching @p operation need be populated.
+ */
+typedef struct {
+    nt::Operation operation;
+    PlanArgsScan scan;
+    PlanArgsJoin join;
+    PlanArgsTake take;
+    PlanArgsProject project;
+} PlanAction;
+
+/**
+ * @brief Builds one plan node from @p action and returns the resulting subtree.
+ *
+ * Sole entry point for plan construction. Validates runtime state once, then
+ * dispatches on @p action.op. Child plans for JOIN/TAKE/PROJECT are themselves
+ * results of prior rnt_plan_assemble calls; ownership transfers per the
+ * per-operator rules documented on each PlanArgs* struct.
+ *
+ * @return Plan node, or NULL when the runtime is uninitialised or construction
+ *         fails (e.g. relation does not exist).
+ */
+NT_API rnt_plan_t rnt_plan_assemble(PlanAction action);
 
 /**
  * @brief Releases a plan that was built but not yet executed.

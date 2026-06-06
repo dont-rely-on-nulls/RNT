@@ -13,17 +13,15 @@
  * @brief Declares handle allocation and release for authorized object access.
  */
 
-namespace nt
-{
+namespace nt {
     class IdentityManager;
     class LifecycleManager;
     class NamespaceReferenceManager;
     class PermissionsManager;
 
     /** @brief Opens and closes authorized handles to registry objects. */
-    class HandlerManager
-    {
-    public:
+    class HandlerManager {
+      public:
         /**
          * @brief Constructs a HandlerManager with shared runtime dependencies.
          *
@@ -31,10 +29,8 @@ namespace nt
          * counters, permission policy) persists across calls rather than being
          * rebuilt per open/close.
          */
-        HandlerManager(ObjectManager& objects,
-                       PermissionsManager& permissions,
-                       IdentityManager& identities,
-                       LifecycleManager& lifecycles,
+        HandlerManager(ObjectManager& objects, PermissionsManager& permissions,
+                       IdentityManager& identities, LifecycleManager& lifecycles,
                        NamespaceReferenceManager& references);
 
         /**
@@ -90,11 +86,11 @@ namespace nt
          */
         bool Close(struct handle* handle);
 
-    private:
+      private:
         ObjectManager& objects_;
         PermissionsManager& permissions_;
         IdentityManager& identities_;
         LifecycleManager& lifecycles_;
         NamespaceReferenceManager& references_;
     };
-}
+} // namespace nt

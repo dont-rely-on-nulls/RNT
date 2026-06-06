@@ -9,8 +9,7 @@
  * @brief Declares monitoring, pinning, cleanup, and contention operations.
  */
 
-namespace nt
-{
+namespace nt {
     /**
      * @brief Manages runtime lifecycle concerns for registry objects.
      *
@@ -23,9 +22,8 @@ namespace nt
      * Monitor / Unmonitor manage `handle_count`. Pin / Unpin manage
      * `reference_count`. See docs/reactos-ob-comparison.md §1.
      */
-    class LifecycleManager
-    {
-    public:
+    class LifecycleManager {
+      public:
         /**
          * @brief Constructs a LifecycleManager bound to a registry and store.
          *
@@ -120,7 +118,7 @@ namespace nt
          */
         const bool Contention(ObjectManager::registry* object);
 
-    private:
+      private:
         /**
          * @brief Joint-counters check + type-specific cascade + Unregister.
          *
@@ -158,7 +156,7 @@ namespace nt
          */
         void CascadeBranchTree(ObjectManager::registry* branch_tree);
 
-        ObjectManager&   objects_;
+        ObjectManager& objects_;
         IStorageBackend& storage_;
     };
-}
+} // namespace nt

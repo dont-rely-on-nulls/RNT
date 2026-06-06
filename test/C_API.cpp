@@ -15,27 +15,26 @@
 // test does not affect another.
 // ---------------------------------------------------------------------------
 
-namespace
-{
+namespace {
     struct InitGuard {
-        InitGuard() { REQUIRE(rnt_init("memory", nullptr) == 0); }
+        InitGuard() {
+            REQUIRE(rnt_init("memory", nullptr) == 0);
+        }
     };
 
-    std::string take_string(char* p)
-    {
+    std::string take_string(char* p) {
         std::string s = p ? p : "";
         rnt_free_string(p);
         return s;
     }
-}
+} // namespace
 
 // ---------------------------------------------------------------------------
 // Step 2 — Branch hash-pointer model
 // ---------------------------------------------------------------------------
 
 TEST_CASE("rnt_register_branch with empty target creates an unborn branch",
-          "[step2][capi][branch]")
-{
+          "[step2][capi][branch]") {
     InitGuard _;
     const char* path = "/system/branches/test_step2_unborn";
     REQUIRE(rnt_register_branch(path, "") == 0);
@@ -50,25 +49,20 @@ TEST_CASE("rnt_register_branch with empty target creates an unborn branch",
     REQUIRE(rnt_close_handle(h) == 0);
 }
 
-TEST_CASE("rnt_register_branch rejects an unregistered target hash",
-          "[step2][capi][branch]")
-{
+TEST_CASE("rnt_register_branch rejects an unregistered target hash", "[step2][capi][branch]") {
     InitGuard _;
-    REQUIRE(rnt_register_branch("/system/branches/test_step2_bad_init",
-                                "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
-            != 0);
+    REQUIRE(rnt_register_branch(
+                "/system/branches/test_step2_bad_init",
+                "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff") != 0);
 }
 
-TEST_CASE("rnt_branch_advance rejects an unregistered target hash",
-          "[step2][capi][branch]")
-{
+TEST_CASE("rnt_branch_advance rejects an unregistered target hash", "[step2][capi][branch]") {
     InitGuard _;
     const char* bpath = "/system/branches/test_step2_bad_advance";
     REQUIRE(rnt_register_branch(bpath, "") == 0);
 
     REQUIRE(rnt_branch_advance(
-        bpath,
-        "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff") != 0);
+                bpath, "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff") != 0);
 
     // Target unchanged.
     rnt_handle_t h = rnt_open_handle(bpath, nullptr);
@@ -79,9 +73,7 @@ TEST_CASE("rnt_branch_advance rejects an unregistered target hash",
     rnt_close_handle(h);
 }
 
-TEST_CASE("Writing a tuple advances the branch to a new snapshot",
-          "[step2][step3][capi][branch]")
-{
+TEST_CASE("Writing a tuple advances the branch to a new snapshot", "[step2][step3][capi][branch]") {
     InitGuard _;
     const char* bpath = "/system/branches/test_step2_advance";
     const char* rpath = "/system/branches/test_step2_advance/multigroups/public/relations/items";
@@ -117,9 +109,7 @@ TEST_CASE("Writing a tuple advances the branch to a new snapshot",
 // Step 3+4 — Copy-on-write writes and resolver wiring
 // ---------------------------------------------------------------------------
 
-TEST_CASE("link_tuple commits a new snapshot and relation_root reflects it",
-          "[step3][capi][cow]")
-{
+TEST_CASE("link_tuple commits a new snapshot and relation_root reflects it", "[step3][capi][cow]") {
     InitGuard _;
     const char* bpath = "/system/branches/test_step3_link";
     const char* rpath = "/system/branches/test_step3_link/multigroups/public/relations/items";
@@ -138,12 +128,10 @@ TEST_CASE("link_tuple commits a new snapshot and relation_root reflects it",
 
     REQUIRE(rnt_relation_root(rpath, &root) == 0);
     const std::string new_root = take_string(root);
-    REQUIRE(new_root.size() == 64);  // a real Merkle root now
+    REQUIRE(new_root.size() == 64); // a real Merkle root now
 }
 
-TEST_CASE("unlink_tuple and clear_relation walk back through new snapshots",
-          "[step3][capi][cow]")
-{
+TEST_CASE("unlink_tuple and clear_relation walk back through new snapshots", "[step3][capi][cow]") {
     InitGuard _;
     const char* bpath = "/system/branches/test_step3_unlink";
     const char* rpath = "/system/branches/test_step3_unlink/multigroups/public/relations/items";
@@ -171,8 +159,7 @@ TEST_CASE("unlink_tuple and clear_relation walk back through new snapshots",
 }
 
 TEST_CASE("rnt_open_handle resolves branch-relative paths to snapshot relations",
-          "[step4][capi][resolver]")
-{
+          "[step4][capi][resolver]") {
     InitGuard _;
     const char* bpath = "/system/branches/test_step4_resolve";
     const char* rpath = "/system/branches/test_step4_resolve/multigroups/public/relations/items";
@@ -203,26 +190,23 @@ TEST_CASE("rnt_open_handle resolves branch-relative paths to snapshot relations"
     rnt_close_handle(h);
 }
 
-TEST_CASE("Reading an unborn branch's relation fails cleanly",
-          "[step4][capi][resolver]")
-{
+TEST_CASE("Reading an unborn branch's relation fails cleanly", "[step4][capi][resolver]") {
     InitGuard _;
     const char* bpath = "/system/branches/test_step4_unborn";
     REQUIRE(rnt_register_branch(bpath, "") == 0);
 
     // No relation registered: relation_root miss returns nonzero.
     char* root = nullptr;
-    REQUIRE(rnt_relation_root(
-        "/system/branches/test_step4_unborn/multigroups/public/relations/missing", &root) != 0);
+    REQUIRE(
+        rnt_relation_root("/system/branches/test_step4_unborn/multigroups/public/relations/missing",
+                          &root) != 0);
 }
 
 // ---------------------------------------------------------------------------
 // Step 5 — Session lifecycle and overrides
 // ---------------------------------------------------------------------------
 
-TEST_CASE("Each rnt_session_open returns a distinct 64-char hex hash",
-          "[step5][capi][session]")
-{
+TEST_CASE("Each rnt_session_open returns a distinct 64-char hex hash", "[step5][capi][session]") {
     InitGuard _;
     char* a = nullptr;
     char* b = nullptr;
@@ -238,17 +222,14 @@ TEST_CASE("Each rnt_session_open returns a distinct 64-char hex hash",
     REQUIRE(rnt_session_close(hb.c_str()) == 0);
 }
 
-TEST_CASE("rnt_session_close on an unknown hash fails",
-          "[step5][capi][session]")
-{
+TEST_CASE("rnt_session_close on an unknown hash fails", "[step5][capi][session]") {
     InitGuard _;
-    REQUIRE(rnt_session_close(
-        "0000000000000000000000000000000000000000000000000000000000000000") != 0);
+    REQUIRE(rnt_session_close("0000000000000000000000000000000000000000000000000000000000000000") !=
+            0);
 }
 
 TEST_CASE("Session override redirects branch-relative reads to a different snapshot",
-          "[step5][capi][session][resolver]")
-{
+          "[step5][capi][session][resolver]") {
     InitGuard _;
     const char* bpath = "/system/branches/test_step5_override";
     const char* rpath = "/system/branches/test_step5_override/multigroups/public/relations/items";
@@ -273,9 +254,7 @@ TEST_CASE("Session override redirects branch-relative reads to a different snaps
     char* sess = nullptr;
     REQUIRE(rnt_session_open(nullptr, &sess) == 0);
     const std::string sid = take_string(sess);
-    REQUIRE(rnt_session_set_branch(sid.c_str(),
-                                   "test_step5_override",
-                                   s1.c_str()) == 0);
+    REQUIRE(rnt_session_set_branch(sid.c_str(), "test_step5_override", s1.c_str()) == 0);
 
     // Advance the branch to S2 — global HEAD moves on; the session override
     // keeps S1 resident.
@@ -283,9 +262,8 @@ TEST_CASE("Session override redirects branch-relative reads to a different snaps
     rnt_free_string(th);
 
     // Session view: still S1 (one tuple).
-    const std::string spath =
-        "/system/sessions/" + sid +
-        "/branches/test_step5_override/multigroups/public/relations/items";
+    const std::string spath = "/system/sessions/" + sid +
+                              "/branches/test_step5_override/multigroups/public/relations/items";
 
     rnt_handle_t h_session = rnt_open_handle(spath.c_str(), nullptr);
     REQUIRE(h_session != nullptr);
@@ -294,8 +272,7 @@ TEST_CASE("Session override redirects branch-relative reads to a different snaps
 
     int rows_under_session = 0;
     char* row = nullptr;
-    while (rnt_cursor_next(c_session, &row) == 1)
-    {
+    while (rnt_cursor_next(c_session, &row) == 1) {
         ++rows_under_session;
         rnt_free_string(row);
     }
@@ -310,7 +287,10 @@ TEST_CASE("Session override redirects branch-relative reads to a different snaps
     rnt_cursor_t c_global = rnt_cursor_open(h_global);
     REQUIRE(c_global != nullptr);
     int rows_global = 0;
-    while (rnt_cursor_next(c_global, &row) == 1) { ++rows_global; rnt_free_string(row); }
+    while (rnt_cursor_next(c_global, &row) == 1) {
+        ++rows_global;
+        rnt_free_string(row);
+    }
     REQUIRE(rows_global == 2);
     rnt_cursor_close(c_global);
     rnt_close_handle(h_global);
@@ -319,8 +299,7 @@ TEST_CASE("Session override redirects branch-relative reads to a different snaps
 }
 
 TEST_CASE("Clearing a session override falls back to the global branch HEAD",
-          "[step5][capi][session][resolver]")
-{
+          "[step5][capi][session][resolver]") {
     InitGuard _;
     const char* bpath = "/system/branches/test_step5_clear";
     const char* rpath = "/system/branches/test_step5_clear/multigroups/public/relations/items";
@@ -351,15 +330,17 @@ TEST_CASE("Clearing a session override falls back to the global branch HEAD",
 
     // Now the session sees the global view (two tuples).
     const std::string spath =
-        "/system/sessions/" + sid +
-        "/branches/test_step5_clear/multigroups/public/relations/items";
+        "/system/sessions/" + sid + "/branches/test_step5_clear/multigroups/public/relations/items";
     rnt_handle_t h = rnt_open_handle(spath.c_str(), nullptr);
     REQUIRE(h != nullptr);
     rnt_cursor_t c = rnt_cursor_open(h);
     REQUIRE(c != nullptr);
     int rows = 0;
     char* row = nullptr;
-    while (rnt_cursor_next(c, &row) == 1) { ++rows; rnt_free_string(row); }
+    while (rnt_cursor_next(c, &row) == 1) {
+        ++rows;
+        rnt_free_string(row);
+    }
     REQUIRE(rows == 2);
     rnt_cursor_close(c);
     rnt_close_handle(h);
@@ -367,18 +348,15 @@ TEST_CASE("Clearing a session override falls back to the global branch HEAD",
     REQUIRE(rnt_session_close(sid.c_str()) == 0);
 }
 
-TEST_CASE("rnt_session_set_branch rejects an unregistered snapshot",
-          "[step5][capi][session]")
-{
+TEST_CASE("rnt_session_set_branch rejects an unregistered snapshot", "[step5][capi][session]") {
     InitGuard _;
     char* sess = nullptr;
     REQUIRE(rnt_session_open(nullptr, &sess) == 0);
     const std::string sid = take_string(sess);
 
     REQUIRE(rnt_session_set_branch(
-        sid.c_str(),
-        "anything",
-        "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff") != 0);
+                sid.c_str(), "anything",
+                "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff") != 0);
 
     REQUIRE(rnt_session_close(sid.c_str()) == 0);
 }
@@ -389,39 +367,34 @@ TEST_CASE("rnt_session_set_branch rejects an unregistered snapshot",
 // or its enumerable relation set.
 // ---------------------------------------------------------------------------
 
-TEST_CASE("Two multigroups under one branch advance independently",
-          "[capi][multi-mg]")
-{
+TEST_CASE("Two multigroups under one branch advance independently", "[capi][multi-mg]") {
     InitGuard _;
     const std::string bpath = "/system/branches/test_multi_mg";
     REQUIRE(rnt_register_branch(bpath.c_str(), "") == 0);
 
     // Register one relation in each of two distinct multigroups.
-    REQUIRE(rnt_register_relation(
-        (bpath + "/multigroups/warehouse/relations/orders").c_str()) == 0);
-    REQUIRE(rnt_register_relation(
-        (bpath + "/multigroups/audit/relations/events").c_str()) == 0);
+    REQUIRE(rnt_register_relation((bpath + "/multigroups/warehouse/relations/orders").c_str()) ==
+            0);
+    REQUIRE(rnt_register_relation((bpath + "/multigroups/audit/relations/events").c_str()) == 0);
 
     char* mgs_raw = nullptr;
     REQUIRE(rnt_list_branch_multigroups(bpath.c_str(), &mgs_raw) == 0);
     const std::string mgs = take_string(mgs_raw);
     REQUIRE(mgs.find("warehouse\t") != std::string::npos);
-    REQUIRE(mgs.find("audit\t")     != std::string::npos);
+    REQUIRE(mgs.find("audit\t") != std::string::npos);
 
     // Insert into warehouse; record audit's root before/after.
     char* audit_before = nullptr;
-    REQUIRE(rnt_list_relations(
-        (bpath + "/multigroups/audit").c_str(), &audit_before) == 0);
+    REQUIRE(rnt_list_relations((bpath + "/multigroups/audit").c_str(), &audit_before) == 0);
     const std::string audit_before_s = take_string(audit_before);
 
     char* th = nullptr;
-    REQUIRE(rnt_link_tuple((bpath + "/multigroups/warehouse/relations/orders").c_str(),
-                            "id=1\n", &th) == 0);
+    REQUIRE(rnt_link_tuple((bpath + "/multigroups/warehouse/relations/orders").c_str(), "id=1\n",
+                           &th) == 0);
     rnt_free_string(th);
 
     char* audit_after = nullptr;
-    REQUIRE(rnt_list_relations(
-        (bpath + "/multigroups/audit").c_str(), &audit_after) == 0);
+    REQUIRE(rnt_list_relations((bpath + "/multigroups/audit").c_str(), &audit_after) == 0);
     const std::string audit_after_s = take_string(audit_after);
 
     // audit's relation set is byte-identical: the warehouse-side mutation
@@ -430,13 +403,13 @@ TEST_CASE("Two multigroups under one branch advance independently",
 
     // warehouse/orders is now non-empty.
     char* root = nullptr;
-    REQUIRE(rnt_relation_root(
-        (bpath + "/multigroups/warehouse/relations/orders").c_str(), &root) == 0);
+    REQUIRE(rnt_relation_root((bpath + "/multigroups/warehouse/relations/orders").c_str(), &root) ==
+            0);
     REQUIRE(!take_string(root).empty());
 
     // audit/events still empty.
     char* root2 = nullptr;
-    REQUIRE(rnt_relation_root(
-        (bpath + "/multigroups/audit/relations/events").c_str(), &root2) == 0);
+    REQUIRE(rnt_relation_root((bpath + "/multigroups/audit/relations/events").c_str(), &root2) ==
+            0);
     REQUIRE(take_string(root2).empty());
 }

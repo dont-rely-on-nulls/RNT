@@ -5,55 +5,50 @@
 
 #include <vector>
 
-namespace nt
-{
-    LifecycleManager::LifecycleManager(ObjectManager& objects,
-                                        IStorageBackend& storage)
-        : objects_(objects), storage_(storage)
-    {}
+namespace nt {
+    LifecycleManager::LifecycleManager(ObjectManager& objects, IStorageBackend& storage)
+        : objects_(objects), storage_(storage) {
+    }
 
-    void LifecycleManager::Monitor(ObjectManager::registry* object)
-    {
+    void LifecycleManager::Monitor(ObjectManager::registry* object) {
         if (object != nullptr)
             ++object->head->handle_count;
     }
 
-    void LifecycleManager::Unmonitor(ObjectManager::registry* object)
-    {
-        if (object == nullptr || object->head->handle_count == 0) return;
+    void LifecycleManager::Unmonitor(ObjectManager::registry* object) {
+        if (object == nullptr || object->head->handle_count == 0)
+            return;
         --object->head->handle_count;
         TryCollect(object);
     }
 
-    void LifecycleManager::Pin(ObjectManager::registry* object)
-    {
+    void LifecycleManager::Pin(ObjectManager::registry* object) {
         if (object != nullptr)
             ++object->head->reference_count;
     }
 
-    void LifecycleManager::Unpin(ObjectManager::registry* object)
-    {
-        if (object == nullptr || object->head->reference_count == 0) return;
+    void LifecycleManager::Unpin(ObjectManager::registry* object) {
+        if (object == nullptr || object->head->reference_count == 0)
+            return;
         --object->head->reference_count;
         TryCollect(object);
     }
 
-    bool LifecycleManager::IsEligibleForGC(ObjectManager::registry* object) const
-    {
-        if (object == nullptr || object->head == nullptr) return false;
-        return object->head->handle_count == 0
-            && object->head->reference_count == 0;
+    bool LifecycleManager::IsEligibleForGC(ObjectManager::registry* object) const {
+        if (object == nullptr || object->head == nullptr)
+            return false;
+        return object->head->handle_count == 0 && object->head->reference_count == 0;
     }
 
-    const bool LifecycleManager::Contention(ObjectManager::registry* object)
-    {
+    const bool LifecycleManager::Contention(ObjectManager::registry* object) {
         return object != nullptr;
     }
 
-    void LifecycleManager::TryCollect(ObjectManager::registry* object)
-    {
-        if (!IsEligibleForGC(object)) return;
-        if (object->head == nullptr || object->head->type == nullptr) return;
+    void LifecycleManager::TryCollect(ObjectManager::registry* object) {
+        if (!IsEligibleForGC(object))
+            return;
+        if (object->head == nullptr || object->head->type == nullptr)
+            return;
 
         // Named-lifetime types are managed explicitly and must not auto-collect:
         //   BRANCH  — named branches persist until a future explicit-delete API
@@ -64,48 +59,59 @@ namespace nt
         // EPHEMERAL_RELATION, TRANSACTION) is purely structurally referenced
         // and is GC-eligible by counters alone.
         const auto label = object->head->type->label;
-        if (label == BRANCH || label == SESSION) return;
+        if (label == BRANCH || label == SESSION)
+            return;
 
-        if (label == MULTIGROUP)   CascadeMultigroup(object);
-        if (label == BRANCH_TREE)  CascadeBranchTree(object);
+        if (label == MULTIGROUP)
+            CascadeMultigroup(object);
+        if (label == BRANCH_TREE)
+            CascadeBranchTree(object);
 
         objects_.Unregister(object->head->path);
     }
 
-    void LifecycleManager::CascadeMultigroup(ObjectManager::registry* multigroup)
-    {
-        if (multigroup == nullptr || multigroup->head == nullptr) return;
+    void LifecycleManager::CascadeMultigroup(ObjectManager::registry* multigroup) {
+        if (multigroup == nullptr || multigroup->head == nullptr)
+            return;
         const auto& mg_path = multigroup->head->path;
-        if (mg_path.size() < 3) return;
+        if (mg_path.size() < 3)
+            return;
 
         // /system/snapshots/<hash>/relations/<n> entries are the relation
         // children pinned by this multigroup. Collect first, mutate after —
         // Unpin can Unregister the entry we're standing on if its counters
         // were already zero, and iteration must outlive that mutation.
         std::vector<ObjectManager::registry*> children;
-        for (auto* cur = objects_.entries.get(); cur != nullptr; cur = cur->next.get())
-        {
+        for (auto* cur = objects_.entries.get(); cur != nullptr; cur = cur->next.get()) {
             const auto& p = cur->head->path;
-            if (p.size() != mg_path.size() + 2) continue;
+            if (p.size() != mg_path.size() + 2)
+                continue;
 
             bool prefix_match = true;
             for (size_t i = 0; i < mg_path.size(); ++i)
-                if (p[i] != mg_path[i]) { prefix_match = false; break; }
-            if (!prefix_match) continue;
-            if (p[mg_path.size()] != "relations") continue;
+                if (p[i] != mg_path[i]) {
+                    prefix_match = false;
+                    break;
+                }
+            if (!prefix_match)
+                continue;
+            if (p[mg_path.size()] != "relations")
+                continue;
 
             children.push_back(cur);
         }
 
-        for (auto* child : children) Unpin(child);
+        for (auto* child : children)
+            Unpin(child);
     }
 
-    void LifecycleManager::CascadeBranchTree(ObjectManager::registry* branch_tree)
-    {
-        if (branch_tree == nullptr || branch_tree->head == nullptr) return;
+    void LifecycleManager::CascadeBranchTree(ObjectManager::registry* branch_tree) {
+        if (branch_tree == nullptr || branch_tree->head == nullptr)
+            return;
 
         auto* bt = dynamic_cast<ObjectManager::BranchTree*>(branch_tree->object.get());
-        if (bt == nullptr || bt->merkle_root.empty()) return;
+        if (bt == nullptr || bt->merkle_root.empty())
+            return;
 
         // Page through the (mg_name, mg_hash) tree and collect each referenced
         // multigroup before unpinning. Decoupling iteration from mutation
@@ -113,24 +119,25 @@ namespace nt
         std::vector<ObjectManager::registry*> mgs;
         constexpr size_t kPageSize = 1024;
         size_t offset = 0;
-        while (true)
-        {
-            auto page = Merkle<std::string>::Page(storage_, bt->merkle_root,
-                                                   offset, kPageSize);
-            if (page.empty()) break;
-            for (const auto& entry : page)
-            {
+        while (true) {
+            auto page = Merkle<std::string>::Page(storage_, bt->merkle_root, offset, kPageSize);
+            if (page.empty())
+                break;
+            for (const auto& entry : page) {
                 static const Hash32 zero{};
-                if (entry.payload == zero) continue;
+                if (entry.payload == zero)
+                    continue;
                 const std::string mg_hash = bin_to_hex(entry.payload);
-                auto* mg_entry = objects_.Find(
-                    {"system", "snapshots", mg_hash});
-                if (mg_entry) mgs.push_back(mg_entry);
+                auto* mg_entry = objects_.Find({"system", "snapshots", mg_hash});
+                if (mg_entry)
+                    mgs.push_back(mg_entry);
             }
-            if (page.size() < kPageSize) break;
+            if (page.size() < kPageSize)
+                break;
             offset += page.size();
         }
 
-        for (auto* mg : mgs) Unpin(mg);
+        for (auto* mg : mgs)
+            Unpin(mg);
     }
-}
+} // namespace nt
