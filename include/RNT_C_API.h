@@ -423,6 +423,20 @@ typedef struct {
 } PlanArgsProject;
 
 /**
+ * MATERIALIZE context: caches @p source on its first scan, then replays the
+ * cache on later scans without touching @p source again.
+ *
+ * Put this on the inner side of a JOIN so the inner relation is read once
+ * instead of once per outer tuple. Only safe when @p source does not depend on
+ * the outer tuple (no Var SCAN leaves bound by the JOIN), since the cache is
+ * reused as-is for every outer tuple. Takes ownership of @p source; on failure
+ * @p source is freed.
+ */
+typedef struct {
+    rnt_plan_t source;
+} PlanArgsMaterialize;
+
+/**
  * A single plan-construction request. @p operation selects which context member
  * is read; the others are ignored. The members are laid out side by side rather
  * than overlapped in a union so the struct maps cleanly onto OCaml ctypes, which
@@ -434,6 +448,7 @@ typedef struct {
     PlanArgsJoin join;
     PlanArgsTake take;
     PlanArgsProject project;
+    PlanArgsMaterialize materialize;
 } PlanAction;
 
 /**
