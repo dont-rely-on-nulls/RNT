@@ -581,6 +581,29 @@ namespace {
         delete s;
         return pw;
     }
+
+    PlanWrapper* build_materialize(const PlanArgsMaterialize& a) {
+        auto* s = static_cast<PlanWrapper*>(a.source);
+        if (!s)
+            return nullptr;
+
+        auto node = std::make_unique<nt::PlanNode>();
+        node->op = nt::FOL_OPERATION_MATERIALIZE;
+        node->left = s->root;
+
+        auto* pw = new PlanWrapper();
+        pw->root = node.get();
+        pw->nodes.push_back(std::move(node));
+        for (auto& n : s->nodes)
+            pw->nodes.push_back(std::move(n));
+        for (auto* c : s->cursors)
+            pw->cursors.push_back(c);
+        for (auto* h : s->handles)
+            pw->handles.push_back(h);
+
+        delete s;
+        return pw;
+    }
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -1023,6 +1046,8 @@ rnt_plan_t rnt_plan_assemble(PlanAction action) {
         return build_take(action.take);
     case nt::FOL_OPERATION_PROJECT:
         return build_project(action.project);
+    case nt::FOL_OPERATION_MATERIALIZE:
+        return build_materialize(action.materialize);
     }
 
     return nullptr;

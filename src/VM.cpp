@@ -32,6 +32,39 @@ namespace nt {
         c->exhausted = false;
     }
 
+    void VM::Rewind(PlanNode* node, Tuple* outer) {
+        if (node == nullptr)
+            return;
+
+        switch (node->op) {
+        case Operation::FOL_OPERATION_SCAN:
+            ResetInner(node->scan_cursor, ResolveArgs(node->scan_args, outer));
+            break;
+
+        case Operation::FOL_OPERATION_PROJECT:
+            Rewind(node->left, outer);
+            break;
+
+        case Operation::FOL_OPERATION_TAKE:
+            node->take_count = 0;
+            Rewind(node->left, outer);
+            break;
+
+        case Operation::FOL_OPERATION_JOIN:
+            node->join_left = nullptr;
+            Rewind(node->left, outer);
+            Rewind(node->right, outer);
+            break;
+
+        case Operation::FOL_OPERATION_MATERIALIZE:
+            // Rewind the replay cursor only, and don't pass `outer` to the child.
+            // The point of this node is to reuse the cached tuples for every
+            // outer tuple, so it must not re-run or rebind what it cached.
+            node->mat_pos = 0;
+            break;
+        }
+    }
+
     Tuple* VM::MergeInto(PlanNode* node, Tuple* left, Tuple* right) {
         std::vector<Attribute> merged;
         for (const auto& a : left->attrs())
@@ -72,8 +105,7 @@ namespace nt {
                     node->join_left = Next(node->left);
                     if (node->join_left == nullptr) return nullptr;
 
-                    auto args = ResolveArgs(node->right->scan_args, node->join_left);
-                    ResetInner(node->right->scan_cursor, std::move(args));
+                    Rewind(node->right, node->join_left);
                 }
 
                 Tuple* right = Next(node->right);
@@ -87,12 +119,6 @@ namespace nt {
 
                 node->join_left = nullptr;
             }
-
-            Tuple* right = Next(node->right);
-            if (right != nullptr)
-                return MergeInto(node, node->join_left, right);
-
-            node->join_left = nullptr;
         }
 
         case Operation::FOL_OPERATION_TAKE: {
@@ -102,6 +128,31 @@ namespace nt {
             if (t)
                 ++node->take_count;
             return t;
+        }
+
+        case Operation::FOL_OPERATION_MATERIALIZE: {
+            if (!node->mat_done) {
+                // First scan: pull a tuple and keep our own copy. We rebuild it
+                // from attrs() rather than copying the Tuple, because a Tuple
+                // holds an iterator into its own map and a plain copy would leave
+                // that iterator dangling. The child also overwrites its output
+                // buffer on the next pull, so we cannot just keep its pointer.
+                Tuple* t = Next(node->left);
+                if (t != nullptr) {
+                    std::vector<Attribute> attrs;
+                    for (const auto& a : t->attrs())
+                        attrs.push_back(a);
+                    node->mat_buffer.emplace_back(std::move(attrs));
+                    return &node->mat_buffer.back();
+                }
+                node->mat_done = true;
+                return nullptr; // child exhausted; do not fall into replay
+            }
+
+            // Later scans: hand back cached tuples until the cache runs out.
+            if (node->mat_pos < node->mat_buffer.size())
+                return &node->mat_buffer[node->mat_pos++];
+            return nullptr;
         }
         }
 
