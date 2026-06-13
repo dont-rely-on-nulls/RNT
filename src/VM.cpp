@@ -66,6 +66,12 @@ namespace nt {
         case Operation::FOL_OPERATION_RENAME:
             Rewind(node->upstream, outer);
             break;
+
+        case Operation::FOL_OPERATION_UNION:
+            node->current_node = node->nodes.begin();
+            for (auto& node : node->nodes)
+                Rewind(node, outer);
+            break;
         }
     }
 
@@ -172,7 +178,20 @@ namespace nt {
                 Attribute new_attr { name, a.value };
                 attrs.push_back(new_attr);
             }
+            delete t;
             return new Tuple(attrs);
+        }
+
+        case Operation::FOL_OPERATION_UNION: {
+            if (node->current_node == node->nodes.end())
+                return nullptr;
+
+            Tuple* t = Next(*node->current_node);
+            if (!t) {
+                node->current_node++;
+                return Next(node);
+            }
+            return t;
         }
         }
 

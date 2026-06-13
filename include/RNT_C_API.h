@@ -448,6 +448,12 @@ typedef struct {
     const char** pairs;
 } PlanArgsRename;
 
+/** UNION context. */
+
+typedef struct {
+    rnt_plan_t *sources;
+} PlanArgsUnion;
+
 /**
  * A single plan-construction request. @p operation selects which context member
  * is read; the others are ignored. The members are laid out side by side rather
@@ -462,6 +468,7 @@ typedef struct {
     PlanArgsProject project;
     PlanArgsMaterialize materialize;
     PlanArgsRename rename;
+    PlanArgsUnion union_;
 } PlanAction;
 
 /**

@@ -83,7 +83,8 @@ namespace nt {
         FOL_OPERATION_TAKE,
         FOL_OPERATION_PROJECT,
         FOL_OPERATION_MATERIALIZE,
-        FOL_OPERATION_RENAME
+        FOL_OPERATION_RENAME,
+        FOL_OPERATION_UNION
     };
 
     /**
@@ -170,6 +171,10 @@ namespace nt {
         /** RENAME runtime state. */
         PlanNode* upstream = nullptr;
         std::unordered_map<std::string, std::string> attrs;
+
+        /** UNION runtime state. */
+        std::vector<PlanNode*> nodes;
+        std::vector<PlanNode*>::iterator current_node;
     };
 
     class VM {
