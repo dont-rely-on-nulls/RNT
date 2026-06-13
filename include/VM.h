@@ -82,7 +82,8 @@ namespace nt {
         FOL_OPERATION_JOIN,
         FOL_OPERATION_TAKE,
         FOL_OPERATION_PROJECT,
-        FOL_OPERATION_MATERIALIZE
+        FOL_OPERATION_MATERIALIZE,
+        FOL_OPERATION_RENAME
     };
 
     /**
@@ -165,6 +166,10 @@ namespace nt {
         std::vector<Tuple> mat_buffer;
         std::size_t mat_pos = 0;
         bool mat_done = false;
+
+        /** RENAME runtime state. */
+        PlanNode* upstream = nullptr;
+        std::unordered_map<std::string, std::string> attrs;
     };
 
     class VM {

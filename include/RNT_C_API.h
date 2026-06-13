@@ -437,6 +437,18 @@ typedef struct {
 } PlanArgsMaterialize;
 
 /**
+ * RENAME context: returns @p source, with the keys of @p pairs the values of it.
+ *
+ * @p pairs is a NULL-terminated array of pairs containing the original attribute
+ * name together with it's new name.
+ */
+
+typedef struct {
+    rnt_plan_t source;
+    const char** pairs;
+} PlanArgsRename;
+
+/**
  * A single plan-construction request. @p operation selects which context member
  * is read; the others are ignored. The members are laid out side by side rather
  * than overlapped in a union so the struct maps cleanly onto OCaml ctypes, which
@@ -449,6 +461,7 @@ typedef struct {
     PlanArgsTake take;
     PlanArgsProject project;
     PlanArgsMaterialize materialize;
+    PlanArgsRename rename;
 } PlanAction;
 
 /**

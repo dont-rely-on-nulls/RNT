@@ -604,6 +604,33 @@ namespace {
         delete s;
         return pw;
     }
+
+    PlanWrapper* build_rename(const PlanArgsRename& a) {
+        auto* s = static_cast<PlanWrapper*>(a.source);
+        if (!s)
+            return nullptr;
+
+        auto node = std::make_unique<nt::PlanNode>();
+        node->op = nt::FOL_OPERATION_RENAME;
+        node->upstream = s->root;
+
+        for (const char** k = a.pairs; k; k++)
+            node->attrs[*k] = *++k;
+
+        auto* pw = new PlanWrapper();
+        pw->root = node.get();
+        pw->nodes.push_back(std::move(node));
+
+        for (auto& n : s->nodes)
+            pw->nodes.push_back(std::move(n));
+        for (auto* c : s->cursors)
+            pw->cursors.push_back(c);
+        for (auto* h : s->handles)
+            pw->handles.push_back(h);
+
+        delete s;
+        return pw;
+    }
 } // namespace
 
 // ---------------------------------------------------------------------------

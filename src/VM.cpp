@@ -62,6 +62,10 @@ namespace nt {
             // outer tuple, so it must not re-run or rebind what it cached.
             node->mat_pos = 0;
             break;
+
+        case Operation::FOL_OPERATION_RENAME:
+            Rewind(node->upstream, outer);
+            break;
         }
     }
 
@@ -153,6 +157,22 @@ namespace nt {
             if (node->mat_pos < node->mat_buffer.size())
                 return &node->mat_buffer[node->mat_pos++];
             return nullptr;
+        }
+
+        case Operation::FOL_OPERATION_RENAME: {
+            Tuple* t = Next(node->upstream);
+            if (!t)
+                return nullptr;
+
+            std::vector<Attribute> attrs;
+            for (const auto& a : t->attrs()) {
+                std::string name = a.name;
+                if (node->attrs.contains(name))
+                    name = node->attrs[name];
+                Attribute new_attr { name, a.value };
+                attrs.push_back(new_attr);
+            }
+            return new Tuple(attrs);
         }
         }
 
