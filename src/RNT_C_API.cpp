@@ -1,6 +1,7 @@
 #include "RNT_C_API.h"
 
 #include "CursorManager.h"
+#include "EphemeralRelation.h"
 #include "HandlerManager.h"
 #include "IdentityManager.h"
 #include "InMemoryBackend.h"
@@ -668,6 +669,10 @@ int rnt_session_close(const char* session_hash) {
         rebind_branch_tree_pin(hash, "");
     session->branch_overrides.clear();
 
+    // Drop the session's owned ephemeral relations (named tier-1 bindings and
+    // any scratch stragglers), cascading their base-relation pins.
+    nt::Ephemeral::ReleaseSession(g_rt->objects, *g_rt->lifecycles, session_hash);
+
     return g_rt->objects.Unregister(session_path) ? 0 : -1;
 }
 
@@ -706,6 +711,132 @@ int rnt_session_set_branch(const char* session_hash, const char* branch_name,
 
     session->branch_overrides[branch_name] = hash;
     rebind_branch_tree_pin(old_hash, hash);
+    return 0;
+}
+
+// ---------------------------------------------------------------------------
+// Ephemeral relations
+// ---------------------------------------------------------------------------
+
+namespace {
+    // Accumulates tuples emitted by a generator callback during one page
+    // request. Lives on the stack of the generator wrapper below; the opaque
+    // rnt_tuple_sink_t handed to the callback points at it.
+    struct TupleSink {
+        std::vector<nt::Tuple> tuples;
+    };
+
+    // Splits a newline-separated list into its non-empty lines.
+    std::vector<std::string> split_lines(const char* s) {
+        std::vector<std::string> lines;
+        if (!s)
+            return lines;
+        std::stringstream ss(s);
+        std::string line;
+        while (std::getline(ss, line))
+            if (!line.empty())
+                lines.push_back(line);
+        return lines;
+    }
+
+    // Joins registry path segments back into a slash-separated logical path.
+    std::string join_path(const std::vector<std::string>& segs) {
+        std::string out;
+        for (const auto& seg : segs) {
+            if (!out.empty())
+                out.push_back('/');
+            out += seg;
+        }
+        return out;
+    }
+} // namespace
+
+int rnt_sink_emit(rnt_tuple_sink_t sink, const char* tuple_kv) {
+    if (!sink || !tuple_kv)
+        return -1;
+    auto* s = static_cast<TupleSink*>(sink);
+    s->tuples.emplace_back(parse_kv(tuple_kv));
+    return 0;
+}
+
+int rnt_register_ephemeral_relation(const char* session_hash, int named, const char* name,
+                                    rnt_generator_fn generator, void* generator_ctx,
+                                    int cardinality, const char* generator_identity,
+                                    const char* schema_kv, const char* dependencies,
+                                    char** path_out) {
+    if (!g_rt || !session_hash || !generator || !generator_identity)
+        return -1;
+    using Card = nt::ObjectManager::ephemeral_object_type::Cardinality;
+    if (cardinality < static_cast<int>(Card::Finite) ||
+        cardinality > static_cast<int>(Card::Continuum))
+        return -1;
+
+    // The session must exist: the entry lands under its namespace and is
+    // released by rnt_session_close.
+    auto* session = g_rt->objects.Find({"system", "sessions", session_hash});
+    if (!session || !session->head || session->head->type->label != SESSION)
+        return -1;
+
+    std::vector<std::pair<std::string, std::string>> schema;
+    for (const auto& line : split_lines(schema_kv)) {
+        const auto pos = line.find('=');
+        if (pos == std::string::npos)
+            return -1;
+        schema.emplace_back(line.substr(0, pos), line.substr(pos + 1));
+    }
+
+    // Wrap the C callback in the std::function shape the cursor layer copies
+    // out at Open time. The sink gives emitted tuples a single well-defined
+    // owner: this wrapper's stack frame, for the duration of one page request.
+    auto gen = [generator, generator_ctx](const std::vector<std::string>& args,
+                                          std::size_t offset,
+                                          std::size_t limit) -> std::vector<nt::Tuple> {
+        std::string joined;
+        for (const auto& a : args) {
+            joined += a;
+            joined.push_back('\n');
+        }
+        TupleSink sink;
+        const int rc = generator(generator_ctx, joined.c_str(), offset, limit, &sink);
+        if (rc != 0)
+            return {};
+        return std::move(sink.tuples);
+    };
+
+    // Resolve each dependency through the reference manager so callers may
+    // pass branch-relative paths (e.g. system/branches/<b>/multigroups/<mg>/
+    // relations/<r>); the stored dependency list then holds the resolved
+    // snapshot paths that raw registry lookups (and the GC cascade) address.
+    std::vector<std::string> deps;
+    for (const auto& dep : split_lines(dependencies)) {
+        const auto resolved = g_rt->references->Resolve(nt::Ephemeral::SplitPath(dep));
+        if (resolved.empty())
+            return -1;
+        deps.push_back(join_path(resolved));
+    }
+
+    auto* entry = nt::Ephemeral::Register(
+        g_rt->objects, *g_rt->lifecycles, session_hash,
+        named ? nt::Ephemeral::Tier::Named : nt::Ephemeral::Tier::Scratch,
+        name ? name : "", std::move(gen), static_cast<Card>(cardinality), generator_identity,
+        schema, deps);
+    if (!entry)
+        return -1;
+
+    if (path_out)
+        *path_out = heap_str(join_path(entry->head->path));
+    return 0;
+}
+
+int rnt_drop_ephemeral_relation(const char* session_hash, const char* name) {
+    if (!g_rt || !session_hash || !name || !*name)
+        return -1;
+    auto* entry = g_rt->objects.Find({"system", "sessions", session_hash, "ephemeral", name});
+    if (!entry || !entry->head || entry->head->type->label != EPHEMERAL_RELATION)
+        return -1;
+    // Releases the session-ownership pin taken at registration; the entry is
+    // collected once no cursor or dependent ephemeral still holds it.
+    g_rt->lifecycles->Unpin(entry);
     return 0;
 }
 

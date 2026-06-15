@@ -106,9 +106,9 @@ namespace nt {
         PlanNode* right = nullptr;
 
         /**
-         * SCAN: pre-opened cursor. For ephemeral relations this cursor is
-         * initially exhausted; the JOIN resets it with resolved args before
-         * each probe.
+         * SCAN: pre-opened cursor. For ephemeral relations the JOIN resets it
+         * (args, offset, exhausted flag) with resolved args before each probe,
+         * overwriting whatever standalone-scan state it opened with.
          */
         CursorManager::cursor* scan_cursor = nullptr;
 

@@ -88,10 +88,10 @@ namespace nt {
          * also the foundation for attribute-level provenance tracking added
          * later.
          *
-         * @todo Define the merkle_root composition function (hashes the
-         *       generator identity + schema + sorted base merkle_roots).
-         *       Until ephemeral relations are registered through a writer
-         *       path this remains a documentation-only contract.
+         * The merkle_root composition function is nt::Ephemeral::ComposeRoot
+         * (SHA256 over generator identity + schema + sorted base merkle_roots);
+         * nt::Ephemeral::Register is the writer path that populates both
+         * fields. See include/EphemeralRelation.h.
          */
         class EphemeralRelation : public IObject {
           public:
