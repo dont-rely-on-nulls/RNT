@@ -35,6 +35,4 @@ libRNT.dylib
 docs/generated/
 .cache
 _build_nix
-
-# vcpkg manifest mode artifacts
-vcpkg_installed
+.direnv

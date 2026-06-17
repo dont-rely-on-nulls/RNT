@@ -106,7 +106,7 @@ segment string to child `registry*`. This matches the ReactOS structure naturall
 because `object_path` is already a `std::vector<std::string>`.
 
 Rather than implementing the trie from scratch, consider pulling a suitable
-container via vcpkg (e.g. a radix tree or a well-tested associative structure).
+container via the Nix flake (e.g. a radix tree or a well-tested associative structure).
 The only hard requirement is that each directory level supports O(1) average
 lookup by segment name and ordered iteration for namespace enumeration.
 
