@@ -1,14 +1,12 @@
 #+TITLE: RNT
 
-#+ATTR_ORG: :width 320
-[[file:images/logo.png]]
-
-#+ATTR_ORG: :width 162
-[[https://www.gnu.org/licenses/agpl-3.0.html][https://www.gnu.org/graphics/agplv3-with-text-162x68.png]]
+#+html: <img alt="the RNT logo" style="width=15%" src="./images/logo.png" /><br>
+#+html: <a href="https://builtwithnix.org"><img alt="built with nix" src="https://builtwithnix.org/badge.svg" /></a><br>
+#+html: <a href="https://github.com/dont-rely-on-nulls/RNT"><img alt="AGPLv3 License" src="https://img.shields.io/badge/License-AGPL%20v3-blue.svg" /></a>
 
 * About
 
-RNT is an experimental database kernel inspired by the object-management model of the Windows NT kernel. The project explores what database internals look like when relations, tuples, transactions, namespaces, permissions, cursors, and handles are treated as explicit runtime-managed objects.
+RNT is an experimental database kernel inspired by the object-management model of the Windows NT kernel. The project explores what database internals look like when relations, tuples, transactions, namespaces, permissions, cursors, and handles are treated as explicit runtime-managed objects. /RNT stands for "Relations, Not Tables"/
 
 The goal is a small, understandable runtime where database state is accessed through uniform paths, guarded by explicit security checks, and managed through visible lifecycle rules. The codebase is still early, so several classes define architectural boundaries before they define complete behavior.
 
@@ -75,6 +73,6 @@ The repository also includes a GitHub Actions workflow that publishes the genera
 RNT is free software licensed under the GNU Affero General Public License v3.0.
 See =LICENSE= for the full terms.
 
-Copyright (C) 2026 Marcos Magueta, RNT contributors, and Don't Rely on Nulls.
+Copyright (C) 2026 RNT contributors, and Don't Rely on Nulls.
 
-Maintainer: Marcos Magueta.
+Maintainers: Marcos Magueta & Estevan Castilho.
