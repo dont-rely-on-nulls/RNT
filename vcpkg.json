@@ -1,8 +1,0 @@
-{
-  "builtin-baseline": "99a97de2cb371449d4fb9dc970f2ac562d689ec2",
-  "dependencies": [
-    "sqlite3",
-    "picosha2",
-    "catch2"
-  ]
-}

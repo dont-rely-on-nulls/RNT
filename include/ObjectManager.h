@@ -293,7 +293,7 @@ namespace nt {
              *       Each directory level holds a hash map from segment string to
              *       child registry*. Find() and Register() walk the trie
              *       component-by-component instead of scanning a flat list.
-             *       Consider pulling a well-tested radix-tree via vcpkg rather than
+             *       Consider pulling a well-tested radix-tree via the Nix flake rather than
              *       implementing from scratch. See docs/reactos-ob-comparison.md §3.
              */
             std::unique_ptr<registry> next;

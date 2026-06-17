@@ -1,11 +1,14 @@
-#+TITLE: Relational NT
+#+TITLE: RNT
 
 #+ATTR_ORG: :width 320
 [[file:images/logo.png]]
 
+#+ATTR_ORG: :width 162
+[[https://www.gnu.org/licenses/agpl-3.0.html][https://www.gnu.org/graphics/agplv3-with-text-162x68.png]]
+
 * About
 
-Relational NT is an experimental database kernel inspired by the object-management model of the Windows NT kernel. The project explores what database internals look like when relations, tuples, transactions, namespaces, permissions, cursors, and handles are treated as explicit runtime-managed objects.
+RNT is an experimental database kernel inspired by the object-management model of the Windows NT kernel. The project explores what database internals look like when relations, tuples, transactions, namespaces, permissions, cursors, and handles are treated as explicit runtime-managed objects.
 
 The goal is a small, understandable runtime where database state is accessed through uniform paths, guarded by explicit security checks, and managed through visible lifecycle rules. The codebase is still early, so several classes define architectural boundaries before they define complete behavior.
 
@@ -38,37 +41,27 @@ Several manager features are still being designed: dual ref counting, type callb
 
 * Building
 
-** Unix / macOS with Nix
+** GNU/Linux with Nix
 
-The easiest Unix path is the Nix development shell. It provides CMake, Ninja,
-SQLite, PicoSHA2 headers, Catch2, and debugger tooling.
+The supported build path is the Nix development shell on GNU/Linux. It provides
+GCC, CMake, Ninja, SQLite, PicoSHA2 headers, Catch2, Doxygen, Graphviz, and GDB.
 
 #+begin_src shell
 nix develop
-cmake -S . -B _build -G Ninja -DCMAKE_BUILD_TYPE=Debug
-cmake --build _build
-ctest --test-dir _build --output-on-failure
+cmake --preset gnu-debug
+cmake --build out/build/gnu-debug
+ctest --test-dir out/build/gnu-debug --output-on-failure
 #+end_src
 
-** Windows with Visual Studio / MSVC
-
-Requires MSVC, CMake 3.10 or later, and vcpkg. Dependencies (=sqlite3= and =picosha2=) are fetched and built automatically during CMake configure via the vcpkg manifest.
-
-#+begin_src shell
-cmake --preset x64-debug
-cmake --build out/build/x64-debug
-#+end_src
-
-The output binary is =out/build/x64-debug/RelationalNT.exe=. A release build uses =--preset x64-release=. Visual Studio picks up =CMakePresets.json= automatically if you open the repository folder directly.
-
-The first configure downloads and builds the vcpkg dependencies. Subsequent configures use the binary cache and are fast.
+A release build uses =--preset gnu-release=. CI builds the package with =nix build=,
+which also runs the test suite.
 
 * Documentation
 
 API documentation is generated with Doxygen. The root =Doxyfile= reads the public headers, source files, and the documentation main page in =docs/mainpage.dox=.
 
 #+begin_src shell
-doxygen Doxyfile
+nix develop --command doxygen Doxyfile
 #+end_src
 
 Generated HTML is written to =docs/generated/html=.
@@ -76,3 +69,12 @@ Generated HTML is written to =docs/generated/html=.
 The comments in the public headers are part of the design record. Keep architectural notes close to the declarations they explain so Doxygen can publish them with the API reference.
 
 The repository also includes a GitHub Actions workflow that publishes the generated Doxygen HTML to GitHub Pages on pushes to =master=. In the repository settings, configure Pages to use =GitHub Actions= as its source.
+
+* License
+
+RNT is free software licensed under the GNU Affero General Public License v3.0.
+See =LICENSE= for the full terms.
+
+Copyright (C) 2026 Marcos Magueta, RNT contributors, and Don't Rely on Nulls.
+
+Maintainer: Marcos Magueta.

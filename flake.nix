@@ -25,7 +25,7 @@
         let
           pkgs = import nixpkgs { inherit system; };
 
-          # Maps the vcpkg-style unofficial::sqlite3::sqlite3 CMake
+          # Maps the unofficial::sqlite3::sqlite3 CMake
           # target to the system SQLite3 package. Required because CMakeLists.txt
           # calls target_link_libraries(... unofficial::sqlite3::sqlite3).
           unofficialSqlite3Config = pkgs.writeTextDir
@@ -42,20 +42,24 @@
 
           # PicoSHA2 is a single-header library; extract just the header.
           picosha2Headers = pkgs.runCommand "picosha2-headers" { } ''
-            install -Dm644 ${picosha2}/picosha2.h $out/include/picosha2.h
+            mkdir -p $out/include
+            install -m644 ${picosha2}/picosha2.h $out/include/picosha2.h
           '';
 
-        in { inherit pkgs unofficialSqlite3Config picosha2Headers; };
+          stdenv = if pkgs.stdenv.isDarwin then pkgs.stdenv else pkgs.gccStdenv;
+          cc = if pkgs.stdenv.isDarwin then pkgs.stdenv.cc else pkgs.gcc;
+
+        in { inherit pkgs unofficialSqlite3Config picosha2Headers stdenv cc; };
 
     in
     {
       packages = forAllSystems (system:
         let
-          inherit (mkDeps system) pkgs unofficialSqlite3Config picosha2Headers;
+          inherit (mkDeps system) pkgs unofficialSqlite3Config picosha2Headers stdenv;
         in
         {
-          default = pkgs.stdenv.mkDerivation {
-            pname = "relationalnt";
+          default = stdenv.mkDerivation {
+            pname = "rnt";
             version = "0.1.0";
 
             src = self;
@@ -85,43 +89,53 @@
 
             installPhase = ''
               runHook preInstall
-              install -Dm755 RelationalNT "$out/bin/RelationalNT"
-              install -Dm755 RNT_tests "$out/bin/RNT_tests"
+              mkdir -p "$out/bin" "$out/lib" "$out/include" "$out/share/licenses/rnt"
+              install -m755 RelationalNT "$out/bin/RelationalNT"
+              install -m755 RNT_tests "$out/bin/RNT_tests"
               for lib in libRNT.so libRNT.dylib; do
                 if [ -f "$lib" ]; then
-                  install -Dm755 "$lib" "$out/lib/$lib"
+                  install -m755 "$lib" "$out/lib/$lib"
                 fi
               done
-              install -Dm644 ../include/RNT_C_API.h "$out/include/RNT_C_API.h"
+              install -m644 ../include/RNT_C_API.h "$out/include/RNT_C_API.h"
+              install -m644 "${self}/LICENSE" "$out/share/licenses/rnt/LICENSE"
               runHook postInstall
             '';
 
             meta = {
-              description = "Experimental database kernel inspired by the Windows NT object manager";
+              description = "RNT database kernel inspired by the Windows NT object manager";
+              license = pkgs.lib.licenses.agpl3Only;
               mainProgram = "RelationalNT";
+              maintainers = [
+                { name = "Marcos Magueta"; }
+              ];
             };
           };
         });
 
       devShells = forAllSystems (system:
         let
-          inherit (mkDeps system) pkgs unofficialSqlite3Config picosha2Headers;
+          inherit (mkDeps system) pkgs unofficialSqlite3Config picosha2Headers stdenv cc;
         in
         {
-          default = pkgs.mkShell {
+          default = pkgs.mkShell.override { inherit stdenv; } {
             packages = [
               pkgs.catch2_3
               pkgs.clang-tools
               pkgs.cmake
-              pkgs.lldb
+              pkgs.doxygen
+              pkgs.graphviz
               pkgs.ninja
               picosha2Headers
               pkgs.sqlite
               unofficialSqlite3Config
+            ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
+              pkgs.gcc
+              pkgs.gdb
             ];
 
-            CC = "${pkgs.stdenv.cc}/bin/cc";
-            CXX = "${pkgs.stdenv.cc}/bin/c++";
+            CC = "${cc}/bin/cc";
+            CXX = "${cc}/bin/c++";
 
             CMAKE_PREFIX_PATH = pkgs.lib.makeSearchPathOutput "dev" "" [
               picosha2Headers

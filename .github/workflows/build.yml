@@ -8,31 +8,13 @@ on:
 
 jobs:
   build:
-    runs-on: windows-latest
-    strategy:
-      matrix:
-        preset: [x64-debug, x64-release]
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up MSVC environment
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27
 
-      - name: Sync vcpkg baseline
-        run: |
-          $baseline = git -C $env:VCPKG_INSTALLATION_ROOT rev-parse HEAD
-          $json = Get-Content vcpkg.json | ConvertFrom-Json
-          $json.'builtin-baseline' = $baseline
-          $json | ConvertTo-Json | Set-Content vcpkg.json
-
-      - name: Configure
-        run: cmake --preset ${{ matrix.preset }}
-
-      - name: Build
-        run: cmake --build out/build/${{ matrix.preset }}
-
-      - name: Test
-        run: ctest --test-dir out/build/${{ matrix.preset }} --output-on-failure
+      - name: Build and test
+        run: nix build --print-build-logs
