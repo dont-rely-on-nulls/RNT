@@ -455,34 +455,17 @@ typedef struct {
 } PlanArgsUnion;
 
 /**
- * A single plan-construction request. @p operation selects which context member
- * is read; the others are ignored. The members are laid out side by side rather
- * than overlapped in a union so the struct maps cleanly onto OCaml ctypes, which
- * has no union support. Only the member matching @p operation need be populated.
- */
-typedef struct {
-    nt::Operation operation;
-    PlanArgsScan scan;
-    PlanArgsJoin join;
-    PlanArgsTake take;
-    PlanArgsProject project;
-    PlanArgsMaterialize materialize;
-    PlanArgsRename rename;
-    PlanArgsUnion union_;
-} PlanAction;
-
-/**
  * @brief Builds one plan node from @p action and returns the resulting subtree.
  *
  * Sole entry point for plan construction. Validates runtime state once, then
- * dispatches on @p action.op. Child plans for JOIN/TAKE/PROJECT are themselves
+ * dispatches on @p operation. Child plans for JOIN/TAKE/PROJECT are themselves
  * results of prior rnt_plan_assemble calls; ownership transfers per the
  * per-operator rules documented on each PlanArgs* struct.
  *
  * @return Plan node, or NULL when the runtime is uninitialised or construction
  *         fails (e.g. relation does not exist).
  */
-NT_API rnt_plan_t rnt_plan_assemble(PlanAction action);
+NT_API rnt_plan_t rnt_plan_assemble(nt::Operation operation, void *action);
 
 /**
  * @brief Releases a plan that was built but not yet executed.

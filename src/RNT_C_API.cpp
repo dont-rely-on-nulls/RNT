@@ -1092,22 +1092,22 @@ void rnt_free_bytes(uint8_t* p) {
 // VM plan builder
 // ---------------------------------------------------------------------------
 
-rnt_plan_t rnt_plan_assemble(PlanAction action) {
-    switch (action.operation) {
+rnt_plan_t rnt_plan_assemble(nt::Operation operation, void *action) {
+    switch (operation) {
     case nt::FOL_OPERATION_SCAN:
-        return build_scan(action.scan);
+        return build_scan(*static_cast<PlanArgsScan*>(action));
     case nt::FOL_OPERATION_JOIN:
-        return build_join(action.join);
+        return build_join(*static_cast<PlanArgsJoin*>(action));
     case nt::FOL_OPERATION_TAKE:
-        return build_take(action.take);
+        return build_take(*static_cast<PlanArgsTake*>(action));
     case nt::FOL_OPERATION_PROJECT:
-        return build_project(action.project);
+        return build_project(*static_cast<PlanArgsProject*>(action));
     case nt::FOL_OPERATION_MATERIALIZE:
-        return build_materialize(action.materialize);
+        return build_materialize(*static_cast<PlanArgsMaterialize*>(action));
     case nt::FOL_OPERATION_RENAME:
-        return build_rename(action.rename);
+        return build_rename(*static_cast<PlanArgsRename*>(action));
     case nt::FOL_OPERATION_UNION:
-        return build_union(action.union_);
+        return build_union(*static_cast<PlanArgsUnion*>(action));
     }
 
     return nullptr;
