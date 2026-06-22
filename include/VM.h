@@ -81,7 +81,10 @@ namespace nt {
         FOL_OPERATION_SCAN = 1,
         FOL_OPERATION_JOIN,
         FOL_OPERATION_TAKE,
-        FOL_OPERATION_PROJECT
+        FOL_OPERATION_PROJECT,
+        FOL_OPERATION_MATERIALIZE,
+        FOL_OPERATION_RENAME,
+        FOL_OPERATION_UNION
     };
 
     /**
@@ -99,6 +102,16 @@ namespace nt {
      * - TAKE  : passes at most take_limit tuples through, then returns nullptr. Use
      *           this to bound scans over AlephZero ephemeral relations.
      * - PROJECT: filters each input tuple to the named attributes in project_attrs.
+     * - MATERIALIZE: on its first scan it pulls the whole child and keeps a
+     *           private copy of every tuple. On later scans it replays that copy
+     *           and never reads the child again. Sits on the inner side of a
+     *           nested-loop JOIN so the inner relation is read once instead of
+     *           once per outer tuple. This only works when the child does not
+     *           depend on the outer tuple, meaning it has no Var SCAN leaves that
+     *           the JOIN binds, because the same cached tuples are handed back for
+     *           every outer tuple. Rewind does not pass the outer tuple through
+     *           this node, so it is up to the planner to place it only where the
+     *           child is independent of the outer side.
      */
     struct PlanNode {
         Operation op;
@@ -142,6 +155,26 @@ namespace nt {
          */
         Tuple* join_left = nullptr;
         std::optional<Tuple> join_buffer;
+        std::unordered_set<std::string> join_attrs;
+
+        /**
+         * MATERIALIZE runtime state.
+         *
+         * mat_buffer holds owned copies of the child's tuples, filled on the
+         * first scan. mat_done marks the cache complete (child exhausted).
+         * mat_pos is the replay cursor, reset to 0 by Rewind on each later scan.
+         */
+        std::vector<Tuple> mat_buffer;
+        std::size_t mat_pos = 0;
+        bool mat_done = false;
+
+        /** RENAME runtime state. */
+        PlanNode* upstream = nullptr;
+        std::unordered_map<std::string, std::string> attrs;
+
+        /** UNION runtime state. */
+        std::vector<PlanNode*> nodes;
+        std::vector<PlanNode*>::iterator current_node;
     };
 
     class VM {
@@ -183,6 +216,14 @@ namespace nt {
 
         /** Resets the inner cursor state and writes resolved args into it. */
         static void ResetInner(CursorManager::cursor* c, std::vector<std::string> args);
+
+        /**
+         * Restarts the inner (right) subtree of a JOIN for a new outer tuple.
+         * Walks down to every SCAN leaf, rebinds its scan_args to the outer
+         * tuple, and resets its cursor. On the way it also clears the operator
+         * state it passes through, such as TAKE counters and nested JOIN buffers.
+         */
+        void Rewind(PlanNode* node, Tuple* outer);
 
         /** Merges left and right tuple attributes into node->join_buffer. */
         static Tuple* MergeInto(PlanNode* node, Tuple* left, Tuple* right);

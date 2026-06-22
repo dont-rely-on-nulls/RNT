@@ -2,6 +2,8 @@
 
 #include <string>
 #include <vector>
+#include <unordered_map>
+#include <ranges>
 
 /**
  * @file Types.h
@@ -132,28 +134,41 @@ namespace nt {
      * one attribute at a time. Returns nullptr when all attributes are exhausted.
      */
     class Tuple {
-      public:
-        explicit Tuple(std::vector<Attribute> attributes) : attributes_(std::move(attributes)) {
+    public:
+        explicit Tuple(std::vector<Attribute> attributes) {
+            for (auto &attr : attributes) attributes_[attr.name] = attr.value;
+            this->Reset();
         }
 
         /** @brief Returns the next attribute, or nullptr when exhausted. */
         const Attribute* Next() {
-            if (position_ < attributes_.size())
-                return &attributes_[position_++];
-            return nullptr;
+            if (iter_ == attributes_.end()) return nullptr;
+            current_attr_ = {iter_->first, iter_->second};
+            iter_++;
+            return &current_attr_;
         }
 
         void Reset() {
-            position_ = 0;
+            iter_ = attributes_.begin();
         }
 
-        /** @brief Direct read-only access to all attributes without affecting position. */
-        const std::vector<Attribute>& attrs() const {
-            return attributes_;
+        const std::string operator[](std::string key) {
+            return attributes_[key];
         }
 
-      private:
-        std::vector<Attribute> attributes_;
-        size_t position_ = 0;
+        const auto attrs() const {
+          auto view =
+              attributes_ |
+              std::views::transform([](std::pair<std::string, std::string> p) {
+                  Attribute attr { p.first, p.second };
+                  return attr;
+              });
+          return view;
+        }
+
+    private:
+        std::unordered_map<std::string, std::string> attributes_{};
+        std::unordered_map<std::string, std::string>::iterator iter_;
+        Attribute current_attr_;
     };
 } // namespace nt

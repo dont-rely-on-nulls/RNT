@@ -503,6 +503,10 @@ namespace {
         node->left = l->root;
         node->right = r->root;
 
+        if (a.attrs)
+            for (const char** p = a.attrs; *p; ++p)
+                node->join_attrs.emplace(*p);
+
         auto* pw = new PlanWrapper();
         pw->root = node.get();
         pw->nodes.push_back(std::move(node));
@@ -575,6 +579,85 @@ namespace {
             pw->handles.push_back(h);
 
         delete s;
+        return pw;
+    }
+
+    PlanWrapper* build_materialize(const PlanArgsMaterialize& a) {
+        auto* s = static_cast<PlanWrapper*>(a.source);
+        if (!s)
+            return nullptr;
+
+        auto node = std::make_unique<nt::PlanNode>();
+        node->op = nt::FOL_OPERATION_MATERIALIZE;
+        node->left = s->root;
+
+        auto* pw = new PlanWrapper();
+        pw->root = node.get();
+        pw->nodes.push_back(std::move(node));
+        for (auto& n : s->nodes)
+            pw->nodes.push_back(std::move(n));
+        for (auto* c : s->cursors)
+            pw->cursors.push_back(c);
+        for (auto* h : s->handles)
+            pw->handles.push_back(h);
+
+        delete s;
+        return pw;
+    }
+
+    PlanWrapper* build_rename(const PlanArgsRename& a) {
+        auto* s = static_cast<PlanWrapper*>(a.source);
+        if (!s)
+            return nullptr;
+
+        auto node = std::make_unique<nt::PlanNode>();
+        node->op = nt::FOL_OPERATION_RENAME;
+        node->upstream = s->root;
+
+        for (const char** k = a.pairs; *k; k++)
+            node->attrs[*k] = *++k;
+
+        auto* pw = new PlanWrapper();
+        pw->root = node.get();
+        pw->nodes.push_back(std::move(node));
+
+        for (auto& n : s->nodes)
+            pw->nodes.push_back(std::move(n));
+        for (auto* c : s->cursors)
+            pw->cursors.push_back(c);
+        for (auto* h : s->handles)
+            pw->handles.push_back(h);
+
+        delete s;
+        return pw;
+    }
+
+    PlanWrapper* build_union(const PlanArgsUnion& a) {
+        if (!*a.sources)
+            return nullptr;
+
+        auto node = std::make_unique<nt::PlanNode>();
+        node->op = nt::FOL_OPERATION_UNION;
+
+        auto* pw = new PlanWrapper();
+        for (auto* s = a.sources; *s; s++) {
+            auto* source = static_cast<PlanWrapper*>(*s);
+
+            node->nodes.push_back(source->root);
+
+            for (auto& n : source->nodes)
+                pw->nodes.push_back(std::move(n));
+            for (auto* c : source->cursors)
+                pw->cursors.push_back(std::move(c));
+            for (auto* h : source->handles)
+                pw->handles.push_back(std::move(h));
+
+            delete source;
+        }
+
+        pw->root = node.get();
+        pw->nodes.push_back(std::move(node));
+
         return pw;
     }
 } // namespace
@@ -1019,6 +1102,12 @@ rnt_plan_t rnt_plan_assemble(PlanAction action) {
         return build_take(action.take);
     case nt::FOL_OPERATION_PROJECT:
         return build_project(action.project);
+    case nt::FOL_OPERATION_MATERIALIZE:
+        return build_materialize(action.materialize);
+    case nt::FOL_OPERATION_RENAME:
+        return build_rename(action.rename);
+    case nt::FOL_OPERATION_UNION:
+        return build_union(action.union_);
     }
 
     return nullptr;
