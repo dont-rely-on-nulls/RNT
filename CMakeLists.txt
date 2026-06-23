@@ -18,6 +18,7 @@ add_library(rnt_core OBJECT
     "src/LifecycleManager.cpp"
     "src/HandlerManager.cpp"
     "src/CursorManager.cpp"
+    "src/EphemeralRelation.cpp"
     "src/Merkle.cpp"
     "src/TupleCodec.cpp"
     "src/MultigroupCodec.cpp"
@@ -48,6 +49,7 @@ add_executable(RNT_tests
     "test/NamespaceReferenceManager.cpp"
     "test/LifecycleManager.cpp"
     "test/CursorManager.cpp"
+    "test/EphemeralRelation.cpp"
 )
 target_link_libraries(RNT_tests PRIVATE rnt_core Catch2::Catch2WithMain)
 target_compile_definitions(RNT_tests PRIVATE NT_CONSOLE_APP)

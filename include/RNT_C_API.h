@@ -138,6 +138,105 @@ NT_API int rnt_session_set_branch(const char* session_hash, const char* branch_n
                                   const char* target_hash);
 
 /* ------------------------------------------------------------------ */
+/* Ephemeral relations                                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Opaque sink passed to a generator callback. The callback pushes each tuple
+ * it produces through rnt_sink_emit; the runtime copies the tuple out
+ * immediately, so the string only needs to stay valid for the duration of
+ * the rnt_sink_emit call.
+ */
+typedef void* rnt_tuple_sink_t;
+
+/**
+ * @brief Tuple-producing callback backing an ephemeral relation.
+ *
+ * Invoked by the cursor layer each time a page of tuples is needed. The
+ * callback must emit at most @p limit tuples starting at logical position
+ * @p offset by calling rnt_sink_emit once per tuple. Calls may re-enter the
+ * RNT API (e.g. to execute a VM plan over base relations); the runtime is
+ * single-threaded, so no locking is required.
+ *
+ * @param ctx     Opaque context pointer given at registration time.
+ * @param args    Bound argument values written by a JOIN before probing,
+ *                newline-separated. Empty string when scanned standalone.
+ * @param offset  Zero-based logical tuple offset (for pagination).
+ * @param limit   Maximum number of tuples to emit.
+ * @param sink    Pass to rnt_sink_emit for each produced tuple.
+ * @return 0 on success, negative on error (the page is treated as empty).
+ */
+typedef int (*rnt_generator_fn)(void* ctx, const char* args, size_t offset, size_t limit,
+                                rnt_tuple_sink_t sink);
+
+/**
+ * @brief Emits one tuple from inside a generator callback.
+ *
+ * @param sink      Sink received by the callback.
+ * @param tuple_kv  Newline-separated "name=value" attribute lines — the same
+ *                  wire format rnt_link_tuple consumes and rnt_cursor_next
+ *                  returns. Copied before returning.
+ * @return 0 on success, negative on error.
+ */
+NT_API int rnt_sink_emit(rnt_tuple_sink_t sink, const char* tuple_kv);
+
+/**
+ * @brief Registers an ephemeral relation owned by a session.
+ *
+ * An ephemeral relation has no tuple storage of its own: its tuples are
+ * produced on demand by @p generator. The entry lands under the session's
+ * namespace — /system/sessions/<hash>/ephemeral/<name> when @p named is
+ * non-zero (a named binding that survives between commands until dropped or
+ * session close), or /system/sessions/<hash>/scratch/<composed_root> when
+ * zero (an anonymous intermediate collected as soon as its consuming cursor
+ * closes). Scan it through the normal pipeline: rnt_open_handle on the
+ * registered path, then rnt_cursor_open / rnt_plan_scan.
+ *
+ * Registration pins every dependency, so a base relation cannot be collected
+ * while this relation is defined atop it; the pins are released when the
+ * ephemeral itself is collected. Registration is idempotent for an identical
+ * scratch result or a live named binding. See docs/ephemeral-relations.org.
+ *
+ * @param session_hash        Hash returned by rnt_session_open.
+ * @param named               Non-zero for a named binding, 0 for scratch.
+ * @param name                Leaf name for named bindings; ignored for scratch.
+ * @param generator           Tuple-producing callback. Must stay callable until
+ *                            the entry is collected.
+ * @param generator_ctx       Opaque pointer passed back to @p generator.
+ * @param cardinality         0 Finite, 1 ConstrainedFinite, 2 AlephZero,
+ *                            3 Continuum.
+ * @param generator_identity  Stable operator label for the identity hash,
+ *                            e.g. "join:id", "select:age".
+ * @param schema_kv           Newline-separated "name=type" attribute lines.
+ * @param dependencies        Newline-separated logical paths of the base
+ *                            relations this is defined atop, e.g.
+ *                            "system/snapshots/<h>/relations/<rel>". Every
+ *                            path must resolve or the call fails.
+ * @param path_out            Optional (may be NULL): set to the heap-allocated
+ *                            slash-joined registered path. Release with
+ *                            rnt_free_string().
+ * @return 0 on success, negative on error.
+ */
+NT_API int rnt_register_ephemeral_relation(const char* session_hash, int named, const char* name,
+                                           rnt_generator_fn generator, void* generator_ctx,
+                                           int cardinality, const char* generator_identity,
+                                           const char* schema_kv, const char* dependencies,
+                                           char** path_out);
+
+/**
+ * @brief Drops a named ephemeral relation, releasing its session-ownership pin.
+ *
+ * The entry is collected as soon as no cursor or dependent ephemeral still
+ * holds it, cascading the pins it took on its base relations. Scratch entries
+ * cannot be dropped by name; they die with their consuming cursor.
+ *
+ * @param session_hash  Owning session's hash.
+ * @param name          Leaf name given at registration.
+ * @return 0 on success, negative when no such named binding exists.
+ */
+NT_API int rnt_drop_ephemeral_relation(const char* session_hash, const char* name);
+
+/* ------------------------------------------------------------------ */
 /* Handle lifecycle                                                     */
 /* ------------------------------------------------------------------ */
 

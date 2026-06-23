@@ -1,5 +1,6 @@
 #include "LifecycleManager.h"
 
+#include "EphemeralRelation.h"
 #include "Merkle.h"
 #include "Types.h"
 
@@ -44,6 +45,20 @@ namespace nt {
         return object != nullptr;
     }
 
+    bool LifecycleManager::Collect(ObjectManager::registry* object) {
+        if (!IsEligibleForGC(object))
+            return false;
+        // Named-lifetime types (BRANCH / SESSION) never auto-collect; TryCollect
+        // would no-op on them, so return false rather than report a collection.
+        if (object->head->type != nullptr) {
+            const auto label = object->head->type->label;
+            if (label == BRANCH || label == SESSION)
+                return false;
+        }
+        TryCollect(object);
+        return true;
+    }
+
     void LifecycleManager::TryCollect(ObjectManager::registry* object) {
         if (!IsEligibleForGC(object))
             return;
@@ -66,6 +81,8 @@ namespace nt {
             CascadeMultigroup(object);
         if (label == BRANCH_TREE)
             CascadeBranchTree(object);
+        if (label == EPHEMERAL_RELATION)
+            CascadeEphemeral(object);
 
         objects_.Unregister(object->head->path);
     }
@@ -139,5 +156,28 @@ namespace nt {
 
         for (auto* mg : mgs)
             Unpin(mg);
+    }
+
+    void LifecycleManager::CascadeEphemeral(ObjectManager::registry* ephemeral) {
+        if (ephemeral == nullptr || ephemeral->object == nullptr)
+            return;
+        auto* er = dynamic_cast<ObjectManager::EphemeralRelation*>(ephemeral->object.get());
+        if (er == nullptr)
+            return;
+
+        // Resolve each dependency path and collect before mutating: Unpin can
+        // cascade further GC, and iteration must outlive that mutation.
+        std::vector<ObjectManager::registry*> deps;
+        for (const auto& dep : er->dependencies) {
+            const auto parts = Ephemeral::SplitPath(dep);
+            if (parts.empty())
+                continue;
+            auto* entry = objects_.Find(parts);
+            if (entry != nullptr)
+                deps.push_back(entry);
+        }
+
+        for (auto* dep : deps)
+            Unpin(dep);
     }
 } // namespace nt

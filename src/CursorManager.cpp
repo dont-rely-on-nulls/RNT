@@ -61,17 +61,18 @@ namespace nt {
         };
 
         if (label == EPHEMERAL_RELATION) {
-            // Cursor is created exhausted — the JOIN operator writes args and
-            // resets the state before the first probe. The generator is copied
-            // off the registry-owned ephemeral_object_type so Next() never has
-            // to dereference the handle again.
+            // Cursor opens ready for a standalone scan (no bound args, offset
+            // zero) so a named ephemeral can be drained like a stored relation.
+            // A JOIN probe overwrites this state anyway: the operator writes
+            // args and resets the cursor before the first probe. The generator
+            // is copied off the registry-owned ephemeral_object_type so Next()
+            // never has to dereference the handle again.
             auto* etype = static_cast<ObjectManager::ephemeral_object_type*>(
                 handle->object->head->type.get());
 
             auto* c = new cursor();
             c->is_ephemeral = true;
             c->generator = etype->generator;
-            c->exhausted = true;
             pin_snapshot(c);
             return c;
         }

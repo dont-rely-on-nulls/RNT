@@ -96,6 +96,24 @@ namespace nt {
         bool IsEligibleForGC(ObjectManager::registry* object) const;
 
         /**
+         * @brief Forces a GC attempt on an object without decrementing a counter.
+         *
+         * Runs the same eligibility check, type-specific cascade, and Unregister
+         * as Unmonitor / Unpin, but is callable directly. No-op when the object
+         * is still referenced (either counter non-zero) or is a named-lifetime
+         * type (BRANCH / SESSION).
+         *
+         * Used by the session-close path to collect scratch ephemerals that were
+         * never session-pinned and whose consuming cursor has already closed, and
+         * (later) by the idle reaper to sweep named entries after Unpinning their
+         * session-ownership pin.
+         *
+         * @param object Object to attempt to collect.
+         * @return True when the object was eligible and collected.
+         */
+        bool Collect(ObjectManager::registry* object);
+
+        /**
          * @brief Serializes contention for changes to mutable reference states.
          *
          * Immutable objects — relation snapshots, multigroup snapshots,
@@ -155,6 +173,18 @@ namespace nt {
          * itself becomes eligible for GC.
          */
         void CascadeBranchTree(ObjectManager::registry* branch_tree);
+
+        /**
+         * @brief Releases pins an EPHEMERAL_RELATION holds on its base relations.
+         *
+         * An ephemeral relation Pins every entry named in its `dependencies`
+         * list at registration time (a stored or ephemeral base cannot be GC'd
+         * while something is defined atop it). When the ephemeral itself becomes
+         * eligible for GC, this resolves each dependency path and Unpins it.
+         * Dependency paths are stored slash-joined with no leading slash and
+         * split on '/' to address the registry. Called only from TryCollect.
+         */
+        void CascadeEphemeral(ObjectManager::registry* ephemeral);
 
         ObjectManager& objects_;
         IStorageBackend& storage_;
