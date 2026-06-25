@@ -166,6 +166,15 @@ namespace nt {
           return view;
         }
 
+        Tuple* MergeInto(Tuple* right) const {
+            std::vector<Attribute> merged;
+            for (const auto& a : attrs())
+                merged.push_back(a);
+            for (const auto& a : right->attrs())
+                merged.push_back(a);
+            return new Tuple(merged);
+        }
+
     private:
         std::unordered_map<std::string, std::string> attributes_{};
         std::unordered_map<std::string, std::string>::iterator iter_;

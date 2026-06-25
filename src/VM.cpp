@@ -75,16 +75,6 @@ namespace nt {
         }
     }
 
-    Tuple* VM::MergeInto(PlanNode* node, Tuple* left, Tuple* right) {
-        std::vector<Attribute> merged;
-        for (const auto& a : left->attrs())
-            merged.push_back(a);
-        for (const auto& a : right->attrs())
-            merged.push_back(a);
-        node->join_buffer.emplace(std::move(merged));
-        return &*node->join_buffer;
-    }
-
     Tuple* VM::Next(PlanNode* node) {
         if (node == nullptr)
             return nullptr;
