@@ -80,15 +80,16 @@ namespace nt {
             return;
 
         if (label == MULTIGROUP)
-	  CascadeMultigroup(object);
+            CascadeMultigroup(object);
         if (label == BRANCH_TREE)
-	  CascadeBranchTree(object);
+            CascadeBranchTree(object);
         if (label == EPHEMERAL_RELATION)
-	  CascadeEphemeral(object);
+            CascadeEphemeral(object);
         if (label == TRANSACTION) {
-	  auto* txn = dynamic_cast<ObjectManager::Transaction*>(object->object.get());
-	  if (txn && !txn->committed) storage_.RetrieveCapability(nt::ROLLBACK_LINEAR_TRANSACTION);
-	}            
+            auto* txn = dynamic_cast<ObjectManager::Transaction*>(object->object.get());
+            if (txn && !txn->committed)
+                storage_.RetrieveCapability(nt::ROLLBACK_LINEAR_TRANSACTION);
+        }
 
         objects_.Unregister(object->head->path);
     }

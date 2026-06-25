@@ -2,10 +2,10 @@
 
 #include "Types.h"
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
-#include <functional>
 
 /**
  * @file IStorageBackend.h
@@ -24,7 +24,7 @@ namespace nt {
         ROLLBACK_LINEAR_TRANSACTION,
         NESTED_TRANSACTION
     };
-    
+
     /**
      * @interface IStorageBackend
      * @brief Contract between CursorManager / Merkle and a physical storage engine.
@@ -55,6 +55,7 @@ namespace nt {
          */
         virtual std::optional<std::vector<uint8_t>> Get(const std::string& hash) = 0;
 
-        virtual std::optional<std::function<void(void)>> RetrieveCapability(BackendCapabilities) = 0;
+        virtual std::optional<std::function<void(void)>>
+            RetrieveCapability(BackendCapabilities) = 0;
     };
 } // namespace nt
