@@ -1,9 +1,11 @@
 #pragma once
 
+#include "Types.h"
 #include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
+#include <functional>
 
 /**
  * @file IStorageBackend.h
@@ -16,6 +18,13 @@
  */
 
 namespace nt {
+    enum BackendCapabilities {
+        BEGIN_LINEAR_TRANSACTION = 1,
+        COMMIT_LINEAR_TRANSACTION,
+        ROLLBACK_LINEAR_TRANSACTION,
+        NESTED_TRANSACTION
+    };
+    
     /**
      * @interface IStorageBackend
      * @brief Contract between CursorManager / Merkle and a physical storage engine.
@@ -45,5 +54,7 @@ namespace nt {
          * @return The stored bytes, or std::nullopt when the hash is unknown.
          */
         virtual std::optional<std::vector<uint8_t>> Get(const std::string& hash) = 0;
+
+        virtual std::optional<std::function<void(void)>> RetrieveCapability(BackendCapabilities) = 0;
     };
 } // namespace nt

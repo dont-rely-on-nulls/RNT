@@ -1,5 +1,7 @@
 #include "InMemoryBackend.h"
+#include "IStorageBackend.h"
 
+#include <optional>
 #include <picosha2.h>
 
 namespace nt {
@@ -14,5 +16,9 @@ namespace nt {
         if (it == kv_.end())
             return std::nullopt;
         return it->second;
+    }
+
+    std::optional<std::function<void(void)>> RetrieveCapability(BackendCapabilities _) {
+      return {};
     }
 } // namespace nt

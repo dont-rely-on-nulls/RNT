@@ -3,6 +3,7 @@
 #include "CursorManager.h"
 #include "EphemeralRelation.h"
 #include "HandlerManager.h"
+#include "IStorageBackend.h"
 #include "IdentityManager.h"
 #include "InMemoryBackend.h"
 #include "LifecycleManager.h"
@@ -13,9 +14,11 @@
 #include "PermissionsManager.h"
 #include "SqliteBackend.h"
 #include "TupleCodec.h"
+#include "Types.h"
 #include "VM.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstring>
 #include <memory>
 #include <mutex>
@@ -47,6 +50,11 @@ namespace {
         std::unique_ptr<nt::CursorManager> cursors;
     };
 
+    // Get rid of this global state and let OCaml manage the
+    // reference. Sakura tests currently leak memory as there is
+    // currently no way to deref this from there. This also gives us
+    // the possibility of spawning multiple RNT instances attached to
+    // a process.
     static std::unique_ptr<Runtime> g_rt;
 
     static std::vector<std::string> split_path(const char* path) {
@@ -99,6 +107,15 @@ namespace {
         return p;
     }
 
+    static std::unique_ptr<nt::ObjectManager::object_type> make_transaction_type() {
+        auto t = std::make_unique<nt::ObjectManager::object_type>();
+        t->label = TRANSACTION;
+        t->disposable = true; // non-durable, meaning they are GC'd by the counter on the LCM
+        t->methods = {OPEN, CLOSE};
+        t->exclusive = false; // a txn is never a contention point
+        return t;
+    }
+    
     static std::unique_ptr<nt::ObjectManager::object_type> make_relation_type() {
         auto t = std::make_unique<nt::ObjectManager::object_type>();
         t->label = RELATION;
@@ -175,6 +192,18 @@ namespace {
             }
         }
         return out;
+    }
+
+    rnt_handle_t rnt_txn_open(void* connection_context) {
+      const std::string id = random_session_hash(); // reuse the id gen
+      const auto path = split_path(("/system/transactions/" + id).c_str());
+      if (g_rt->objects.Find(path))
+          return nullptr;
+      g_rt->objects.Register(path, std::make_unique<nt::ObjectManager::Transaction>(),
+                             make_transaction_type());
+      if (auto begin = g_rt->storage->RetrieveCapability(nt::BEGIN_LINEAR_TRANSACTION))
+          (*begin)();
+      return g_rt->handler->Open(path, connection_context); // Monitor -> handle_count = 1
     }
 
     // Serializes the (name, merkle_root) pairs into the storage backend and
@@ -318,6 +347,24 @@ namespace {
         if (entry->head->type->label != BRANCH)
             return nullptr;
         return dynamic_cast<nt::ObjectManager::Branch*>(entry->object.get());
+    }
+
+    int rnt_txn_commit(rnt_handle_t handle) {
+        auto* h = static_cast<nt::HandlerManager::handle*>(handle);
+        auto* txn = dynamic_cast<nt::ObjectManager::Transaction*>(h->object->object.get());
+        if (!txn)
+            return -1;
+	// CAS gate
+        for (auto& bp : txn->staged_branches) {
+            auto* br = find_branch(split_path(bp.c_str()));
+            if (!br || br->target_hash != txn->observed_roots[bp])
+	      return -1; // lost the race
+        }
+        if (auto commit = g_rt->storage->RetrieveCapability(nt::COMMIT_LINEAR_TRANSACTION))
+            (*commit)();
+        txn->committed = true;
+        g_rt->handler->Close(h); // Unmonitor --> both counters 0 -> TryCollect -> no rollback (committed)
+	return 0;
     }
 
     // Parses a path of the form

@@ -99,7 +99,14 @@ namespace nt {
             std::vector<std::string> dependencies;
         };
         /** @brief Abstract registry object representing a transaction. */
-        class Transaction : public IObject {};
+        class Transaction : public IObject {
+          public:
+            bool committed = false;
+            std::vector<std::string> staged_branches;
+            // Commit here means CAS each target_hash against observed,
+            // swap, storage.Commit(), committed = true            
+	    std::map<std::string, std::string> observed_roots; // CAS at commit time
+	};
 
         /**
          * @brief Registry object representing an active connection's session.
