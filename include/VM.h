@@ -181,6 +181,7 @@ namespace nt {
       public:
         virtual ~PlanNode() {};
 
+        // TODO: who owns the pointer returned from `Next`? The caller?
         virtual Tuple* Next() = 0;
         virtual void Rewind(Tuple* outer) = 0;
     };
