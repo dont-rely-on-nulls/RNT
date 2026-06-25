@@ -77,15 +77,15 @@ namespace nt {
         }
     };
 
-    enum Operation {
-        FOL_OPERATION_SCAN = 1,
-        FOL_OPERATION_JOIN,
-        FOL_OPERATION_TAKE,
-        FOL_OPERATION_PROJECT,
-        FOL_OPERATION_MATERIALIZE,
-        FOL_OPERATION_RENAME,
-        FOL_OPERATION_UNION
-    };
+    // enum Operation {
+    //     FOL_OPERATION_SCAN = 1,
+    //     FOL_OPERATION_JOIN,
+    //     FOL_OPERATION_TAKE,
+    //     FOL_OPERATION_PROJECT,
+    //     FOL_OPERATION_MATERIALIZE,
+    //     FOL_OPERATION_RENAME,
+    //     FOL_OPERATION_UNION
+    // };
 
     /**
      * @brief A node in the Volcano operator tree executed by the Tarski (FOL) runtime.
@@ -113,68 +113,76 @@ namespace nt {
      *           this node, so it is up to the planner to place it only where the
      *           child is independent of the outer side.
      */
-    struct PlanNode {
-        Operation op;
-        PlanNode* left = nullptr;
-        PlanNode* right = nullptr;
+    // struct PlanNode {
+    //     Operation op;
+    //     PlanNode* left = nullptr;
+    //     PlanNode* right = nullptr;
 
-        /**
-         * SCAN: pre-opened cursor. For ephemeral relations this cursor is
-         * initially exhausted; the JOIN resets it with resolved args before
-         * each probe.
-         */
-        CursorManager::cursor* scan_cursor = nullptr;
+    //     /**
+    //      * SCAN: pre-opened cursor. For ephemeral relations this cursor is
+    //      * initially exhausted; the JOIN resets it with resolved args before
+    //      * each probe.
+    //      */
+    //     CursorManager::cursor* scan_cursor = nullptr;
 
-        /**
-         * SCAN: argument template for parameterized relations.
-         * Var entries are resolved from the outer JOIN tuple; Const entries
-         * are used as-is. The resolved values are written into scan_cursor->args
-         * by the JOIN before it calls Next() on this node.
-         */
-        std::vector<PathArg> scan_args;
+    //     /**
+    //      * SCAN: argument template for parameterized relations.
+    //      * Var entries are resolved from the outer JOIN tuple; Const entries
+    //      * are used as-is. The resolved values are written into scan_cursor->args
+    //      * by the JOIN before it calls Next() on this node.
+    //      */
+    //     std::vector<PathArg> scan_args;
 
-        /** TAKE: maximum number of tuples to emit before returning nullptr. */
-        std::size_t take_limit = 0;
-        std::size_t take_count = 0; /**< Runtime counter; mutable during execution. */
+    //     /** TAKE: maximum number of tuples to emit before returning nullptr. */
+    //     std::size_t take_limit = 0;
+    //     std::size_t take_count = 0; /**< Runtime counter; mutable during execution. */
 
-        /** PROJECT: unordered set of attribute names to keep. */
-        std::unordered_set<std::string> project_attrs;
-        std::optional<Tuple> project_buffer;
+    //     /** PROJECT: unordered set of attribute names to keep. */
+    //     std::unordered_set<std::string> project_attrs;
+    //     std::optional<Tuple> project_buffer;
 
-        /**
-         * JOIN runtime state.
-         *
-         * join_left holds the current outer tuple while probing the inner
-         * (right) side. The pointer is stable for the lifetime of one outer
-         * iteration because Next(left) is only called when join_left is reset
-         * to nullptr, which happens only after the inner side is exhausted.
-         *
-         * join_buffer holds the merged output tuple and is overwritten on each
-         * successful join. Callers must consume the returned pointer before
-         * calling Next() again — same contract as a cursor page pointer.
-         */
-        Tuple* join_left = nullptr;
-        std::optional<Tuple> join_buffer;
-        std::unordered_set<std::string> join_attrs;
+    //     /**
+    //      * JOIN runtime state.
+    //      *
+    //      * join_left holds the current outer tuple while probing the inner
+    //      * (right) side. The pointer is stable for the lifetime of one outer
+    //      * iteration because Next(left) is only called when join_left is reset
+    //      * to nullptr, which happens only after the inner side is exhausted.
+    //      *
+    //      * join_buffer holds the merged output tuple and is overwritten on each
+    //      * successful join. Callers must consume the returned pointer before
+    //      * calling Next() again — same contract as a cursor page pointer.
+    //      */
+    //     Tuple* join_left = nullptr;
+    //     std::optional<Tuple> join_buffer;
+    //     std::unordered_set<std::string> join_attrs;
 
-        /**
-         * MATERIALIZE runtime state.
-         *
-         * mat_buffer holds owned copies of the child's tuples, filled on the
-         * first scan. mat_done marks the cache complete (child exhausted).
-         * mat_pos is the replay cursor, reset to 0 by Rewind on each later scan.
-         */
-        std::vector<Tuple> mat_buffer;
-        std::size_t mat_pos = 0;
-        bool mat_done = false;
+    //     /**
+    //      * MATERIALIZE runtime state.
+    //      *
+    //      * mat_buffer holds owned copies of the child's tuples, filled on the
+    //      * first scan. mat_done marks the cache complete (child exhausted).
+    //      * mat_pos is the replay cursor, reset to 0 by Rewind on each later scan.
+    //      */
+    //     std::vector<Tuple> mat_buffer;
+    //     std::size_t mat_pos = 0;
+    //     bool mat_done = false;
 
-        /** RENAME runtime state. */
-        PlanNode* upstream = nullptr;
-        std::unordered_map<std::string, std::string> attrs;
+    //     /** RENAME runtime state. */
+    //     PlanNode* upstream = nullptr;
+    //     std::unordered_map<std::string, std::string> attrs;
 
-        /** UNION runtime state. */
-        std::vector<PlanNode*> nodes;
-        std::vector<PlanNode*>::iterator current_node;
+    //     /** UNION runtime state. */
+    //     std::vector<PlanNode*> nodes;
+    //     std::vector<PlanNode*>::iterator current_node;
+    // };
+
+    class PlanNode {
+      public:
+        virtual ~PlanNode() {};
+
+        virtual Tuple* Next() = 0;
+        virtual void Rewind(Tuple* outer) = 0;
     };
 
     class VM {
