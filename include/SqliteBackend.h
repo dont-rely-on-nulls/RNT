@@ -37,7 +37,7 @@ namespace nt {
         std::optional<std::vector<uint8_t>> Get(const std::string& hash) override;
 
         std::optional<std::function<void(void)>>
-        RetrieveCapability(BackendCapabilities capability) {
+        RetrieveCapability(BackendCapabilities capability) override {
             switch (capability) {
             case nt::BackendCapabilities::BEGIN_LINEAR_TRANSACTION:
                 return [this] { Exec("BEGIN"); };

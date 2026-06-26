@@ -195,15 +195,24 @@ namespace {
     }
 
     rnt_handle_t rnt_txn_open(void* connection_context) {
-      const std::string id = random_session_hash(); // reuse the id gen
-      const auto path = split_path(("/system/transactions/" + id).c_str());
-      if (g_rt->objects.Find(path))
-          return nullptr;
-      g_rt->objects.Register(path, std::make_unique<nt::ObjectManager::Transaction>(),
-                             make_transaction_type());
-      if (auto begin = g_rt->storage->RetrieveCapability(nt::BEGIN_LINEAR_TRANSACTION))
-          (*begin)();
-      return g_rt->handler->Open(path, connection_context); // Monitor -> handle_count = 1
+        if (!g_rt)
+            return nullptr;
+        const std::string id = random_session_hash(); // reuse the id gen
+        const auto path = split_path(("/system/transactions/" + id).c_str());
+        if (g_rt->objects.Find(path))
+            return nullptr;
+        g_rt->objects.Register(path, std::make_unique<nt::ObjectManager::Transaction>(),
+                               make_transaction_type());
+        // Take the handle before BEGIN so a failed Open never leaves a SQLite
+        // transaction open with no handle to ever commit or roll it back.
+        auto* handle = g_rt->handler->Open(path, connection_context); // Monitor -> handle_count = 1
+        if (!handle) {
+            g_rt->objects.Unregister(path);
+            return nullptr;
+        }
+        if (auto begin = g_rt->storage->RetrieveCapability(nt::BEGIN_LINEAR_TRANSACTION))
+            (*begin)();
+        return handle;
     }
 
     // Serializes the (name, merkle_root) pairs into the storage backend and
