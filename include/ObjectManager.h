@@ -105,7 +105,11 @@ namespace nt {
             std::vector<std::string> staged_branches;
             // Commit here means CAS each target_hash against observed,
             // swap, storage.Commit(), committed = true
-            std::map<std::string, std::string> observed_roots; // CAS at commit time
+            std::map<std::string, std::string> observed_roots; // branch root snapshot at first touch
+            // Deferred new branch-tree root per staged branch. Writes inside a
+            // txn buffer here instead of mutating the live Branch; commit swaps
+            // these in once the CAS gate passes.
+            std::map<std::string, std::string> pending_roots;
         };
 
         /**

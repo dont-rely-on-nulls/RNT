@@ -57,6 +57,15 @@ namespace {
     // a process.
     static std::unique_ptr<Runtime> g_rt;
 
+    // Registry path of the currently-open transaction, or empty when none.
+    // Single active txn per runtime: matches the existing global g_rt model.
+    // Promoting to per-connection requires threading connection_context through
+    // the write APIs (rnt_link_tuple et al), which take only a relation path.
+    static std::string g_active_txn_path;
+
+    std::string join_path(const std::vector<std::string>& segs);       // defined below
+    static nt::ObjectManager::Transaction* active_txn();                // defined below
+
     static std::vector<std::string> split_path(const char* path) {
         std::vector<std::string> parts;
         if (!path)
@@ -197,6 +206,10 @@ namespace {
     rnt_handle_t rnt_txn_open(void* connection_context) {
         if (!g_rt)
             return nullptr;
+        // One active txn per runtime: the storage BEGIN/COMMIT is a single
+        // linear transaction and writes bind to it via g_active_txn_path.
+        if (active_txn())
+            return nullptr;
         const std::string id = random_session_hash(); // reuse the id gen
         const auto path = split_path(("/system/transactions/" + id).c_str());
         if (g_rt->objects.Find(path))
@@ -212,6 +225,7 @@ namespace {
         }
         if (auto begin = g_rt->storage->RetrieveCapability(nt::BEGIN_LINEAR_TRANSACTION))
             (*begin)();
+        g_active_txn_path = join_path(path);
         return handle;
     }
 
@@ -322,13 +336,13 @@ namespace {
         }
     }
 
-    // Looks up the mg_hash currently bound to `mg_name` in the branch's tree.
-    // Returns empty string when the branch is unborn or the mg is absent.
-    static std::string lookup_branch_mg(const nt::ObjectManager::Branch& branch,
-                                        const std::string& mg_name) {
-        if (branch.target_hash.empty())
+    // Looks up the mg_hash bound to `mg_name` in an explicit branch-tree root.
+    // Returns empty string when the tree is empty or the mg is absent.
+    static std::string lookup_branch_mg_at(const std::string& tree_root,
+                                           const std::string& mg_name) {
+        if (tree_root.empty())
             return "";
-        auto found = nt::Merkle<std::string>::Get(*g_rt->storage, branch.target_hash, mg_name);
+        auto found = nt::Merkle<std::string>::Get(*g_rt->storage, tree_root, mg_name);
         if (!found)
             return "";
         static const nt::Hash32 zero{};
@@ -337,14 +351,35 @@ namespace {
         return nt::bin_to_hex(*found);
     }
 
-    // Reads the (relation_name, root) list of a specific multigroup under a
-    // branch. Returns empty for unborn branches or absent multigroups.
+    static std::string lookup_branch_mg(const nt::ObjectManager::Branch& branch,
+                                        const std::string& mg_name) {
+        return lookup_branch_mg_at(branch.target_hash, mg_name);
+    }
+
+    // Reads the (relation_name, root) list of a multigroup under an explicit
+    // branch-tree root. Returns empty for an empty tree or absent multigroup.
     static std::vector<nt::MultigroupCodec::RelationEntry>
-    read_mg_relations(const nt::ObjectManager::Branch& branch, const std::string& mg_name) {
-        const std::string mg_hash = lookup_branch_mg(branch, mg_name);
+    read_mg_relations_at(const std::string& tree_root, const std::string& mg_name) {
+        const std::string mg_hash = lookup_branch_mg_at(tree_root, mg_name);
         if (mg_hash.empty())
             return {};
         return nt::MultigroupCodec::List(*g_rt->storage, mg_hash);
+    }
+
+    static std::vector<nt::MultigroupCodec::RelationEntry>
+    read_mg_relations(const nt::ObjectManager::Branch& branch, const std::string& mg_name) {
+        return read_mg_relations_at(branch.target_hash, mg_name);
+    }
+
+    // Root of a named relation within an explicit branch-tree root. Empty when
+    // the mg or relation is absent.
+    static std::string read_relation_root_at(const std::string& tree_root,
+                                             const std::string& mg_name,
+                                             const std::string& relation_name) {
+        const auto relations = read_mg_relations_at(tree_root, mg_name);
+        auto it = std::find_if(relations.begin(), relations.end(),
+                               [&](const auto& e) { return e.first == relation_name; });
+        return (it == relations.end()) ? std::string{} : it->second;
     }
 
     // Looks up a branch object by path. Returns nullptr when the path does not
@@ -363,17 +398,28 @@ namespace {
         auto* txn = dynamic_cast<nt::ObjectManager::Transaction*>(h->object->object.get());
         if (!txn)
             return -1;
-	// CAS gate
+        // CAS gate: every staged branch must still sit at the root we observed
+        // when the txn first touched it; otherwise a concurrent writer moved it.
         for (auto& bp : txn->staged_branches) {
             auto* br = find_branch(split_path(bp.c_str()));
             if (!br || br->target_hash != txn->observed_roots[bp])
-	      return -1; // lost the race
+                return -1; // lost the race
+        }
+        // Gate passed: swap each branch to its buffered root and rebind pins,
+        // then make the storage transaction durable.
+        for (auto& bp : txn->staged_branches) {
+            auto* br = find_branch(split_path(bp.c_str()));
+            const std::string old_root = br->target_hash;
+            const std::string& new_root = txn->pending_roots[bp];
+            br->target_hash = new_root;
+            rebind_branch_tree_pin(old_root, new_root);
         }
         if (auto commit = g_rt->storage->RetrieveCapability(nt::COMMIT_LINEAR_TRANSACTION))
             (*commit)();
         txn->committed = true;
+        g_active_txn_path.clear();
         g_rt->handler->Close(h); // Unmonitor --> both counters 0 -> TryCollect -> no rollback (committed)
-	return 0;
+        return 0;
     }
 
     // Parses a path of the form
@@ -395,24 +441,55 @@ namespace {
         return true;
     }
 
+    // Resolves the open transaction, or nullptr when none. Self-clears the
+    // tracked path when the txn object is gone (e.g. rolled back on GC), so a
+    // collected txn never leaves a dangling association behind.
+    static nt::ObjectManager::Transaction* active_txn() {
+        if (g_active_txn_path.empty())
+            return nullptr;
+        auto* e = g_rt->objects.Find(split_path(g_active_txn_path.c_str()));
+        if (!e || !e->object) {
+            g_active_txn_path.clear();
+            return nullptr;
+        }
+        return dynamic_cast<nt::ObjectManager::Transaction*>(e->object.get());
+    }
+
+    // Working branch-tree root for reads/writes: the open txn's buffered pending
+    // root when one exists for this branch, else the live committed root.
+    static std::string effective_root(const nt::ObjectManager::Branch& branch,
+                                      const std::vector<std::string>& branch_path) {
+        if (auto* txn = active_txn()) {
+            auto it = txn->pending_roots.find(join_path(branch_path));
+            if (it != txn->pending_roots.end())
+                return it->second;
+        }
+        return branch.target_hash;
+    }
+
     // Applies a per-relation root update with the full two-level cascade:
-    //   1. Read the (rel, root) list of `mg_name` from the branch's current
+    //   1. Read the (rel, root) list of `mg_name` from the branch's effective
     //      tree (or empty when the mg is absent / branch is unborn).
     //   2. Insert/replace (relation_name, new_root) in that list.
     //   3. register_snapshot → new_mg_hash.
     //   4. Insert (mg_name → new_mg_hash) into the branch tree → new branch
     //      tree root.
-    //   5. Advance branch.target_hash to the new root and rebind pins.
+    //   5. Advance to the new root. Outside a txn this swaps branch.target_hash
+    //      live and rebinds pins; inside a txn it buffers the new root in
+    //      pending_roots and defers the swap (and pin rebind) to commit, leaving
+    //      the live root untouched so the CAS gate stays meaningful.
     // Returns the new branch tree root on success; empty on error.
     //
     // Pin/unpin transitions are applied via rebind_branch_tree_pin: new mgs
     // are pinned before old mgs are unpinned, so an unchanged advance never
     // briefly drops a multigroup's ref_count to zero.
     static std::string commit_relation_update(nt::ObjectManager::Branch& branch,
+                                              const std::vector<std::string>& branch_path,
                                               const std::string& mg_name,
                                               const std::string& relation_name,
                                               const std::string& new_root) {
-        auto relations = read_mg_relations(branch, mg_name);
+        const std::string base = effective_root(branch, branch_path);
+        auto relations = read_mg_relations_at(base, mg_name);
         auto it = std::find_if(relations.begin(), relations.end(),
                                [&](const auto& e) { return e.first == relation_name; });
         if (it != relations.end())
@@ -425,25 +502,23 @@ namespace {
             return {};
 
         const nt::Hash32 mg_payload = nt::hex_to_bin(new_mg_hash);
-        const std::string new_tree_root = nt::Merkle<std::string>::Insert(
-            *g_rt->storage, branch.target_hash, mg_name, mg_payload);
+        const std::string new_tree_root =
+            nt::Merkle<std::string>::Insert(*g_rt->storage, base, mg_name, mg_payload);
+
+        if (auto* txn = active_txn()) {
+            const std::string bp = join_path(branch_path);
+            if (!txn->observed_roots.count(bp)) {
+                txn->observed_roots[bp] = branch.target_hash; // snapshot for commit-time CAS
+                txn->staged_branches.push_back(bp);
+            }
+            txn->pending_roots[bp] = new_tree_root; // swap + pin rebind deferred to commit
+            return new_tree_root;
+        }
 
         const std::string old_tree_root = branch.target_hash;
         branch.target_hash = new_tree_root;
         rebind_branch_tree_pin(old_tree_root, new_tree_root);
         return new_tree_root;
-    }
-
-    // Returns the merkle_root of a named relation in the specified mg under
-    // the branch's current tree. Empty when the branch is unborn, the mg
-    // doesn't exist, or the relation is absent.
-    static std::string read_relation_root(const nt::ObjectManager::Branch& branch,
-                                          const std::string& mg_name,
-                                          const std::string& relation_name) {
-        const auto relations = read_mg_relations(branch, mg_name);
-        auto it = std::find_if(relations.begin(), relations.end(),
-                               [&](const auto& e) { return e.first == relation_name; });
-        return (it == relations.end()) ? std::string{} : it->second;
     }
 
     // -----------------------------------------------------------------------
@@ -1053,15 +1128,15 @@ int rnt_register_relation(const char* path) {
         return -1;
 
     // Idempotent: if the relation is already present in the named mg's
-    // current snapshot, the call succeeds without producing a new snapshot.
-    const auto current = read_mg_relations(*branch, mg_name);
+    // effective snapshot, the call succeeds without producing a new snapshot.
+    const auto current = read_mg_relations_at(effective_root(*branch, branch_path), mg_name);
     const bool already_present = std::any_of(
         current.begin(), current.end(), [&](const auto& e) { return e.first == relation_name; });
     if (already_present)
         return 0;
 
     // Empty merkle_root signals a relation with no tuples.
-    return commit_relation_update(*branch, mg_name, relation_name, "").empty() ? -1 : 0;
+    return commit_relation_update(*branch, branch_path, mg_name, relation_name, "").empty() ? -1 : 0;
 }
 
 int rnt_register_branch(const char* path, const char* target_hash) {
@@ -1153,7 +1228,8 @@ int rnt_link_tuple(const char* relation_path, const char* kv_attrs, char** hash_
     if (!branch)
         return -1;
 
-    const std::string old_root = read_relation_root(*branch, mg_name, relation_name);
+    const std::string old_root =
+        read_relation_root_at(effective_root(*branch, branch_path), mg_name, relation_name);
 
     auto bytes = nt::TupleCodec::Serialize(parse_kv(kv_attrs));
     const auto tuple_hash = g_rt->storage->Put(std::move(bytes));
@@ -1161,7 +1237,7 @@ int rnt_link_tuple(const char* relation_path, const char* kv_attrs, char** hash_
     const std::string new_root =
         nt::Merkle<nt::Hash32>::Insert(*g_rt->storage, old_root, tuple_bin, tuple_bin);
 
-    if (commit_relation_update(*branch, mg_name, relation_name, new_root).empty())
+    if (commit_relation_update(*branch, branch_path, mg_name, relation_name, new_root).empty())
         return -1;
 
     *hash_out = heap_str(tuple_hash);
@@ -1182,11 +1258,14 @@ int rnt_unlink_tuple(const char* relation_path, const char* tuple_hash) {
     if (!branch)
         return -1;
 
-    const std::string old_root = read_relation_root(*branch, mg_name, relation_name);
+    const std::string old_root =
+        read_relation_root_at(effective_root(*branch, branch_path), mg_name, relation_name);
     const std::string new_root =
         nt::Merkle<nt::Hash32>::Remove(*g_rt->storage, old_root, nt::hex_to_bin(tuple_hash));
 
-    return commit_relation_update(*branch, mg_name, relation_name, new_root).empty() ? -1 : 0;
+    return commit_relation_update(*branch, branch_path, mg_name, relation_name, new_root).empty()
+               ? -1
+               : 0;
 }
 
 int rnt_clear_relation(const char* relation_path) {
@@ -1203,7 +1282,7 @@ int rnt_clear_relation(const char* relation_path) {
     if (!branch)
         return -1;
 
-    return commit_relation_update(*branch, mg_name, relation_name, "").empty() ? -1 : 0;
+    return commit_relation_update(*branch, branch_path, mg_name, relation_name, "").empty() ? -1 : 0;
 }
 
 int rnt_relation_root(const char* relation_path, char** root_hash_out) {
