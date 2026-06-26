@@ -87,8 +87,10 @@ namespace nt {
             CascadeEphemeral(object);
         if (label == TRANSACTION) {
             auto* txn = dynamic_cast<ObjectManager::Transaction*>(object->object.get());
-            if (txn && !txn->committed)
-                storage_.RetrieveCapability(nt::ROLLBACK_LINEAR_TRANSACTION);
+            if (txn && !txn->committed) {
+                if (auto rollback = storage_.RetrieveCapability(nt::ROLLBACK_LINEAR_TRANSACTION))
+                    (*rollback)();
+            }
         }
 
         objects_.Unregister(object->head->path);
