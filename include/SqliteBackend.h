@@ -42,7 +42,7 @@ namespace nt {
             case nt::BackendCapabilities::BEGIN_LINEAR_TRANSACTION:
                 return [this] { Exec("BEGIN"); };
             case nt::BackendCapabilities::COMMIT_LINEAR_TRANSACTION:
-                return [this] { Exec("COMMI"); };
+                return [this] { Exec("COMMIT"); };
             case nt::BackendCapabilities::ROLLBACK_LINEAR_TRANSACTION:
                 return [this] { Exec("ROLLBACK"); };
             default:
