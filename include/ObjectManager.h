@@ -111,6 +111,13 @@ namespace nt {
             // txn buffer here instead of mutating the live Branch; commit swaps
             // these in once the CAS gate passes.
             std::map<std::string, std::string> pending_roots;
+            // Snapshot multigroups freshly registered while staging. The commit
+            // pins only those referenced by the committed branch-tree; the
+            // intermediate (superseded) ones are never pinned. CascadeTransaction
+            // sweeps this list when the txn is collected, so the ref-count guard
+            // drops the unpinned intermediates (and, on abort, all of them) while
+            // committed snapshots survive.
+            std::vector<std::string> staged_snapshots;
         };
 
         /**

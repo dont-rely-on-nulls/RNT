@@ -186,6 +186,20 @@ namespace nt {
          */
         void CascadeEphemeral(ObjectManager::registry* ephemeral);
 
+        /**
+         * @brief Collects the snapshot multigroups a TRANSACTION staged.
+         *
+         * A transaction registers a snapshot multigroup for every write it
+         * buffers but pins none of them while open. The commit pins (via the
+         * committed branch-tree) only the snapshots its final roots reference;
+         * intermediate snapshots superseded by later writes in the same txn are
+         * left unpinned, and on abort nothing is pinned at all. This walks the
+         * txn's staged_snapshots and TryCollects each: the joint-counter guard
+         * keeps the still-pinned committed snapshots and drops the rest. Called
+         * only from TryCollect when a TRANSACTION becomes eligible for GC.
+         */
+        void CascadeTransaction(ObjectManager::registry* transaction);
+
         ObjectManager& objects_;
         IStorageBackend& storage_;
     };

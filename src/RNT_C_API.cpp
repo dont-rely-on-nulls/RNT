@@ -206,7 +206,8 @@ namespace {
     // LifecycleManager::CascadeMultigroup releases these pins when the
     // multigroup itself becomes GC-eligible.
     static std::string
-    register_snapshot(const std::vector<nt::MultigroupCodec::RelationEntry>& relations) {
+    register_snapshot(const std::vector<nt::MultigroupCodec::RelationEntry>& relations,
+                      nt::ObjectManager::Transaction* txn = nullptr) {
         if (!g_rt)
             return {};
 
@@ -221,6 +222,13 @@ namespace {
         auto mg = std::make_unique<nt::ObjectManager::Multigroup>();
         mg->merkle_root = hash;
         g_rt->objects.Register(snap_path, std::move(mg), make_multigroup_type());
+
+        // Record snapshots a txn freshly registers so CascadeTransaction can
+        // collect the intermediate ones it never pins. Only fresh registrations
+        // are tracked: a hash that already existed is either a pre-existing
+        // committed snapshot (must not be swept) or one this txn already logged.
+        if (txn != nullptr)
+            txn->staged_snapshots.push_back(hash);
 
         for (const auto& [name, root] : relations) {
             const auto rel_path =
@@ -440,7 +448,7 @@ namespace {
         else
             relations.emplace_back(relation_name, new_root);
 
-        const std::string new_mg_hash = register_snapshot(relations);
+        const std::string new_mg_hash = register_snapshot(relations, txn);
         if (new_mg_hash.empty())
             return {};
 

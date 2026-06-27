@@ -85,10 +85,12 @@ namespace nt {
             CascadeBranchTree(object);
         if (label == EPHEMERAL_RELATION)
             CascadeEphemeral(object);
-        // A collected transaction needs no special handling: its staged roots
-        // live only in the in-memory Transaction object and are discarded by
-        // Unregister below. The branch-tree blobs it produced were never pinned
-        // (pins are taken only at commit), so they are already GC-eligible.
+        if (label == TRANSACTION)
+            CascadeTransaction(object);
+        // The branch-tree root blobs a txn produced are never registered as
+        // objects (only committed roots are, at commit), so they leave no
+        // registry entry behind — they are content-addressed and GC-eligible.
+        // The staged_roots map dies with the Transaction at Unregister below.
 
         objects_.Unregister(object->head->path);
     }
@@ -185,5 +187,28 @@ namespace nt {
 
         for (auto* dep : deps)
             Unpin(dep);
+    }
+
+    void LifecycleManager::CascadeTransaction(ObjectManager::registry* transaction) {
+        if (transaction == nullptr || transaction->object == nullptr)
+            return;
+        auto* txn = dynamic_cast<ObjectManager::Transaction*>(transaction->object.get());
+        if (txn == nullptr)
+            return;
+
+        // Resolve each staged snapshot before mutating: TryCollect cascades into
+        // CascadeMultigroup (which unpins the snapshot's relation children) and
+        // may unregister entries, so iteration must outlive that mutation. The
+        // joint-counter guard inside TryCollect spares any snapshot still pinned
+        // by a committed branch-tree.
+        std::vector<ObjectManager::registry*> mgs;
+        for (const auto& mg_hash : txn->staged_snapshots) {
+            auto* entry = objects_.Find({"system", "snapshots", mg_hash});
+            if (entry != nullptr)
+                mgs.push_back(entry);
+        }
+
+        for (auto* mg : mgs)
+            TryCollect(mg);
     }
 } // namespace nt
