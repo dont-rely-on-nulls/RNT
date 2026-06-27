@@ -1,9 +1,9 @@
 #pragma once
 
-#include <string>
-#include <vector>
-#include <unordered_map>
 #include <ranges>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
 /**
  * @file Types.h
@@ -134,15 +134,17 @@ namespace nt {
      * one attribute at a time. Returns nullptr when all attributes are exhausted.
      */
     class Tuple {
-    public:
+      public:
         explicit Tuple(std::vector<Attribute> attributes) {
-            for (auto &attr : attributes) attributes_[attr.name] = attr.value;
+            for (auto& attr : attributes)
+                attributes_[attr.name] = attr.value;
             this->Reset();
         }
 
         /** @brief Returns the next attribute, or nullptr when exhausted. */
         const Attribute* Next() {
-            if (iter_ == attributes_.end()) return nullptr;
+            if (iter_ == attributes_.end())
+                return nullptr;
             current_attr_ = {iter_->first, iter_->second};
             iter_++;
             return &current_attr_;
@@ -157,16 +159,15 @@ namespace nt {
         }
 
         const auto attrs() const {
-          auto view =
-              attributes_ |
-              std::views::transform([](std::pair<std::string, std::string> p) {
-                  Attribute attr { p.first, p.second };
-                  return attr;
-              });
-          return view;
+            auto view =
+                attributes_ | std::views::transform([](std::pair<std::string, std::string> p) {
+                    Attribute attr{p.first, p.second};
+                    return attr;
+                });
+            return view;
         }
 
-    private:
+      private:
         std::unordered_map<std::string, std::string> attributes_{};
         std::unordered_map<std::string, std::string>::iterator iter_;
         Attribute current_attr_;

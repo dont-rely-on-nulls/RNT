@@ -4,7 +4,6 @@
 #include "IStorageBackend.h"
 
 #include <sqlite3.h>
-#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -36,31 +35,7 @@ namespace nt {
         std::string Put(std::vector<uint8_t> value) override;
         std::optional<std::vector<uint8_t>> Get(const std::string& hash) override;
 
-        std::optional<std::function<void(void)>>
-        RetrieveCapability(BackendCapabilities capability) override {
-            switch (capability) {
-            case nt::BackendCapabilities::BEGIN_LINEAR_TRANSACTION:
-                return [this] { Exec("BEGIN"); };
-            case nt::BackendCapabilities::COMMIT_LINEAR_TRANSACTION:
-                return [this] { Exec("COMMIT"); };
-            case nt::BackendCapabilities::ROLLBACK_LINEAR_TRANSACTION:
-                return [this] { Exec("ROLLBACK"); };
-            default:
-                return {};
-            }
-        }
-
       private:
-        void Exec(const char* command) {
-            char* err = nullptr;
-            if (sqlite3_exec(db_, command, nullptr, nullptr, &err) != SQLITE_OK) {
-                std::string msg = err ? err : "Execution failure";
-                sqlite3_free(err);
-                // We gotta be sure about catching exceptions
-                // and not carrying them over to sakura
-                throw std::runtime_error(msg);
-            }
-        }
         sqlite3* db_ = nullptr;
     };
 } // namespace nt

@@ -68,6 +68,11 @@ The comments in the public headers are part of the design record. Keep architect
 
 The repository also includes a GitHub Actions workflow that publishes the generated Doxygen HTML to GitHub Pages on pushes to =master=. In the repository settings, configure Pages to use =GitHub Actions= as its source.
 
+* Format
+At the root of the project run:
+#+BEGIN_SRC shell
+find src include test -type f | awk '/\.(cpp|h|c)$/' | xargs clang-format -i
+#+END_SRC
 * License
 
 RNT is free software licensed under the GNU Affero General Public License v3.0.

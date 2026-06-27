@@ -84,14 +84,14 @@ namespace nt::Ephemeral {
         return picosha2::hash256_hex_string(buf.begin(), buf.end());
     }
 
-    ObjectManager::registry* Register(
-        ObjectManager& objects, LifecycleManager& lifecycles, const std::string& session_hash,
-        Tier tier, const std::string& name,
-        ObjectManager::ephemeral_object_type::Generator generator,
-        ObjectManager::ephemeral_object_type::Cardinality cardinality,
-        const std::string& generator_identity,
-        const std::vector<std::pair<std::string, std::string>>& schema,
-        const std::vector<std::string>& dependencies) {
+    ObjectManager::registry*
+    Register(ObjectManager& objects, LifecycleManager& lifecycles, const std::string& session_hash,
+             Tier tier, const std::string& name,
+             ObjectManager::ephemeral_object_type::Generator generator,
+             ObjectManager::ephemeral_object_type::Cardinality cardinality,
+             const std::string& generator_identity,
+             const std::vector<std::pair<std::string, std::string>>& schema,
+             const std::vector<std::string>& dependencies) {
         if (session_hash.empty())
             return nullptr;
         if (tier == Tier::Named && name.empty())
@@ -150,9 +150,9 @@ namespace nt::Ephemeral {
     std::size_t ReleaseSession(ObjectManager& objects, LifecycleManager& lifecycles,
                                const std::string& session_hash) {
         const std::vector<std::string> named_prefix = {"system", "sessions", session_hash,
-                                                        "ephemeral"};
+                                                       "ephemeral"};
         const std::vector<std::string> scratch_prefix = {"system", "sessions", session_hash,
-                                                          "scratch"};
+                                                         "scratch"};
 
         auto is_child = [](const std::vector<std::string>& path,
                            const std::vector<std::string>& prefix) {

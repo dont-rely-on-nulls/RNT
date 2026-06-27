@@ -24,9 +24,6 @@ namespace nt {
       public:
         std::string Put(std::vector<uint8_t> value) override;
         std::optional<std::vector<uint8_t>> Get(const std::string& hash) override;
-        std::optional<std::function<void(void)>> RetrieveCapability(BackendCapabilities) override {
-            return {};
-        };
 
       private:
         std::unordered_map<std::string, std::vector<uint8_t>> kv_;

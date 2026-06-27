@@ -57,14 +57,7 @@ namespace {
     // a process.
     static std::unique_ptr<Runtime> g_rt;
 
-    // Registry path of the currently-open transaction, or empty when none.
-    // Single active txn per runtime: matches the existing global g_rt model.
-    // Promoting to per-connection requires threading connection_context through
-    // the write APIs (rnt_link_tuple et al), which take only a relation path.
-    static std::string g_active_txn_path;
-
-    std::string join_path(const std::vector<std::string>& segs);       // defined below
-    static nt::ObjectManager::Transaction* active_txn();                // defined below
+    std::string join_path(const std::vector<std::string>& segs); // defined below
 
     static std::vector<std::string> split_path(const char* path) {
         std::vector<std::string> parts;
@@ -124,7 +117,7 @@ namespace {
         t->exclusive = false; // a txn is never a contention point
         return t;
     }
-    
+
     static std::unique_ptr<nt::ObjectManager::object_type> make_relation_type() {
         auto t = std::make_unique<nt::ObjectManager::object_type>();
         t->label = RELATION;
@@ -201,32 +194,6 @@ namespace {
             }
         }
         return out;
-    }
-
-    rnt_handle_t rnt_txn_open(void* connection_context) {
-        if (!g_rt)
-            return nullptr;
-        // One active txn per runtime: the storage BEGIN/COMMIT is a single
-        // linear transaction and writes bind to it via g_active_txn_path.
-        if (active_txn())
-            return nullptr;
-        const std::string id = random_session_hash(); // reuse the id gen
-        const auto path = split_path(("/system/transactions/" + id).c_str());
-        if (g_rt->objects.Find(path))
-            return nullptr;
-        g_rt->objects.Register(path, std::make_unique<nt::ObjectManager::Transaction>(),
-                               make_transaction_type());
-        // Take the handle before BEGIN so a failed Open never leaves a SQLite
-        // transaction open with no handle to ever commit or roll it back.
-        auto* handle = g_rt->handler->Open(path, connection_context); // Monitor -> handle_count = 1
-        if (!handle) {
-            g_rt->objects.Unregister(path);
-            return nullptr;
-        }
-        if (auto begin = g_rt->storage->RetrieveCapability(nt::BEGIN_LINEAR_TRANSACTION))
-            (*begin)();
-        g_active_txn_path = join_path(path);
-        return handle;
     }
 
     // Serializes the (name, merkle_root) pairs into the storage backend and
@@ -393,35 +360,6 @@ namespace {
         return dynamic_cast<nt::ObjectManager::Branch*>(entry->object.get());
     }
 
-    int rnt_txn_commit(rnt_handle_t handle) {
-        auto* h = static_cast<nt::HandlerManager::handle*>(handle);
-        auto* txn = dynamic_cast<nt::ObjectManager::Transaction*>(h->object->object.get());
-        if (!txn)
-            return -1;
-        // CAS gate: every staged branch must still sit at the root we observed
-        // when the txn first touched it; otherwise a concurrent writer moved it.
-        for (auto& bp : txn->staged_branches) {
-            auto* br = find_branch(split_path(bp.c_str()));
-            if (!br || br->target_hash != txn->observed_roots[bp])
-                return -1; // lost the race
-        }
-        // Gate passed: swap each branch to its buffered root and rebind pins,
-        // then make the storage transaction durable.
-        for (auto& bp : txn->staged_branches) {
-            auto* br = find_branch(split_path(bp.c_str()));
-            const std::string old_root = br->target_hash;
-            const std::string& new_root = txn->pending_roots[bp];
-            br->target_hash = new_root;
-            rebind_branch_tree_pin(old_root, new_root);
-        }
-        if (auto commit = g_rt->storage->RetrieveCapability(nt::COMMIT_LINEAR_TRANSACTION))
-            (*commit)();
-        txn->committed = true;
-        g_active_txn_path.clear();
-        g_rt->handler->Close(h); // Unmonitor --> both counters 0 -> TryCollect -> no rollback (committed)
-        return 0;
-    }
-
     // Parses a path of the form
     //   /system/branches/<name>/multigroups/<mg>/relations/<rel>.
     // Returns true on success; out-parameters are populated with the branch
@@ -441,25 +379,24 @@ namespace {
         return true;
     }
 
-    // Resolves the open transaction, or nullptr when none. Self-clears the
-    // tracked path when the txn object is gone (e.g. rolled back on GC), so a
-    // collected txn never leaves a dangling association behind.
-    static nt::ObjectManager::Transaction* active_txn() {
-        if (g_active_txn_path.empty())
+    // Resolves an open (uncommitted) transaction from a handle, or nullptr when
+    // the handle is not a live transaction. A transaction is purely a branch-tip
+    // contention unit: the job that opened it carries the handle and names it on
+    // every write, so any number may be open at once.
+    static nt::ObjectManager::Transaction* txn_from_handle(rnt_handle_t handle) {
+        auto* h = static_cast<nt::HandlerManager::handle*>(handle);
+        if (!h || !h->object || !h->object->object)
             return nullptr;
-        auto* e = g_rt->objects.Find(split_path(g_active_txn_path.c_str()));
-        if (!e || !e->object) {
-            g_active_txn_path.clear();
-            return nullptr;
-        }
-        return dynamic_cast<nt::ObjectManager::Transaction*>(e->object.get());
+        auto* t = dynamic_cast<nt::ObjectManager::Transaction*>(h->object->object.get());
+        return (t && !t->committed) ? t : nullptr;
     }
 
-    // Working branch-tree root for reads/writes: the open txn's buffered pending
-    // root when one exists for this branch, else the live committed root.
+    // Working branch-tree root for reads/writes: a transaction's buffered pending
+    // root when it has already staged this branch, else the live committed root.
     static std::string effective_root(const nt::ObjectManager::Branch& branch,
-                                      const std::vector<std::string>& branch_path) {
-        if (auto* txn = active_txn()) {
+                                      const std::vector<std::string>& branch_path,
+                                      nt::ObjectManager::Transaction* txn) {
+        if (txn) {
             auto it = txn->pending_roots.find(join_path(branch_path));
             if (it != txn->pending_roots.end())
                 return it->second;
@@ -474,11 +411,16 @@ namespace {
     //   3. register_snapshot → new_mg_hash.
     //   4. Insert (mg_name → new_mg_hash) into the branch tree → new branch
     //      tree root.
-    //   5. Advance to the new root. Outside a txn this swaps branch.target_hash
-    //      live and rebinds pins; inside a txn it buffers the new root in
-    //      pending_roots and defers the swap (and pin rebind) to commit, leaving
-    //      the live root untouched so the CAS gate stays meaningful.
+    //   5. Advance to the new root. With no txn (auto-commit) this swaps
+    //      branch.target_hash live and rebinds pins immediately. With a txn it
+    //      buffers the new root in pending_roots and defers the swap (and pin
+    //      rebind) to rnt_txn_commit, leaving the live root untouched so the
+    //      commit-time CAS against the observed root stays meaningful.
     // Returns the new branch tree root on success; empty on error.
+    //
+    // The intermediate branch-tree and snapshot blobs are content-addressed and
+    // written eagerly to the shared store regardless of txn membership; an
+    // aborted transaction simply leaves them unpinned and GC-eligible.
     //
     // Pin/unpin transitions are applied via rebind_branch_tree_pin: new mgs
     // are pinned before old mgs are unpinned, so an unchanged advance never
@@ -487,8 +429,9 @@ namespace {
                                               const std::vector<std::string>& branch_path,
                                               const std::string& mg_name,
                                               const std::string& relation_name,
-                                              const std::string& new_root) {
-        const std::string base = effective_root(branch, branch_path);
+                                              const std::string& new_root,
+                                              nt::ObjectManager::Transaction* txn) {
+        const std::string base = effective_root(branch, branch_path, txn);
         auto relations = read_mg_relations_at(base, mg_name);
         auto it = std::find_if(relations.begin(), relations.end(),
                                [&](const auto& e) { return e.first == relation_name; });
@@ -505,7 +448,7 @@ namespace {
         const std::string new_tree_root =
             nt::Merkle<std::string>::Insert(*g_rt->storage, base, mg_name, mg_payload);
 
-        if (auto* txn = active_txn()) {
+        if (txn) {
             const std::string bp = join_path(branch_path);
             if (!txn->observed_roots.count(bp)) {
                 txn->observed_roots[bp] = branch.target_hash; // snapshot for commit-time CAS
@@ -802,6 +745,52 @@ namespace {
 //   Object registration → Tuple storage → Cursor / VM plan builder
 // ---------------------------------------------------------------------------
 
+rnt_handle_t rnt_txn_open(void* connection_context) {
+    if (!g_rt)
+        return nullptr;
+    // A transaction is a logical branch-tip contention unit: it stages branch
+    // roots in memory and resolves conflicts via compare-and-swap at commit.
+    // It owns no storage state (content-addressed blobs need none), so any
+    // number may be open concurrently — each job carries its own handle.
+    const std::string id = random_session_hash(); // reuse the id gen
+    const auto path = split_path(("/system/transactions/" + id).c_str());
+    if (g_rt->objects.Find(path))
+        return nullptr;
+    g_rt->objects.Register(path, std::make_unique<nt::ObjectManager::Transaction>(),
+                           make_transaction_type());
+    auto* handle = g_rt->handler->Open(path, connection_context); // Monitor -> handle_count = 1
+    if (!handle)
+        g_rt->objects.Unregister(path);
+    return handle;
+}
+
+int rnt_txn_commit(rnt_handle_t handle) {
+    auto* txn = txn_from_handle(handle);
+    if (!txn)
+        return -1;
+    // CAS gate: every staged branch must still sit at the root we observed when
+    // the txn first touched it; otherwise a concurrent writer moved the tip.
+    for (auto& bp : txn->staged_branches) {
+        auto* br = find_branch(split_path(bp.c_str()));
+        if (!br || br->target_hash != txn->observed_roots[bp])
+            return -1; // lost the race
+    }
+    // Gate passed: swap each branch tip to its buffered root and rebind pins.
+    // The buffered blobs are already durable in the content-addressed store;
+    // the tip swap is the atomic commit point.
+    for (auto& bp : txn->staged_branches) {
+        auto* br = find_branch(split_path(bp.c_str()));
+        const std::string old_root = br->target_hash;
+        const std::string& new_root = txn->pending_roots[bp];
+        br->target_hash = new_root;
+        rebind_branch_tree_pin(old_root, new_root);
+    }
+    txn->committed = true;
+    g_rt->handler->Close(
+        static_cast<nt::HandlerManager::handle*>(handle)); // counters 0 -> TryCollect
+    return 0;
+}
+
 int rnt_init(const char* driver, const char* storage_path) {
     try {
         auto rt = std::make_unique<Runtime>();
@@ -1002,8 +991,7 @@ int rnt_register_ephemeral_relation(const char* session_hash, int named, const c
     // Wrap the C callback in the std::function shape the cursor layer copies
     // out at Open time. The sink gives emitted tuples a single well-defined
     // owner: this wrapper's stack frame, for the duration of one page request.
-    auto gen = [generator, generator_ctx](const std::vector<std::string>& args,
-                                          std::size_t offset,
+    auto gen = [generator, generator_ctx](const std::vector<std::string>& args, std::size_t offset,
                                           std::size_t limit) -> std::vector<nt::Tuple> {
         std::string joined;
         for (const auto& a : args) {
@@ -1031,9 +1019,8 @@ int rnt_register_ephemeral_relation(const char* session_hash, int named, const c
 
     auto* entry = nt::Ephemeral::Register(
         g_rt->objects, *g_rt->lifecycles, session_hash,
-        named ? nt::Ephemeral::Tier::Named : nt::Ephemeral::Tier::Scratch,
-        name ? name : "", std::move(gen), static_cast<Card>(cardinality), generator_identity,
-        schema, deps);
+        named ? nt::Ephemeral::Tier::Named : nt::Ephemeral::Tier::Scratch, name ? name : "",
+        std::move(gen), static_cast<Card>(cardinality), generator_identity, schema, deps);
     if (!entry)
         return -1;
 
@@ -1113,8 +1100,12 @@ int rnt_branch_advance(const char* branch_path, const char* new_hash) {
     return 0;
 }
 
-int rnt_register_relation(const char* path) {
+int rnt_register_relation(rnt_handle_t txn, const char* path) {
     if (!path)
+        return -1;
+    // NULL txn auto-commits; a non-NULL handle must be a live transaction.
+    auto* t = txn ? txn_from_handle(txn) : nullptr;
+    if (txn && !t)
         return -1;
     const auto parts = split_path(path);
 
@@ -1129,14 +1120,15 @@ int rnt_register_relation(const char* path) {
 
     // Idempotent: if the relation is already present in the named mg's
     // effective snapshot, the call succeeds without producing a new snapshot.
-    const auto current = read_mg_relations_at(effective_root(*branch, branch_path), mg_name);
+    const auto current = read_mg_relations_at(effective_root(*branch, branch_path, t), mg_name);
     const bool already_present = std::any_of(
         current.begin(), current.end(), [&](const auto& e) { return e.first == relation_name; });
     if (already_present)
         return 0;
 
     // Empty merkle_root signals a relation with no tuples.
-    return commit_relation_update(*branch, branch_path, mg_name, relation_name, "").empty() ? -1 : 0;
+    return commit_relation_update(*branch, branch_path, mg_name, relation_name, "", t).empty() ? -1
+                                                                                               : 0;
 }
 
 int rnt_register_branch(const char* path, const char* target_hash) {
@@ -1214,8 +1206,12 @@ int rnt_list_snapshot_relations(const char* snapshot_hash, char** out) {
     return 0;
 }
 
-int rnt_link_tuple(const char* relation_path, const char* kv_attrs, char** hash_out) {
+int rnt_link_tuple(rnt_handle_t txn, const char* relation_path, const char* kv_attrs,
+                   char** hash_out) {
     if (!relation_path || !kv_attrs || !hash_out)
+        return -1;
+    auto* t = txn ? txn_from_handle(txn) : nullptr;
+    if (txn && !t)
         return -1;
     const auto parts = split_path(relation_path);
 
@@ -1229,7 +1225,7 @@ int rnt_link_tuple(const char* relation_path, const char* kv_attrs, char** hash_
         return -1;
 
     const std::string old_root =
-        read_relation_root_at(effective_root(*branch, branch_path), mg_name, relation_name);
+        read_relation_root_at(effective_root(*branch, branch_path, t), mg_name, relation_name);
 
     auto bytes = nt::TupleCodec::Serialize(parse_kv(kv_attrs));
     const auto tuple_hash = g_rt->storage->Put(std::move(bytes));
@@ -1237,15 +1233,18 @@ int rnt_link_tuple(const char* relation_path, const char* kv_attrs, char** hash_
     const std::string new_root =
         nt::Merkle<nt::Hash32>::Insert(*g_rt->storage, old_root, tuple_bin, tuple_bin);
 
-    if (commit_relation_update(*branch, branch_path, mg_name, relation_name, new_root).empty())
+    if (commit_relation_update(*branch, branch_path, mg_name, relation_name, new_root, t).empty())
         return -1;
 
     *hash_out = heap_str(tuple_hash);
     return 0;
 }
 
-int rnt_unlink_tuple(const char* relation_path, const char* tuple_hash) {
+int rnt_unlink_tuple(rnt_handle_t txn, const char* relation_path, const char* tuple_hash) {
     if (!relation_path || !tuple_hash)
+        return -1;
+    auto* t = txn ? txn_from_handle(txn) : nullptr;
+    if (txn && !t)
         return -1;
     const auto parts = split_path(relation_path);
 
@@ -1259,17 +1258,20 @@ int rnt_unlink_tuple(const char* relation_path, const char* tuple_hash) {
         return -1;
 
     const std::string old_root =
-        read_relation_root_at(effective_root(*branch, branch_path), mg_name, relation_name);
+        read_relation_root_at(effective_root(*branch, branch_path, t), mg_name, relation_name);
     const std::string new_root =
         nt::Merkle<nt::Hash32>::Remove(*g_rt->storage, old_root, nt::hex_to_bin(tuple_hash));
 
-    return commit_relation_update(*branch, branch_path, mg_name, relation_name, new_root).empty()
+    return commit_relation_update(*branch, branch_path, mg_name, relation_name, new_root, t).empty()
                ? -1
                : 0;
 }
 
-int rnt_clear_relation(const char* relation_path) {
+int rnt_clear_relation(rnt_handle_t txn, const char* relation_path) {
     if (!relation_path)
+        return -1;
+    auto* t = txn ? txn_from_handle(txn) : nullptr;
+    if (txn && !t)
         return -1;
     const auto parts = split_path(relation_path);
 
@@ -1282,7 +1284,8 @@ int rnt_clear_relation(const char* relation_path) {
     if (!branch)
         return -1;
 
-    return commit_relation_update(*branch, branch_path, mg_name, relation_name, "").empty() ? -1 : 0;
+    return commit_relation_update(*branch, branch_path, mg_name, relation_name, "", t).empty() ? -1
+                                                                                               : 0;
 }
 
 int rnt_relation_root(const char* relation_path, char** root_hash_out) {

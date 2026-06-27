@@ -60,7 +60,7 @@ TEST_CASE("ComposeRoot is deterministic and order-independent", "[ephemeral][has
 
     const std::string h1 = nt::Ephemeral::ComposeRoot("eq", schema_a, {"aaa", "bbb"});
     const std::string h2 = nt::Ephemeral::ComposeRoot("eq", schema_b, {"bbb", "aaa"});
-    REQUIRE(h1 == h2);                  // schema + base-root order must not matter
+    REQUIRE(h1 == h2); // schema + base-root order must not matter
     REQUIRE(h1.size() == 64);
 
     // Identity, schema, or base roots each change the digest.
@@ -77,9 +77,9 @@ TEST_CASE("Scratch tier pins deps but is not session-owned", "[ephemeral][scratc
     const std::string dep =
         make_base(om, lm, {"system", "snapshots", "h", "relations", "r1"}, "root1");
 
-    auto* eph = nt::Ephemeral::Register(om, lm, "sess", nt::Ephemeral::Tier::Scratch, "",
-                                        empty_generator(), Card::Finite, "select",
-                                        {{"a", "abstract"}}, {dep});
+    auto* eph =
+        nt::Ephemeral::Register(om, lm, "sess", nt::Ephemeral::Tier::Scratch, "", empty_generator(),
+                                Card::Finite, "select", {{"a", "abstract"}}, {dep});
     REQUIRE(eph != nullptr);
 
     // Registered under the session's scratch subdir, keyed by composed root.
@@ -100,9 +100,9 @@ TEST_CASE("Scratch ephemeral is collected by counters and unpins its base",
 
     const std::string dep =
         make_base(om, lm, {"system", "snapshots", "h", "relations", "r1"}, "root1");
-    auto* eph = nt::Ephemeral::Register(om, lm, "sess", nt::Ephemeral::Tier::Scratch, "",
-                                        empty_generator(), Card::Finite, "select",
-                                        {{"a", "abstract"}}, {dep});
+    auto* eph =
+        nt::Ephemeral::Register(om, lm, "sess", nt::Ephemeral::Tier::Scratch, "", empty_generator(),
+                                Card::Finite, "select", {{"a", "abstract"}}, {dep});
     const auto eph_path = eph->head->path;
 
     // A cursor opens (Monitor) then closes (Unmonitor) over the scratch result.
@@ -154,12 +154,12 @@ TEST_CASE("Identical scratch results dedup and do not double-pin", "[ephemeral][
     const std::string dep =
         make_base(om, lm, {"system", "snapshots", "h", "relations", "r1"}, "root1");
 
-    auto* first = nt::Ephemeral::Register(om, lm, "sess", nt::Ephemeral::Tier::Scratch, "",
-                                          empty_generator(), Card::Finite, "select",
-                                          {{"a", "abstract"}}, {dep});
-    auto* second = nt::Ephemeral::Register(om, lm, "sess", nt::Ephemeral::Tier::Scratch, "",
-                                           empty_generator(), Card::Finite, "select",
-                                           {{"a", "abstract"}}, {dep});
+    auto* first =
+        nt::Ephemeral::Register(om, lm, "sess", nt::Ephemeral::Tier::Scratch, "", empty_generator(),
+                                Card::Finite, "select", {{"a", "abstract"}}, {dep});
+    auto* second =
+        nt::Ephemeral::Register(om, lm, "sess", nt::Ephemeral::Tier::Scratch, "", empty_generator(),
+                                Card::Finite, "select", {{"a", "abstract"}}, {dep});
 
     REQUIRE(first == second); // same composed root → same entry
     // The ephemeral pinned the base exactly once (atop the baseline), not once

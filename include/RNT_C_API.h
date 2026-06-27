@@ -237,6 +237,47 @@ NT_API int rnt_register_ephemeral_relation(const char* session_hash, int named, 
 NT_API int rnt_drop_ephemeral_relation(const char* session_hash, const char* name);
 
 /* ------------------------------------------------------------------ */
+/* Transactions                                                         */
+/* ------------------------------------------------------------------ */
+
+/**
+ * @brief Opens a transaction: a logical unit of contention over branch tips.
+ *
+ * A transaction stages branch-tree roots in memory and resolves concurrent
+ * writers via compare-and-swap at commit. It owns no storage state — the
+ * content-addressed blob store needs none — so any number of transactions may
+ * be open at once. Each caller (e.g. a background job) holds its own handle and
+ * names it on every write it wants staged.
+ *
+ * Writes passed this handle (rnt_link_tuple, rnt_unlink_tuple,
+ * rnt_clear_relation, rnt_register_relation with a non-NULL txn) buffer their
+ * new branch-tree roots instead of advancing the live branch; rnt_txn_commit
+ * applies them atomically once its CAS gate passes. Writes passed a NULL txn
+ * auto-commit immediately.
+ *
+ * @param connection_context  Opaque connection token, passed through to Open.
+ * @return Transaction handle, or NULL when the runtime is uninitialized.
+ *         Release via rnt_txn_commit, or by closing the handle, which discards
+ *         the staged (uncommitted) roots.
+ */
+NT_API rnt_handle_t rnt_txn_open(void* connection_context);
+
+/**
+ * @brief Commits a transaction, advancing every branch tip it staged.
+ *
+ * Validates that every branch the transaction staged still points at the root
+ * observed when first touched (compare-and-swap); if any tip moved, the commit
+ * fails and nothing is applied — the caller may retry. On success, swaps each
+ * staged tip to its buffered root and closes the handle. The buffered blobs are
+ * already durable in the content-addressed store; the tip swap is the atomic
+ * commit point.
+ *
+ * @param handle  Handle returned by rnt_txn_open.
+ * @return 0 on success, negative on a failed CAS or invalid handle.
+ */
+NT_API int rnt_txn_commit(rnt_handle_t handle);
+
+/* ------------------------------------------------------------------ */
 /* Handle lifecycle                                                     */
 /* ------------------------------------------------------------------ */
 
@@ -307,11 +348,13 @@ NT_API int rnt_branch_advance(const char* branch_path, const char* new_hash);
  * Idempotent: if an object already exists at the path, the call succeeds
  * without re-registering.
  *
+ * @param txn  Transaction handle from rnt_txn_open to stage the write against,
+ *             or NULL to auto-commit immediately.
  * @param path Slash-separated path of the form
  *             "/system/branches/<branch>/multigroups/<mg>/relations/<rel>".
- * @return 0 on success, negative on error.
+ * @return 0 on success, negative on error or an invalid (non-NULL) txn handle.
  */
-NT_API int rnt_register_relation(const char* path);
+NT_API int rnt_register_relation(rnt_handle_t txn, const char* path);
 
 /**
  * @brief Registers a BRANCH object at the given path pointing at a branch-tree root.
@@ -385,13 +428,16 @@ NT_API int rnt_list_snapshot_relations(const char* snapshot_hash, char** out);
  * Attributes are sorted by name before hashing to ensure content-addressing
  * is order-independent.
  *
+ * @param txn            Transaction handle to stage against, or NULL to
+ *                       auto-commit immediately.
  * @param relation_path  Slash-separated relation path.
  * @param kv_attrs       Newline-delimited "key=value" attribute string.
  * @param hash_out       Set to the 64-character hex SHA-256 hash of the tuple.
  *                       Release with rnt_free_string(). NULL on error.
- * @return 0 on success, negative on error.
+ * @return 0 on success, negative on error or an invalid (non-NULL) txn handle.
  */
-NT_API int rnt_link_tuple(const char* relation_path, const char* kv_attrs, char** hash_out);
+NT_API int rnt_link_tuple(rnt_handle_t txn, const char* relation_path, const char* kv_attrs,
+                          char** hash_out);
 
 /**
  * @brief Removes a tuple from the relation's Merkle tree and tuple store.
@@ -401,11 +447,14 @@ NT_API int rnt_link_tuple(const char* relation_path, const char* kv_attrs, char*
  * the KV store (they may be referenced by older snapshots); only the
  * membership in the current tree is removed.
  *
+ * @param txn            Transaction handle to stage against, or NULL to
+ *                       auto-commit immediately.
  * @param relation_path  Slash-separated relation path.
  * @param tuple_hash     64-character hex SHA-256 of the tuple to remove.
- * @return 0 on success, negative when the relation is not found.
+ * @return 0 on success, negative when the relation is not found or the
+ *         (non-NULL) txn handle is invalid.
  */
-NT_API int rnt_unlink_tuple(const char* relation_path, const char* tuple_hash);
+NT_API int rnt_unlink_tuple(rnt_handle_t txn, const char* relation_path, const char* tuple_hash);
 
 /**
  * @brief Resets a relation's Merkle root to the empty-tree state.
@@ -414,10 +463,13 @@ NT_API int rnt_unlink_tuple(const char* relation_path, const char* tuple_hash);
  * tuple bytes remain in the KV store.  After this call the relation contains
  * no tuples from the perspective of cursor iteration.
  *
+ * @param txn            Transaction handle to stage against, or NULL to
+ *                       auto-commit immediately.
  * @param relation_path  Slash-separated relation path.
- * @return 0 on success, negative when the relation is not found.
+ * @return 0 on success, negative when the relation is not found or the
+ *         (non-NULL) txn handle is invalid.
  */
-NT_API int rnt_clear_relation(const char* relation_path);
+NT_API int rnt_clear_relation(rnt_handle_t txn, const char* relation_path);
 
 /**
  * @brief Returns the current Merkle root hash for a relation.
@@ -550,7 +602,7 @@ typedef struct {
 /** UNION context. */
 
 typedef struct {
-    rnt_plan_t *sources;
+    rnt_plan_t* sources;
 } PlanArgsUnion;
 
 /**

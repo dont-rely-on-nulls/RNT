@@ -85,13 +85,10 @@ namespace nt {
             CascadeBranchTree(object);
         if (label == EPHEMERAL_RELATION)
             CascadeEphemeral(object);
-        if (label == TRANSACTION) {
-            auto* txn = dynamic_cast<ObjectManager::Transaction*>(object->object.get());
-            if (txn && !txn->committed) {
-                if (auto rollback = storage_.RetrieveCapability(nt::ROLLBACK_LINEAR_TRANSACTION))
-                    (*rollback)();
-            }
-        }
+        // A collected transaction needs no special handling: its staged roots
+        // live only in the in-memory Transaction object and are discarded by
+        // Unregister below. The branch-tree blobs it produced were never pinned
+        // (pins are taken only at commit), so they are already GC-eligible.
 
         objects_.Unregister(object->head->path);
     }

@@ -78,7 +78,7 @@ TEST_CASE("Writing a tuple advances the branch to a new snapshot", "[step2][step
     const char* bpath = "/system/branches/test_step2_advance";
     const char* rpath = "/system/branches/test_step2_advance/multigroups/public/relations/items";
     REQUIRE(rnt_register_branch(bpath, "") == 0);
-    REQUIRE(rnt_register_relation(rpath) == 0);
+    REQUIRE(rnt_register_relation(nullptr, rpath) == 0);
 
     // After register_relation, the branch is bound to the first snapshot.
     rnt_handle_t h = rnt_open_handle(bpath, nullptr);
@@ -91,7 +91,7 @@ TEST_CASE("Writing a tuple advances the branch to a new snapshot", "[step2][step
 
     // A tuple write advances the branch again.
     char* tuple_hash = nullptr;
-    REQUIRE(rnt_link_tuple(rpath, "id=1\n", &tuple_hash) == 0);
+    REQUIRE(rnt_link_tuple(nullptr, rpath, "id=1\n", &tuple_hash) == 0);
     rnt_free_string(tuple_hash);
 
     h = rnt_open_handle(bpath, nullptr);
@@ -114,7 +114,7 @@ TEST_CASE("link_tuple commits a new snapshot and relation_root reflects it", "[s
     const char* bpath = "/system/branches/test_step3_link";
     const char* rpath = "/system/branches/test_step3_link/multigroups/public/relations/items";
     REQUIRE(rnt_register_branch(bpath, "") == 0);
-    REQUIRE(rnt_register_relation(rpath) == 0);
+    REQUIRE(rnt_register_relation(nullptr, rpath) == 0);
 
     // Empty relation: root is "".
     char* root = nullptr;
@@ -122,7 +122,7 @@ TEST_CASE("link_tuple commits a new snapshot and relation_root reflects it", "[s
     REQUIRE(take_string(root) == "");
 
     char* tuple_hash = nullptr;
-    REQUIRE(rnt_link_tuple(rpath, "id=1\nname=alpha\n", &tuple_hash) == 0);
+    REQUIRE(rnt_link_tuple(nullptr, rpath, "id=1\nname=alpha\n", &tuple_hash) == 0);
     REQUIRE(tuple_hash != nullptr);
     rnt_free_string(tuple_hash);
 
@@ -136,24 +136,24 @@ TEST_CASE("unlink_tuple and clear_relation walk back through new snapshots", "[s
     const char* bpath = "/system/branches/test_step3_unlink";
     const char* rpath = "/system/branches/test_step3_unlink/multigroups/public/relations/items";
     REQUIRE(rnt_register_branch(bpath, "") == 0);
-    REQUIRE(rnt_register_relation(rpath) == 0);
+    REQUIRE(rnt_register_relation(nullptr, rpath) == 0);
 
     char* th = nullptr;
-    REQUIRE(rnt_link_tuple(rpath, "id=1\n", &th) == 0);
+    REQUIRE(rnt_link_tuple(nullptr, rpath, "id=1\n", &th) == 0);
     const std::string tuple_hash = take_string(th);
 
     char* root = nullptr;
     REQUIRE(rnt_relation_root(rpath, &root) == 0);
     REQUIRE(take_string(root) != "");
 
-    REQUIRE(rnt_unlink_tuple(rpath, tuple_hash.c_str()) == 0);
+    REQUIRE(rnt_unlink_tuple(nullptr, rpath, tuple_hash.c_str()) == 0);
     REQUIRE(rnt_relation_root(rpath, &root) == 0);
     REQUIRE(take_string(root) == "");
 
     // After re-link and clear, root is empty again.
-    REQUIRE(rnt_link_tuple(rpath, "id=2\n", &th) == 0);
+    REQUIRE(rnt_link_tuple(nullptr, rpath, "id=2\n", &th) == 0);
     rnt_free_string(th);
-    REQUIRE(rnt_clear_relation(rpath) == 0);
+    REQUIRE(rnt_clear_relation(nullptr, rpath) == 0);
     REQUIRE(rnt_relation_root(rpath, &root) == 0);
     REQUIRE(take_string(root) == "");
 }
@@ -164,10 +164,10 @@ TEST_CASE("rnt_open_handle resolves branch-relative paths to snapshot relations"
     const char* bpath = "/system/branches/test_step4_resolve";
     const char* rpath = "/system/branches/test_step4_resolve/multigroups/public/relations/items";
     REQUIRE(rnt_register_branch(bpath, "") == 0);
-    REQUIRE(rnt_register_relation(rpath) == 0);
+    REQUIRE(rnt_register_relation(nullptr, rpath) == 0);
 
     char* tuple_hash = nullptr;
-    REQUIRE(rnt_link_tuple(rpath, "id=1\n", &tuple_hash) == 0);
+    REQUIRE(rnt_link_tuple(nullptr, rpath, "id=1\n", &tuple_hash) == 0);
     rnt_free_string(tuple_hash);
 
     // Opening the branch-relative path resolves to the snapshot-bound entry,
@@ -234,11 +234,11 @@ TEST_CASE("Session override redirects branch-relative reads to a different snaps
     const char* bpath = "/system/branches/test_step5_override";
     const char* rpath = "/system/branches/test_step5_override/multigroups/public/relations/items";
     REQUIRE(rnt_register_branch(bpath, "") == 0);
-    REQUIRE(rnt_register_relation(rpath) == 0);
+    REQUIRE(rnt_register_relation(nullptr, rpath) == 0);
 
     // Snapshot S1: one tuple.
     char* th = nullptr;
-    REQUIRE(rnt_link_tuple(rpath, "id=1\n", &th) == 0);
+    REQUIRE(rnt_link_tuple(nullptr, rpath, "id=1\n", &th) == 0);
     rnt_free_string(th);
 
     // Capture S1's hash and pin it via a session override before the next
@@ -258,7 +258,7 @@ TEST_CASE("Session override redirects branch-relative reads to a different snaps
 
     // Advance the branch to S2 — global HEAD moves on; the session override
     // keeps S1 resident.
-    REQUIRE(rnt_link_tuple(rpath, "id=2\n", &th) == 0);
+    REQUIRE(rnt_link_tuple(nullptr, rpath, "id=2\n", &th) == 0);
     rnt_free_string(th);
 
     // Session view: still S1 (one tuple).
@@ -304,10 +304,10 @@ TEST_CASE("Clearing a session override falls back to the global branch HEAD",
     const char* bpath = "/system/branches/test_step5_clear";
     const char* rpath = "/system/branches/test_step5_clear/multigroups/public/relations/items";
     REQUIRE(rnt_register_branch(bpath, "") == 0);
-    REQUIRE(rnt_register_relation(rpath) == 0);
+    REQUIRE(rnt_register_relation(nullptr, rpath) == 0);
 
     char* th = nullptr;
-    REQUIRE(rnt_link_tuple(rpath, "id=1\n", &th) == 0);
+    REQUIRE(rnt_link_tuple(nullptr, rpath, "id=1\n", &th) == 0);
     rnt_free_string(th);
     rnt_handle_t bh = rnt_open_handle(bpath, nullptr);
     REQUIRE(bh != nullptr);
@@ -322,7 +322,7 @@ TEST_CASE("Clearing a session override falls back to the global branch HEAD",
     const std::string sid = take_string(sess);
     REQUIRE(rnt_session_set_branch(sid.c_str(), "test_step5_clear", s1.c_str()) == 0);
 
-    REQUIRE(rnt_link_tuple(rpath, "id=2\n", &th) == 0);
+    REQUIRE(rnt_link_tuple(nullptr, rpath, "id=2\n", &th) == 0);
     rnt_free_string(th);
 
     // Clear the override.
@@ -373,9 +373,10 @@ TEST_CASE("Two multigroups under one branch advance independently", "[capi][mult
     REQUIRE(rnt_register_branch(bpath.c_str(), "") == 0);
 
     // Register one relation in each of two distinct multigroups.
-    REQUIRE(rnt_register_relation((bpath + "/multigroups/warehouse/relations/orders").c_str()) ==
-            0);
-    REQUIRE(rnt_register_relation((bpath + "/multigroups/audit/relations/events").c_str()) == 0);
+    REQUIRE(rnt_register_relation(
+                nullptr, (bpath + "/multigroups/warehouse/relations/orders").c_str()) == 0);
+    REQUIRE(rnt_register_relation(nullptr,
+                                  (bpath + "/multigroups/audit/relations/events").c_str()) == 0);
 
     char* mgs_raw = nullptr;
     REQUIRE(rnt_list_branch_multigroups(bpath.c_str(), &mgs_raw) == 0);
@@ -389,8 +390,8 @@ TEST_CASE("Two multigroups under one branch advance independently", "[capi][mult
     const std::string audit_before_s = take_string(audit_before);
 
     char* th = nullptr;
-    REQUIRE(rnt_link_tuple((bpath + "/multigroups/warehouse/relations/orders").c_str(), "id=1\n",
-                           &th) == 0);
+    REQUIRE(rnt_link_tuple(nullptr, (bpath + "/multigroups/warehouse/relations/orders").c_str(),
+                           "id=1\n", &th) == 0);
     rnt_free_string(th);
 
     char* audit_after = nullptr;
@@ -412,4 +413,153 @@ TEST_CASE("Two multigroups under one branch advance independently", "[capi][mult
     REQUIRE(rnt_relation_root((bpath + "/multigroups/audit/relations/events").c_str(), &root2) ==
             0);
     REQUIRE(take_string(root2).empty());
+}
+
+// ---------------------------------------------------------------------------
+// Transactions are branch-tip contention units. A write passed a txn handle
+// buffers its new branch root and applies it atomically at commit, resolving
+// concurrent writers by compare-and-swap on the branch tip; a write passed NULL
+// auto-commits. Transactions hold no storage state, so any number may be open
+// at once — these tests exercise the staging/CAS layer.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("Transaction buffers writes and applies them atomically on commit", "[capi][txn]") {
+    InitGuard _;
+    const char* bpath = "/system/branches/test_txn_commit";
+    const char* rpath = "/system/branches/test_txn_commit/multigroups/public/relations/items";
+    REQUIRE(rnt_register_branch(bpath, "") == 0);
+    REQUIRE(rnt_register_relation(nullptr, rpath) == 0);
+
+    rnt_handle_t txn = rnt_txn_open(nullptr);
+    REQUIRE(txn != nullptr);
+
+    char* th = nullptr;
+    REQUIRE(rnt_link_tuple(txn, rpath, "id=1\n", &th) == 0);
+    rnt_free_string(th);
+    REQUIRE(rnt_link_tuple(txn, rpath, "id=2\n", &th) == 0);
+    rnt_free_string(th);
+
+    // While the txn is open the writes are buffered: the live relation root has
+    // not advanced yet.
+    char* root = nullptr;
+    REQUIRE(rnt_relation_root(rpath, &root) == 0);
+    REQUIRE(take_string(root).empty());
+
+    REQUIRE(rnt_txn_commit(txn) == 0);
+
+    // After commit both buffered tuples are live in a single tip advance.
+    REQUIRE(rnt_relation_root(rpath, &root) == 0);
+    REQUIRE(!take_string(root).empty());
+
+    rnt_handle_t h = rnt_open_handle(rpath, nullptr);
+    REQUIRE(h != nullptr);
+    rnt_cursor_t c = rnt_cursor_open(h);
+    REQUIRE(c != nullptr);
+    int count = 0;
+    char* row = nullptr;
+    while (rnt_cursor_next(c, &row) == 1) {
+        REQUIRE(row != nullptr);
+        rnt_free_string(row);
+        ++count;
+    }
+    REQUIRE(count == 2);
+    rnt_cursor_close(c);
+    rnt_close_handle(h);
+}
+
+TEST_CASE("Closing a transaction without commit discards its staged writes", "[capi][txn]") {
+    InitGuard _;
+    const char* bpath = "/system/branches/test_txn_rollback";
+    const char* rpath = "/system/branches/test_txn_rollback/multigroups/public/relations/items";
+    REQUIRE(rnt_register_branch(bpath, "") == 0);
+    REQUIRE(rnt_register_relation(nullptr, rpath) == 0);
+
+    rnt_handle_t txn = rnt_txn_open(nullptr);
+    REQUIRE(txn != nullptr);
+    char* th = nullptr;
+    REQUIRE(rnt_link_tuple(txn, rpath, "id=1\n", &th) == 0);
+    rnt_free_string(th);
+
+    // Close the handle without committing: the staged root is discarded and the
+    // live branch tip never advanced.
+    REQUIRE(rnt_close_handle(txn) == 0);
+
+    char* root = nullptr;
+    REQUIRE(rnt_relation_root(rpath, &root) == 0);
+    REQUIRE(take_string(root).empty());
+}
+
+TEST_CASE("Concurrent transactions on distinct branches both commit", "[capi][txn]") {
+    InitGuard _;
+    const char* ra = "/system/branches/test_txn_a/multigroups/public/relations/items";
+    const char* rb = "/system/branches/test_txn_b/multigroups/public/relations/items";
+    REQUIRE(rnt_register_branch("/system/branches/test_txn_a", "") == 0);
+    REQUIRE(rnt_register_branch("/system/branches/test_txn_b", "") == 0);
+    REQUIRE(rnt_register_relation(nullptr, ra) == 0);
+    REQUIRE(rnt_register_relation(nullptr, rb) == 0);
+
+    rnt_handle_t ta = rnt_txn_open(nullptr);
+    rnt_handle_t tb = rnt_txn_open(nullptr);
+    REQUIRE(ta != nullptr);
+    REQUIRE(tb != nullptr);
+
+    char* th = nullptr;
+    REQUIRE(rnt_link_tuple(ta, ra, "id=1\n", &th) == 0);
+    rnt_free_string(th);
+    REQUIRE(rnt_link_tuple(tb, rb, "id=1\n", &th) == 0);
+    rnt_free_string(th);
+
+    // Both commit cleanly: they touch different branch tips, so no CAS conflict.
+    REQUIRE(rnt_txn_commit(ta) == 0);
+    REQUIRE(rnt_txn_commit(tb) == 0);
+
+    char* root = nullptr;
+    REQUIRE(rnt_relation_root(ra, &root) == 0);
+    REQUIRE(!take_string(root).empty());
+    REQUIRE(rnt_relation_root(rb, &root) == 0);
+    REQUIRE(!take_string(root).empty());
+}
+
+TEST_CASE("Conflicting transactions: the late committer loses the CAS", "[capi][txn]") {
+    InitGuard _;
+    const char* bpath = "/system/branches/test_txn_conflict";
+    const char* rpath = "/system/branches/test_txn_conflict/multigroups/public/relations/items";
+    REQUIRE(rnt_register_branch(bpath, "") == 0);
+    REQUIRE(rnt_register_relation(nullptr, rpath) == 0);
+
+    rnt_handle_t a = rnt_txn_open(nullptr);
+    rnt_handle_t b = rnt_txn_open(nullptr);
+    REQUIRE(a != nullptr);
+    REQUIRE(b != nullptr);
+
+    // Both stage a write against the same branch tip (same observed root).
+    char* th = nullptr;
+    REQUIRE(rnt_link_tuple(a, rpath, "id=1\n", &th) == 0);
+    rnt_free_string(th);
+    REQUIRE(rnt_link_tuple(b, rpath, "id=2\n", &th) == 0);
+    rnt_free_string(th);
+
+    // First committer wins and moves the tip.
+    REQUIRE(rnt_txn_commit(a) == 0);
+    // Second observed the now-stale tip; its CAS fails and nothing is applied.
+    REQUIRE(rnt_txn_commit(b) != 0);
+
+    // The branch reflects only the winner's single write.
+    rnt_handle_t h = rnt_open_handle(rpath, nullptr);
+    REQUIRE(h != nullptr);
+    rnt_cursor_t c = rnt_cursor_open(h);
+    REQUIRE(c != nullptr);
+    int count = 0;
+    char* row = nullptr;
+    while (rnt_cursor_next(c, &row) == 1) {
+        rnt_free_string(row);
+        ++count;
+    }
+    REQUIRE(count == 1);
+    rnt_cursor_close(c);
+    rnt_close_handle(h);
+
+    // The losing txn's handle is still open (commit only closes on success);
+    // close it to discard the staged write.
+    REQUIRE(rnt_close_handle(b) == 0);
 }

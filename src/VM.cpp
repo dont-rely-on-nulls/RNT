@@ -113,14 +113,15 @@ namespace nt {
             again:
                 if (node->join_left == nullptr) {
                     node->join_left = Next(node->left);
-                    if (node->join_left == nullptr) return nullptr;
+                    if (node->join_left == nullptr)
+                        return nullptr;
 
                     Rewind(node->right, node->join_left);
                 }
 
                 Tuple* right = Next(node->right);
                 if (right != nullptr) {
-                    for (auto &attr : node->join_attrs)
+                    for (auto& attr : node->join_attrs)
                         if ((*node->join_left)[attr] != (*right)[attr])
                             goto again;
 
@@ -175,7 +176,7 @@ namespace nt {
                 std::string name = a.name;
                 if (node->attrs.contains(name))
                     name = node->attrs[name];
-                Attribute new_attr { name, a.value };
+                Attribute new_attr{name, a.value};
                 attrs.push_back(new_attr);
             }
             delete t;

@@ -113,14 +113,14 @@ namespace nt::Ephemeral {
      *         nullptr on error (empty session hash, empty name for Tier::Named,
      *         or any unresolvable dependency).
      */
-    ObjectManager::registry* Register(
-        ObjectManager& objects, LifecycleManager& lifecycles, const std::string& session_hash,
-        Tier tier, const std::string& name,
-        ObjectManager::ephemeral_object_type::Generator generator,
-        ObjectManager::ephemeral_object_type::Cardinality cardinality,
-        const std::string& generator_identity,
-        const std::vector<std::pair<std::string, std::string>>& schema,
-        const std::vector<std::string>& dependencies);
+    ObjectManager::registry*
+    Register(ObjectManager& objects, LifecycleManager& lifecycles, const std::string& session_hash,
+             Tier tier, const std::string& name,
+             ObjectManager::ephemeral_object_type::Generator generator,
+             ObjectManager::ephemeral_object_type::Cardinality cardinality,
+             const std::string& generator_identity,
+             const std::vector<std::pair<std::string, std::string>>& schema,
+             const std::vector<std::string>& dependencies);
 
     /**
      * @brief Releases all ephemeral relations owned by a session.
