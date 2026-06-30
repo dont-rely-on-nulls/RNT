@@ -622,6 +622,101 @@ NT_API int rnt_vm_cursor_next(rnt_cursor_t vm_cursor, char** tuple_out);
 NT_API int rnt_vm_cursor_close(rnt_cursor_t vm_cursor);
 
 /* ------------------------------------------------------------------ */
+/* Constraints                                                          */
+/* ------------------------------------------------------------------ */
+/*
+ * Two concerns, kept apart. Administration (register / drop / for / body)
+ * manages a constraint as an object in the Object Manager, tied to its owner.
+ * Execution (check) runs a denial plan Sakura built and reports the verdict.
+ *
+ * The kernel never parses the constraint body. Sakura owns the language: it
+ * runs the polarity walk, records the resulting (operation, relation, attrs)
+ * dependency edges here, and at mutation time looks up the triggered
+ * constraints, lowers each body to a plan, and asks the kernel for the verdict.
+ */
+
+/**
+ * @brief Registers a constraint as an object tied to @p owner_path.
+ *
+ * Lands at "<owner_path>/constraints/<name>" and pins the owner so the guarded
+ * relation cannot be collected while the constraint references it. @p body is
+ * stored verbatim and never parsed; rnt_constraint_body hands it back so Sakura
+ * can lower it.
+ *
+ * @p edges is the materialized, attribute-scoped trigger map produced by
+ * Sakura's polarity walk: newline-delimited lines "operation\trelation_path\t
+ * attr,attr,...". @p operation is "insert" or "delete"; the trailing attribute
+ * CSV may be empty (whole relation in scope). These edges are the sole input to
+ * rnt_constraints_for. Pass "" for a constraint no mutation triggers.
+ *
+ * Idempotent on (owner_path, name): re-registering replaces body and edges.
+ *
+ * @param owner_path  Path of the guarded relation/ephemeral/domain. Must exist.
+ * @param name        Leaf name, unique within the owner.
+ * @param body        Opaque serialized constraint body. Stored verbatim.
+ * @param edges       Newline-delimited dependency edges, or "".
+ * @param path_out    Optional (may be NULL): heap-allocated registered path.
+ *                    Release with rnt_free_string().
+ * @return 0 on success, negative when the owner is absent or an edge is malformed.
+ */
+NT_API int rnt_register_constraint(const char* owner_path, const char* name, const char* body,
+                                   const char* edges, char** path_out);
+
+/**
+ * @brief Drops a constraint, releasing the pin it held on its owner.
+ * @param owner_path  Owner the constraint was registered under.
+ * @param name        Leaf name given at registration.
+ * @return 0 on success, negative when no such constraint exists.
+ */
+NT_API int rnt_drop_constraint(const char* owner_path, const char* name);
+
+/**
+ * @brief Reverse dependency lookup: which constraints a mutation can violate.
+ *
+ * Scans the registry and returns every constraint carrying a dependency edge
+ * matching (@p relation_path, @p operation). This is Sakura's mutation-time
+ * query: given an INSERT into / DELETE from a relation, find the small set of
+ * constraints to re-check. Fetch each body with rnt_constraint_body.
+ *
+ * @param relation_path  Path of the mutated relation.
+ * @param operation      "insert" or "delete".
+ * @param out            Heap-allocated newline-delimited constraint paths, or
+ *                       "" when none match. Release with rnt_free_string().
+ * @return 0 on success, negative on error.
+ */
+NT_API int rnt_constraints_for(const char* relation_path, const char* operation, char** out);
+
+/**
+ * @brief Reads back the opaque body of a registered constraint.
+ * @param constraint_path  A path from rnt_constraints_for or rnt_register_constraint.
+ * @param body_out         Heap-allocated copy of the stored body. Release with
+ *                         rnt_free_string().
+ * @return 0 on success, negative when the path is not a CONSTRAINT object.
+ */
+NT_API int rnt_constraint_body(const char* constraint_path, char** body_out);
+
+/**
+ * @brief Executes a denial plan and reports the integrity verdict.
+ *
+ * Sakura lowers a constraint's *denial*, the plan whose tuples are violations,
+ * and hands it here. The kernel only needs to know whether any violation
+ * exists, so it pulls a single row. An empty stream means the constraint is
+ * satisfied; a non-empty stream means it is violated and the first row is the
+ * counterexample.
+ *
+ * Takes ownership of @p denial_plan exactly like rnt_vm_execute_plan; the
+ * caller must not free or execute it again.
+ *
+ * @param denial_plan  Plan built via rnt_plan_assemble whose rows are violations.
+ * @param verdict_out  Set to 0 when satisfied (no witness), 1 when violated.
+ * @param witness_out  Optional (may be NULL): when violated, set to the
+ *                     heap-allocated witness tuple (kv string); set to NULL when
+ *                     satisfied. Release with rnt_free_string() when non-NULL.
+ * @return 0 on success, negative on error.
+ */
+NT_API int rnt_constraint_check(rnt_plan_t denial_plan, int* verdict_out, char** witness_out);
+
+/* ------------------------------------------------------------------ */
 /* Memory management                                                    */
 /* ------------------------------------------------------------------ */
 

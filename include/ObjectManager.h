@@ -168,6 +168,60 @@ namespace nt {
         };
 
         /**
+         * @brief Registry object representing a declarative integrity constraint.
+         *
+         * A constraint is tied to an owner object (a Relation, EphemeralRelation,
+         * or domain) and registered at `<owner_path>/constraints/<name>`. It is
+         * the kernel's storage-and-index half of the constraint system; the
+         * constraint *language* lives entirely in Sakura. See the CONSTRAINT
+         * entry in Types.h and docs/constraint-system.org (Sakura) for the full
+         * division of labour.
+         *
+         * `body` is the opaque serialized constraint, exactly as Sakura handed
+         * it in. The kernel never parses it. At check time it hands the body
+         * back to Sakura, which lowers it to a VM plan.
+         *
+         * `owner_path` is the slash-joined logical path of the object this
+         * constraint guards. The owner is Pinned while the constraint is alive
+         * so a relation cannot be collected out from under a constraint that
+         * still references it; the pin is released when the constraint is
+         * dropped.
+         *
+         * `dependencies` is the materialized trigger map for this one
+         * constraint. Each Dependency names a relation the constraint reads, the
+         * mutation that can newly violate it, and the *attributes* of that
+         * relation the constraint actually touches. A constraint is always tied
+         * to a relation but may point only at part of it. "Age >= 18" touches
+         * just the `age` attribute of Person, and that attribute scope is what
+         * lets the constraint be inherited by an ephemeral relation produced
+         * from the base: a projection that keeps `age` carries the constraint,
+         * one that drops it does not. An empty `attrs` means the whole relation
+         * is in scope (no attribute narrowing).
+         *
+         * The reverse query asks "which constraints does (relation, operation,
+         * attrs?) trigger?", and we answer it by matching these edges across all
+         * CONSTRAINT objects. The kernel attaches no semantics to the operation
+         * or attribute strings beyond equality and set membership; it does not
+         * parse the body to discover them. Sakura's polarity walk supplies them.
+         */
+        class Constraint : public IObject {
+          public:
+            /** One relation the constraint reads, scoped to attributes + operation. */
+            struct Dependency {
+                /** "insert" or "delete": the mutation that can newly violate. */
+                std::string operation;
+                /** Slash-joined path of the depended-on relation. */
+                std::string relation_path;
+                /** Attributes of that relation in scope; empty = whole relation. */
+                std::vector<std::string> attrs;
+            };
+
+            std::string body;
+            std::string owner_path;
+            std::vector<Dependency> dependencies;
+        };
+
+        /**
          * @brief Describes the behavior and capabilities of an object category.
          *
          * @todo Replace `methods` with typed callback fields: `OpenProcedure`,

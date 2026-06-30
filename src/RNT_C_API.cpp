@@ -155,6 +155,17 @@ namespace {
         return t;
     }
 
+    static std::unique_ptr<nt::ObjectManager::object_type> make_constraint_type() {
+        auto t = std::make_unique<nt::ObjectManager::object_type>();
+        t->label = CONSTRAINT;
+        // Constraints persist with the relation they guard; they are removed by
+        // an explicit rnt_drop_constraint via ObjectManager::Unregister.
+        t->disposable = false;
+        t->methods = {OPEN, CLOSE};
+        t->exclusive = false;
+        return t;
+    }
+
     // Generates a random 256-bit hex hash for naming a session. Hashes are
     // drawn from std::random_device-seeded mt19937_64; we do not need
     // cryptographic strength here, just enough entropy that two concurrent
@@ -1273,5 +1284,209 @@ int rnt_vm_cursor_close(rnt_cursor_t vm_cursor) {
         return -1;
     // VmCursor destructor closes all cursors and handles.
     delete static_cast<VmCursor*>(vm_cursor);
+    return 0;
+}
+
+namespace {
+    // Splits a tab-separated edge field list. A trailing empty attr field is not
+    // emitted (getline stops at EOF), so "delete\trel\t" yields two fields, which
+    // the parser reads as a whole-relation edge (empty attribute scope).
+    std::vector<std::string> split_tabs(const std::string& line) {
+        std::vector<std::string> fields;
+        std::string field;
+        std::stringstream ss(line);
+        while (std::getline(ss, field, '\t'))
+            fields.push_back(field);
+        return fields;
+    }
+
+    // Splits a comma-separated attribute list, dropping empties.
+    std::vector<std::string> split_csv(const std::string& s) {
+        std::vector<std::string> out;
+        std::string item;
+        std::stringstream ss(s);
+        while (std::getline(ss, item, ','))
+            if (!item.empty())
+                out.push_back(item);
+        return out;
+    }
+
+    // Registry path of a constraint owned by owner_parts: <owner>/constraints/<name>.
+    std::vector<std::string> constraint_path(const std::vector<std::string>& owner_parts,
+                                             const std::string& name) {
+        auto path = owner_parts;
+        path.push_back("constraints");
+        path.push_back(name);
+        return path;
+    }
+
+    // Borrowed Constraint* for a registry path, or nullptr when the path holds no
+    // live CONSTRAINT object. Centralizes the type guard (including the type null
+    // check) shared by drop / body / replace.
+    nt::ObjectManager::Constraint* find_constraint(const std::vector<std::string>& path) {
+        auto* entry = g_rt->objects.Find(path);
+        if (!entry || !entry->head || !entry->head->type ||
+            entry->head->type->label != CONSTRAINT)
+            return nullptr;
+        return dynamic_cast<nt::ObjectManager::Constraint*>(entry->object.get());
+    }
+} // namespace
+
+int rnt_register_constraint(const char* owner_path, const char* name, const char* body,
+                            const char* edges, char** path_out) {
+    if (!g_rt || !owner_path || !name || !*name || !body)
+        return -1;
+
+    // The name is a single registry path segment; a '/' would split it on read
+    // back (rnt_constraint_body re-splits the returned path) and break the
+    // round-trip, so reject it up front.
+    if (std::string(name).find('/') != std::string::npos)
+        return -1;
+
+    const auto owner_parts = split_path(owner_path);
+    auto* owner = g_rt->objects.Find(owner_parts);
+    if (!owner)
+        return -1;
+
+    // Parse the attribute-scoped dependency edges before touching the registry,
+    // so a malformed edge leaves no half-registered object behind. Operation and
+    // relation_path must be non-empty; the kernel attaches no further meaning to
+    // the operation tag beyond equality in rnt_constraints_for.
+    std::vector<nt::ObjectManager::Constraint::Dependency> deps;
+    for (const auto& line : split_lines(edges)) {
+        const auto fields = split_tabs(line);
+        if (fields.size() < 2 || fields[0].empty() || fields[1].empty())
+            return -1; // need non-empty operation + relation_path
+        nt::ObjectManager::Constraint::Dependency dep;
+        dep.operation = fields[0];
+        dep.relation_path = fields[1];
+        if (fields.size() >= 3)
+            dep.attrs = split_csv(fields[2]);
+        deps.push_back(std::move(dep));
+    }
+
+    const auto path = constraint_path(owner_parts, name);
+
+    // Idempotent on (owner, name): replacing reuses the owner pin already held by
+    // the existing constraint. We must NOT Unpin/re-Pin around the swap: if this
+    // constraint holds the owner's last pin, Unpin would TryCollect and free the
+    // owner mid-replace, leaving the `owner` pointer dangling for the re-Pin.
+    bool replacing = false;
+    if (auto* existing = g_rt->objects.Find(path)) {
+        if (existing->head && existing->head->type &&
+            existing->head->type->label == CONSTRAINT) {
+            g_rt->objects.Unregister(path);
+            replacing = true;
+        } else {
+            return -1; // path occupied by a non-constraint object
+        }
+    }
+
+    auto c = std::make_unique<nt::ObjectManager::Constraint>();
+    c->body = body;
+    c->owner_path = join_path(owner_parts);
+    c->dependencies = std::move(deps);
+    g_rt->objects.Register(path, std::move(c), make_constraint_type());
+
+    // Pin the owner only for a fresh registration: a constraint references the
+    // relation it guards, so the relation must outlive it. A replace keeps the
+    // pin taken by the registration it supersedes. Released by rnt_drop_constraint.
+    if (!replacing)
+        g_rt->lifecycles->Pin(owner);
+
+    if (path_out)
+        *path_out = heap_str(join_path(path));
+    return 0;
+}
+
+int rnt_drop_constraint(const char* owner_path, const char* name) {
+    if (!g_rt || !owner_path || !name || !*name)
+        return -1;
+
+    const auto owner_parts = split_path(owner_path);
+    const auto path = constraint_path(owner_parts, name);
+
+    if (!find_constraint(path))
+        return -1;
+
+    // Remove the constraint first, then release the pin it held: Unpin may
+    // collect the owner, and no constraint entry should reference it past that.
+    if (!g_rt->objects.Unregister(path))
+        return -1;
+    if (auto* owner = g_rt->objects.Find(owner_parts))
+        g_rt->lifecycles->Unpin(owner);
+    return 0;
+}
+
+int rnt_constraints_for(const char* relation_path, const char* operation, char** out) {
+    if (!g_rt || !relation_path || !operation || !out)
+        return -1;
+
+    const std::string rel(relation_path);
+    const std::string op(operation);
+    std::string result;
+
+    // Flat scan of the registry: the dependency edges are the reverse index.
+    for (auto* node = g_rt->objects.entries.get(); node; node = node->next.get()) {
+        if (!node->head || !node->head->type || !node->object ||
+            node->head->type->label != CONSTRAINT)
+            continue;
+        auto* c = dynamic_cast<nt::ObjectManager::Constraint*>(node->object.get());
+        if (!c)
+            continue;
+        for (const auto& dep : c->dependencies) {
+            if (dep.operation == op && dep.relation_path == rel) {
+                result += join_path(node->head->path) + "\n";
+                break;
+            }
+        }
+    }
+
+    *out = heap_str(result);
+    return 0;
+}
+
+int rnt_constraint_body(const char* constraint_path, char** body_out) {
+    if (!g_rt || !constraint_path || !body_out)
+        return -1;
+
+    auto* c = find_constraint(split_path(constraint_path));
+    if (!c)
+        return -1;
+
+    *body_out = heap_str(c->body);
+    return 0;
+}
+
+int rnt_constraint_check(rnt_plan_t denial_plan, int* verdict_out, char** witness_out) {
+    if (!denial_plan || !verdict_out)
+        return -1;
+
+    // Execute the denial; one witness decides the verdict, so we pull a single
+    // row. rnt_vm_execute_plan takes ownership of the plan.
+    rnt_cursor_t cursor = rnt_vm_execute_plan(denial_plan);
+    if (!cursor)
+        return -1;
+
+    char* row = nullptr;
+    const int rc = rnt_vm_cursor_next(cursor, &row);
+    if (rc < 0) {
+        rnt_vm_cursor_close(cursor);
+        return -1;
+    }
+
+    if (rc == 1) {
+        *verdict_out = 1; // violated: a witness exists
+        if (witness_out)
+            *witness_out = row;
+        else
+            rnt_free_string(row);
+    } else {
+        *verdict_out = 0; // satisfied: the violation set is empty
+        if (witness_out)
+            *witness_out = nullptr;
+    }
+
+    rnt_vm_cursor_close(cursor);
     return 0;
 }

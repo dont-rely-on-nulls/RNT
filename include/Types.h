@@ -89,7 +89,25 @@ enum OBJECT_TYPE {
      * The same blob is reused across all branches and session overrides
      * that share a tip.
      */
-    BRANCH_TREE
+    BRANCH_TREE,
+    /**
+     * A declarative integrity constraint tied to an owner object (a RELATION,
+     * EPHEMERAL_RELATION, or domain). A CONSTRAINT object stores three things
+     * and nothing more: an opaque `body` blob the kernel never parses, the
+     * `owner_path` it is attached to, and a list of dependency edges naming the
+     * (operation, relation_path) pairs whose mutations can newly violate it.
+     *
+     * The division of labour is deliberate. Sakura owns the constraint
+     * *language*: it parses the body, runs the polarity walk that produces the
+     * dependency edges (Decker's phase III "focus on relevant constraints"),
+     * and lowers the body to a VM plan at check time. RNT owns only the
+     * *lifetime and reverse index*: it stores the object under
+     * `<owner_path>/constraints/<name>`, pins the owner so a constraint cannot
+     * outlive the relation it guards, and answers the query "which constraints
+     * does mutation (relation, operation) trigger?" by matching dependency
+     * edges. The kernel never walks the constraint AST.
+     */
+    CONSTRAINT
 };
 
 /** @brief Operations that may be supported by an object type. */

@@ -48,11 +48,12 @@ namespace nt {
     bool LifecycleManager::Collect(ObjectManager::registry* object) {
         if (!IsEligibleForGC(object))
             return false;
-        // Named-lifetime types (BRANCH / SESSION) never auto-collect; TryCollect
-        // would no-op on them, so return false rather than report a collection.
+        // Named-lifetime types (BRANCH / SESSION / CONSTRAINT) never auto-collect;
+        // TryCollect would no-op on them, so return false rather than report a
+        // collection.
         if (object->head->type != nullptr) {
             const auto label = object->head->type->label;
-            if (label == BRANCH || label == SESSION)
+            if (label == BRANCH || label == SESSION || label == CONSTRAINT)
                 return false;
         }
         TryCollect(object);
@@ -66,15 +67,19 @@ namespace nt {
             return;
 
         // Named-lifetime types are managed explicitly and must not auto-collect:
-        //   BRANCH  — named branches persist until a future explicit-delete API
-        //             tears them down. Their counters going to zero just means
-        //             nobody currently holds them open.
-        //   SESSION — rnt_session_close is the sole removal path.
+        //   BRANCH: named branches persist until a future explicit-delete API
+        //   tears them down. Their counters going to zero just means nobody
+        //   currently holds them open.
+        //   SESSION: rnt_session_close is the sole removal path.
+        //   CONSTRAINT: rnt_drop_constraint is the sole removal path. A
+        //   constraint holds a pin on the relation it guards, so its own
+        //   counters are not the signal for collection; it lives until
+        //   explicitly dropped.
         // Everything else (MULTIGROUP, BRANCH_TREE, RELATION,
         // EPHEMERAL_RELATION, TRANSACTION) is purely structurally referenced
         // and is GC-eligible by counters alone.
         const auto label = object->head->type->label;
-        if (label == BRANCH || label == SESSION)
+        if (label == BRANCH || label == SESSION || label == CONSTRAINT)
             return;
 
         if (label == MULTIGROUP)
