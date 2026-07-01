@@ -413,3 +413,128 @@ TEST_CASE("Two multigroups under one branch advance independently", "[capi][mult
             0);
     REQUIRE(take_string(root2).empty());
 }
+
+TEST_CASE("Constraint register / body / reverse-query / drop round-trip", "[capi][constraint]") {
+    InitGuard _;
+    const char* owner = "/system/branches/test_constraint_admin";
+    REQUIRE(rnt_register_branch(owner, "") == 0);
+
+    // Two attribute-scoped edges: an Employee FK is violated by an INSERT into
+    // Employee and by a DELETE from Department.
+    const char* body = "(MemberOf (target Department) (binding ((dept_id (Var dept_id)))))";
+    const char* edges = "insert\tEmployee\tdept_id\ndelete\tDepartment\tdept_id\n";
+
+    char* path_raw = nullptr;
+    REQUIRE(rnt_register_constraint(owner, "fk_emp_dept", body, edges, &path_raw) == 0);
+    const std::string path = take_string(path_raw);
+    REQUIRE(path == "system/branches/test_constraint_admin/constraints/fk_emp_dept");
+
+    // Body round trips verbatim
+    char* body_raw = nullptr;
+    REQUIRE(rnt_constraint_body(path.c_str(), &body_raw) == 0);
+    REQUIRE(take_string(body_raw) == body);
+
+    // Reverse query matches the two triggering mutations, nothing else
+    char* q = nullptr;
+    REQUIRE(rnt_constraints_for("Employee", "insert", &q) == 0);
+    REQUIRE(take_string(q).find(path) != std::string::npos);
+    REQUIRE(rnt_constraints_for("Department", "delete", &q) == 0);
+    REQUIRE(take_string(q).find(path) != std::string::npos);
+    // Non-triggering pairs: no match.
+    REQUIRE(rnt_constraints_for("Department", "insert", &q) == 0);
+    REQUIRE(take_string(q).empty());
+    REQUIRE(rnt_constraints_for("Employee", "delete", &q) == 0);
+    REQUIRE(take_string(q).empty());
+
+    // Drop removes the object: the body is gone, the reverse query is empty, and
+    // a second drop fails
+    REQUIRE(rnt_drop_constraint(owner, "fk_emp_dept") == 0);
+    REQUIRE(rnt_constraint_body(path.c_str(), &body_raw) != 0);
+    REQUIRE(rnt_constraints_for("Employee", "insert", &q) == 0);
+    REQUIRE(take_string(q).empty());
+    REQUIRE(rnt_drop_constraint(owner, "fk_emp_dept") != 0);
+}
+
+TEST_CASE("rnt_constraint_check reports satisfied and violated from a denial plan",
+          "[capi][constraint]") {
+    InitGuard _;
+    const char* bpath = "/system/branches/test_constraint_check";
+    const char* rpath = "/system/branches/test_constraint_check/multigroups/public/relations/viol";
+    REQUIRE(rnt_register_branch(bpath, "") == 0);
+    REQUIRE(rnt_register_relation(rpath) == 0);
+
+    char* th = nullptr;
+    REQUIRE(rnt_link_tuple(rpath, "id=1\n", &th) == 0);
+    rnt_free_string(th);
+
+    // Satisfied: a denial that yields nothing. Take 0 over the scan is the
+    // empty violation set, so the verdict is "satisfied" with no witness.
+    {
+        PlanAction scan{};
+        scan.operation = nt::FOL_OPERATION_SCAN;
+        scan.scan.relation_path = rpath;
+        rnt_plan_t inner = rnt_plan_assemble(scan);
+        REQUIRE(inner != nullptr);
+
+        PlanAction take{};
+        take.operation = nt::FOL_OPERATION_TAKE;
+        take.take.source = inner;
+        take.take.limit = 0;
+        rnt_plan_t plan = rnt_plan_assemble(take);
+        REQUIRE(plan != nullptr);
+
+        int verdict = -1;
+        char* witness = nullptr;
+        REQUIRE(rnt_constraint_check(plan, &verdict, &witness) == 0);
+        REQUIRE(verdict == 0);
+        REQUIRE(witness == nullptr);
+    }
+
+    // Violated: the scan yields the offending tuple, so the verdict is
+    // "violated" and the first row is returned as the witness.
+    {
+        PlanAction scan{};
+        scan.operation = nt::FOL_OPERATION_SCAN;
+        scan.scan.relation_path = rpath;
+        rnt_plan_t plan = rnt_plan_assemble(scan);
+        REQUIRE(plan != nullptr);
+
+        int verdict = -1;
+        char* witness = nullptr;
+        REQUIRE(rnt_constraint_check(plan, &verdict, &witness) == 0);
+        REQUIRE(verdict == 1);
+        REQUIRE(witness != nullptr);
+        REQUIRE(take_string(witness).find("id=1") != std::string::npos);
+    }
+}
+
+TEST_CASE("rnt_register_constraint validates owner, name, and edges", "[capi][constraint]") {
+    InitGuard _;
+
+    // Owner must exist.
+    REQUIRE(rnt_register_constraint("/system/branches/no_such_owner_xyz", "c", "body", "", nullptr) !=
+            0);
+
+    const char* owner = "/system/branches/test_constraint_validate";
+    REQUIRE(rnt_register_branch(owner, "") == 0);
+
+    // A name with '/' would not round-trip (it splits into extra path segments).
+    REQUIRE(rnt_register_constraint(owner, "a/b", "body", "", nullptr) != 0);
+
+    // Malformed edges: a line with only an operation, and a line with an empty
+    // relation, are both rejected.
+    REQUIRE(rnt_register_constraint(owner, "c", "body", "insert\n", nullptr) != 0);
+    REQUIRE(rnt_register_constraint(owner, "c", "body", "insert\t\tdept_id\n", nullptr) != 0);
+
+    // Empty edges are valid: a constraint no mutation triggers.
+    REQUIRE(rnt_register_constraint(owner, "c", "body", "", nullptr) == 0);
+
+    // Re-registering replaces the body and the constraint is still droppable
+    // exactly once (the owner pin is not double-counted across a replace).
+    REQUIRE(rnt_register_constraint(owner, "c", "body2", "", nullptr) == 0);
+    char* b = nullptr;
+    REQUIRE(rnt_constraint_body("system/branches/test_constraint_validate/constraints/c", &b) == 0);
+    REQUIRE(take_string(b) == "body2");
+    REQUIRE(rnt_drop_constraint(owner, "c") == 0);
+    REQUIRE(rnt_drop_constraint(owner, "c") != 0);
+}
