@@ -135,49 +135,32 @@ namespace nt {
      */
     class Tuple {
     public:
-        explicit Tuple(std::vector<Attribute> attributes) {
-            for (auto &attr : attributes) attributes_[attr.name] = attr.value;
-            this->Reset();
+        explicit Tuple(auto attributes) {
+            for (auto attr : attributes)
+                attributes_[attr.name] = attr.value;
         }
 
-        /** @brief Returns the next attribute, or nullptr when exhausted. */
-        const Attribute* Next() {
-            if (iter_ == attributes_.end()) return nullptr;
-            current_attr_ = {iter_->first, iter_->second};
-            iter_++;
-            return &current_attr_;
+        const std::string operator[](const std::string key) const {
+            return attributes_.at(key);
         }
 
-        void Reset() {
-            iter_ = attributes_.begin();
-        }
-
-        const std::string operator[](std::string key) {
-            return attributes_[key];
-        }
-
-        const auto attrs() const {
+        const auto Attrs() const {
           auto view =
               attributes_ |
               std::views::transform([](std::pair<std::string, std::string> p) {
                   Attribute attr { p.first, p.second };
                   return attr;
               });
+
           return view;
         }
 
-        Tuple* MergeInto(Tuple* right) const {
-            std::vector<Attribute> merged;
-            for (const auto& a : attrs())
-                merged.push_back(a);
-            for (const auto& a : right->attrs())
-                merged.push_back(a);
-            return new Tuple(merged);
+        Tuple MergeInto(const Tuple& right) const {
+            auto t = {Attrs(), right.Attrs()};
+            return Tuple(std::views::join(t));
         }
 
     private:
         std::unordered_map<std::string, std::string> attributes_{};
-        std::unordered_map<std::string, std::string>::iterator iter_;
-        Attribute current_attr_;
     };
 } // namespace nt
