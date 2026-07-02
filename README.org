@@ -31,42 +31,13 @@ The NT kernel is a good model for a dedicated database kernel for three reasons.
 
 * Current Status
 
-The open-handle pipeline is wired end-to-end and cursors pull tuples lazily from the storage backend one page at a time through the Tarski FOL engine. The active backend (=SqliteBackend=) keeps a single =kv(hash, value)= table for content-addressed tuple data. Relation membership is tracked by a sorted Merkle B-tree (=Merkle=) whose nodes are stored in the same KV table; only the root hash per relation is held in memory. =InMemoryBackend= provides the same interface for tests.
-
-An =extern "C"= API (=RNT_C_API.h=) exposes the full manager pipeline to OCaml via ctypes, enabling Sakura to use this kernel as its storage and query execution layer.
-
-Several manager features are still being designed: dual ref counting, type callbacks, trie-based object lookup, and the namespace reparse layer. These are specified in header comments.
+Rewrite in progress, to be elaborated.
 
 * Building
 
 ** GNU/Linux with Nix
 
-The supported build path is the Nix development shell on GNU/Linux. It provides
-GCC, CMake, Ninja, SQLite, PicoSHA2 headers, Catch2, Doxygen, Graphviz, and GDB.
-
-#+begin_src shell
-nix develop
-cmake --preset gnu-debug
-cmake --build out/build/gnu-debug
-ctest --test-dir out/build/gnu-debug --output-on-failure
-#+end_src
-
-A release build uses =--preset gnu-release=. CI builds the package with =nix build=,
-which also runs the test suite.
-
-* Documentation
-
-API documentation is generated with Doxygen. The root =Doxyfile= reads the public headers, source files, and the documentation main page in =docs/mainpage.dox=.
-
-#+begin_src shell
-nix develop --command doxygen Doxyfile
-#+end_src
-
-Generated HTML is written to =docs/generated/html=.
-
-The comments in the public headers are part of the design record. Keep architectural notes close to the declarations they explain so Doxygen can publish them with the API reference.
-
-The repository also includes a GitHub Actions workflow that publishes the generated Doxygen HTML to GitHub Pages on pushes to =master=. In the repository settings, configure Pages to use =GitHub Actions= as its source.
+To be elaborated.
 
 * License
 
