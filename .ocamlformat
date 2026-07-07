@@ -1,0 +1,30 @@
+version = 0.29.0
+# `compact`/`sparse` profiles were removed in 0.22; `ocamlformat` is the
+# densest remaining base.  The knobs below tighten it further.
+profile = ocamlformat
+
+# Wider lines pack more per line -> fewer wraps, denser code.
+margin = 100
+
+# No blank lines forced between structure items / let bindings.
+module-item-spacing = compact
+let-binding-spacing = compact
+
+# Tight delimiters: no inner spaces in [..], {..}, (..), arrays.
+space-around-lists = false
+space-around-arrays = false
+space-around-records = false
+space-around-variants = false
+field-space = tight
+
+# Keep conditionals and matches on as few lines as fit.
+if-then-else = compact
+break-cases = fit
+break-infix = fit-or-vertical
+break-separators = after
+parens-tuple = multi-line-only
+sequence-style = terminator
+
+# Don't reflow comment text; leave doc comments as written.
+wrap-comments = false
+doc-comments = before
