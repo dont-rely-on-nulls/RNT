@@ -11,6 +11,16 @@ let ( |=| ) name value = fun p -> BatMap.add name value p
 let ( & ) l r = fun p -> r (l p)
 let empty = fun p -> p
 
+let condition name message ?parent props =
+  { name;
+    message;
+    backtrace = Printexc.get_callstack 256;
+    properties =
+      parent
+      |> Option.map (fun { properties; _ } -> properties)
+      |> Option.value ~default:BatMap.empty
+      |> props }
+
 let to_string_hum { name; message; properties; backtrace } =
   let properties' =
     properties
