@@ -6,13 +6,16 @@ module type STORAGE = sig
 
   (** begin a transaction within `connection` *)
   val start: connection -> transaction
+
   (** `commit` the current transaction *)
-  val commit: transaction -> ()
+  val commit: transaction -> unit
+
   (** `abort` the current transaction *)
-  val abort: transaction -> ()
+  val abort: transaction -> unit
 
   (** within a transaction, fetch a blob from disk *)
   val get: transaction -> Concepts.Hash.hash -> Concepts.Representation.blob
+
   (** within a transaction, associate a hash with a blob on disk *)
-  val put: transaction -> Concepts.Hash.hash -> Concepts.Representation.blob -> ()
+  val put: transaction -> Concepts.Hash.hash -> Concepts.Representation.blob -> unit
 end
