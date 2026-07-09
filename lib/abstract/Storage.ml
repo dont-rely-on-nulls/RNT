@@ -14,7 +14,7 @@ module type STORAGE = sig
   val abort: transaction -> (unit, Concepts.Condition.condition) result
 
   (** within a transaction, fetch a blob from disk *)
-  val get: transaction -> Concepts.Hash.hash -> (Concepts.Representation.blob, Concepts.Condition.condition) result
+  val get: transaction -> Concepts.Hash.hash -> (Concepts.Representation.blob option, Concepts.Condition.condition) result
 
   (** within a transaction, associate a hash with a blob on disk *)
   val put: transaction -> Concepts.Hash.hash -> Concepts.Representation.blob -> (unit, Concepts.Condition.condition) result
