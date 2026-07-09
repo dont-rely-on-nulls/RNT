@@ -19,36 +19,52 @@ module Plan = struct
     | Union of t BatFingerTree.t
 end
 
-type stream = Concepts.Tuple.t BatSeq.t
-(** A lazy stream of tuples. *)
+type stream = (Concepts.Tuple.t, Concepts.Condition.condition) result BatSeq.t
+(** A lazy stream of tuples. Each node is either a resolved tuple or a
+    [condition] describing why the stream could not be produced past
+    that point. *)
 
-(* TODO: represent a missing [Var] as something better than [""]. *)
+(** [singleton x] The stream with the single element [x]. *)
+let singleton (x : ('a, 'e) result) : ('a, 'e) result BatSeq.t =
+  fun () -> BatSeq.Cons (x, BatSeq.empty)
 
 (*
-  1. Add proper error handling with tevo's conditions
-  2. Figure out block nested loop joins with path variables
-  3. Revise the string paths for relations under the Ob tree
-
+  1. Figure out block nested loop joins with path variables
+  2. Revise the string paths for relations under the Ob tree
  *)
 
+(** Condition builders for execution errors. *)
 module Error = struct
   open Concepts.Condition
 
-  let unbound_variable code = condition "unbound-variable" "message" ("code" |=| Concepts.Value.Integer code)
+  (** [unbound_variable name] A [Var] segment referenced [name], but no
+      such attribute was bound in the enclosing tuple. *)
+  let unbound_variable name =
+    condition "unbound-variable"
+      (Printf.sprintf "path variable %S is not bound in the enclosing tuple" name)
+      ("variable" |=| Concepts.Value.String name)
 end
 
 (** [resolve args bindings] Instantiates a scan-argument template
-    against [bindings], replacing each [Var] with its bound value and
-    each [Const] with its literal. A [Var] with no binding resolves to
-    [""].
+    against [bindings], replacing each [Var] with the string form of
+    its bound value and each [Const] with its literal.
     @param args argument template.
     @param bindings tuple supplying the variable values.
-    @return the resolved arguments. *)
-let resolve (args : Plan.path_arg BatFingerTree.t) (bindings : Concepts.Tuple.t) =
-  BatFingerTree.map
-    (function
-     | Plan.Const value -> value
-     | Plan.Var name -> (match Concepts.Tuple.access name bindings with Some a -> Ok a | None -> ))
+    @return the resolved arguments, or [unbound_variable] when a [Var]
+    has no binding. *)
+let resolve (args : Plan.path_arg BatFingerTree.t) (bindings : Concepts.Tuple.t) :
+    (string BatFingerTree.t, Concepts.Condition.condition) result =
+  let open Utilities.Result in
+  BatFingerTree.fold_left
+    (fun acc arg ->
+      let* acc = acc in
+      match arg with
+      | Plan.Const value -> Ok (BatFingerTree.snoc acc value)
+      | Plan.Var name ->
+         (match Concepts.Tuple.access name bindings with
+          | Some value -> Ok (BatFingerTree.snoc acc (Concepts.Value.to_string value))
+          | None -> Error (Error.unbound_variable name)))
+    (Ok BatFingerTree.empty)
     args
 
 (** Compiles and runs plans against a content-addressed storage backend
@@ -73,7 +89,8 @@ module Make (Store : Abstract.Storage.STORAGE) = struct
   (** [scan txn ~relation ~args] Streams the tuples of [relation] one
       page at a time; forcing a stream node re-reads its page.
       @return the tuple stream. *)
-  let scan (txn : Store.transaction) ~(relation : string) ~(args : string BatFingerTree.t) : stream =
+  let scan (txn : Store.transaction) ~(relation : string) ~(args : string BatFingerTree.t) :
+      Concepts.Tuple.t BatSeq.t =
     let rec from offset () =
       let p = page txn ~relation ~args ~offset in
       if BatFingerTree.is_empty p then BatSeq.Nil
@@ -87,13 +104,17 @@ module Make (Store : Abstract.Storage.STORAGE) = struct
       tuple to a tuple stream.
       @return the compiled stream builder. *)
   let rec compile (txn : Store.transaction) : Plan.t -> Concepts.Tuple.t -> stream = function
-    | Scan {relation; args} -> fun bindings -> scan txn ~relation ~args:(resolve args bindings)
+    | Scan {relation; args} ->
+       fun bindings ->
+       (match resolve args bindings with
+        | Ok args -> BatSeq.map Result.ok (scan txn ~relation ~args)
+        | Error condition -> singleton (Error condition))
     | Project {attrs; from} ->
        let from = compile txn from in
-       fun bindings -> BatSeq.map (Tuple.project attrs) (from bindings)
+       fun bindings -> BatSeq.map (Result.map (Concepts.Tuple.project attrs)) (from bindings)
     | Rename {attrs; from} ->
        let from = compile txn from in
-       fun bindings -> BatSeq.map (Tuple.rename attrs) (from bindings)
+       fun bindings -> BatSeq.map (Result.map (Concepts.Tuple.rename attrs)) (from bindings)
     | Take {limit; from} ->
        let from = compile txn from in
        fun bindings -> BatSeq.take limit (from bindings)
@@ -108,7 +129,13 @@ module Make (Store : Abstract.Storage.STORAGE) = struct
        in
        fun bindings ->
        left bindings
-       |> BatSeq.concat_map (fun l -> right l |> BatSeq.filter (matches l) |> BatSeq.map (Tuple.merge l))
+       |> BatSeq.concat_map
+            (function
+             | Error _ as error -> singleton error
+             | Ok l ->
+                right l
+                |> BatSeq.filter (function Ok r -> matches l r | Error _ -> true)
+                |> BatSeq.map (Result.map (Concepts.Tuple.merge l)))
     | Materialize from ->
        let cached = lazy (BatSeq.memoize (compile txn from Concepts.Tuple.empty)) in
        fun _ -> Lazy.force cached
