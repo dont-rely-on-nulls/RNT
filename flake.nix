@@ -52,6 +52,8 @@
               ocamlPackages.utop
               ocamlPackages.batteries
               ocamlPackages.alcotest
+              ocamlPackages.ctypes
+              ocamlPackages.ctypes-foreign
             ];
           };
         });
