@@ -1,3 +1,5 @@
+(include_subdirs qualified)
+
 (library
  (name rnt)
  (public_name rnt)
