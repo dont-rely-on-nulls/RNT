@@ -134,17 +134,17 @@ module Make (Store : Abstract.Storage.STORAGE) = struct
     | Scan {relation; args} -> fun bindings -> scan txn ~relation ~args:(resolve args bindings)
     | Project {attrs; from} ->
        let from = compile txn from in
-       fun bindings -> Seq.map (Tuple.project attrs) (from bindings)
+       fun bindings -> BatSeq.map (Tuple.project attrs) (from bindings)
     | Rename {attrs; from} ->
        let from = compile txn from in
-       fun bindings -> Seq.map (Tuple.rename attrs) (from bindings)
+       fun bindings -> BatSeq.map (Tuple.rename attrs) (from bindings)
     | Take {limit; from} ->
        let from = compile txn from in
-       fun bindings -> Seq.take limit (from bindings)
+       fun bindings -> BatSeq.take limit (from bindings)
     | Union plans ->
        let compiled = BatFingerTree.map (compile txn) plans in
        fun bindings ->
-       BatFingerTree.fold_right (fun rest c -> Seq.append (c bindings) rest) Seq.empty compiled
+       BatFingerTree.fold_right (fun rest c -> BatSeq.append (c bindings) rest) BatSeq.empty compiled
     | Join {left; right; attrs} ->
        let left = compile txn left and right = compile txn right in
        let matches l r =
@@ -152,9 +152,9 @@ module Make (Store : Abstract.Storage.STORAGE) = struct
        in
        fun bindings ->
        left bindings
-       |> Seq.concat_map (fun l -> right l |> Seq.filter (matches l) |> Seq.map (Tuple.merge l))
+       |> BatSeq.concat_map (fun l -> right l |> BatSeq.filter (matches l) |> BatSeq.map (Tuple.merge l))
     | Materialize from ->
-       let cached = lazy (Seq.memoize (compile txn from Tuple.empty)) in
+       let cached = lazy (BatSeq.memoize (compile txn from Tuple.empty)) in
        fun _ -> Lazy.force cached
 
   (** [run txn plan] Executes [plan] under the empty binding.
