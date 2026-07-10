@@ -1,11 +1,14 @@
-(** Compiles relational plans ([Plan.t]) into lazy tuple streams and
-    runs them by pulling tuples through a cursor manager
-    ([Managers.Cursor.CURSOR_MANAGER]).
+(** Compiles relational plans ([Plan.t]) into a push-based fold and runs
+    them through capability-checked handles ([Managers.Handler.HANDLER]).
 
-    A [Plan.t] holds no runtime state. [compile] turns it into a lazy
-    [stream], which does. [Join] re-scans its inner side once per outer
-    tuple by re-applying the compiled function to a fresh binding. Only
-    [Materialize] keeps anything between runs, because it caches. *)
+    Each [Scan] opens a handle on its relation — admitted only when the
+    supplied [Managers.Permission.capability] authorizes it — and pulls
+    tuples through a cursor whose lifetime is bounded by [with_cursor].
+    Tuples are pushed to a [yield] continuation rather than returned as a
+    lazy sequence, so no cursor outlives the scope that opened it. [Join]
+    re-scans its inner side once per outer tuple by re-applying the
+    compiled pusher to a fresh binding. Only [Materialize] keeps anything
+    between runs, because it caches. *)
 
 (** The operator tree. One constructor per operator, holding its
     description and no runtime state. *)
@@ -21,7 +24,7 @@ module Plan = struct
     (* [path] is the relation's namespace address: fixed strings that
        [Object.find] walks. [args] are ephemeral generator inputs, not
        part of the namespace. *)
-    | Scan of {path: string BatFingerTree.t; args: path_arg BatFingerTree.t}
+    | Scan of {path: Concepts.Path.t; args: path_arg BatFingerTree.t}
     (* [attrs] is [None] for a natural join, which matches on the
        attributes [left] and [right] share. [Some s] joins on [s]
        instead. *)
@@ -33,13 +36,9 @@ module Plan = struct
     | Union of t BatFingerTree.t
 end
 
-type stream = (Concepts.Tuple.t, Concepts.Condition.condition) result BatSeq.t
-(** A lazy stream of tuples. Each node is either a tuple or a
-    [condition] saying why the stream stopped there. *)
-
-(** [singleton x] The stream with the single element [x]. *)
-let singleton (x : ('a, 'e) result) : ('a, 'e) result BatSeq.t =
-  fun () -> BatSeq.Cons (x, BatSeq.empty)
+type control = Continue | Stop
+(** Whether a consumer wants more tuples ([Continue]) or has stopped
+    ([Stop]). Returned by a [yield] continuation and propagated up. *)
 
 (** Condition builders for execution errors. *)
 module Error = struct
@@ -75,52 +74,89 @@ let resolve (args : Plan.path_arg BatFingerTree.t) (bindings : Concepts.Tuple.t)
     (Ok BatFingerTree.empty)
     args
 
-(** Compiles and runs plans by pulling tuples through a cursor manager
-    ([Managers.Cursor.CURSOR_MANAGER]). Relation paths, Merkle paging,
-    and the object namespace all live behind that seam. This module
-    never touches storage or the object tree directly. *)
-module Make (Cursors : Managers.Cursor.CURSOR_MANAGER) = struct
-  (** [scan cursors ~path ~args] opens a cursor on the relation at
-      [path] and streams its tuples, one per stream node. A paging
-      failure comes through as an [Error] node. The cursor is closed at
-      exhaustion. *)
-  let scan (cursors : Cursors.t) ~(path : string BatFingerTree.t)
-      ~(args : Concepts.Value.value BatFingerTree.t) : stream =
-    match Cursors.open_ cursors ~path ~args with
-    | Error condition -> singleton (Error condition)
-    | Ok cursor ->
-       let rec pull () =
-         match Cursors.next cursor with
-         | Error condition -> BatSeq.Cons (Error condition, BatSeq.empty)
-         | Ok None -> Cursors.close cursor ; BatSeq.Nil
-         | Ok (Some tuple) -> BatSeq.Cons (Ok tuple, pull)
-       in
-       pull
+type yield = Concepts.Tuple.t -> (control, Concepts.Condition.condition) result
+(** A tuple consumer. Returns [Continue] to keep receiving, [Stop] to end
+    the scan, or a condition to abort it. *)
 
-  (** [compile cursors plan] compiles [plan] into a function from a
-      binding tuple to its tuple stream.
-      @return the compiled stream builder. *)
-  let rec compile (cursors : Cursors.t) : Plan.t -> Concepts.Tuple.t -> stream = function
+type pusher =
+  bindings:Concepts.Tuple.t -> yield:yield -> (control, Concepts.Condition.condition) result
+(** A compiled operator: pushes its tuples to [yield] under a binding
+    tuple, and reports whether the consumer stopped or an error arose. *)
+
+(** Compiles and runs plans by pushing tuples through capability-checked
+    handles ([Managers.Handler.HANDLER]). Relation paths, authorization,
+    Merkle paging, and the object namespace all live behind that seam.
+    This module never touches storage or the object tree directly. *)
+module Make (Handler : Managers.Handler.HANDLER) = struct
+  (** [drain cursor ~yield] pushes every tuple from [cursor] to [yield],
+      stopping when [yield] returns [Stop] or the cursor errors. *)
+  let rec drain cursor ~yield =
+    match Handler.next cursor with
+    | Error condition -> Error condition
+    | Ok None -> Ok Continue
+    | Ok (Some tuple) ->
+       (match yield tuple with
+        | Ok Continue -> drain cursor ~yield
+        | other -> other)
+
+  (** [replay rows ~yield] pushes each of [rows] to [yield] in order,
+      stopping on [Stop] or error. *)
+  let rec replay rows ~yield =
+    match rows with
+    | [] -> Ok Continue
+    | tuple :: rows ->
+       (match yield tuple with
+        | Ok Continue -> replay rows ~yield
+        | other -> other)
+
+  (** [compile handler cap plan] turns [plan] into a pusher.
+      @return the compiled pusher. *)
+  let rec compile handler cap : Plan.t -> pusher = function
     | Scan {path; args} ->
-       fun bindings ->
+       fun ~bindings ~yield ->
        (match resolve args bindings with
-        | Ok args -> scan cursors ~path ~args
-        | Error condition -> singleton (Error condition))
+        | Error condition -> Error condition
+        | Ok args ->
+           (match Handler.open_ handler cap ~path ~claim:Managers.Permission.Read with
+            | Error condition -> Error condition
+            | Ok handle ->
+               (match Handler.with_cursor handle ~args (fun cursor -> drain cursor ~yield) with
+                | Error condition -> Error condition
+                | Ok result -> result)))
     | Project {attrs; from} ->
-       let from = compile cursors from in
-       fun bindings -> BatSeq.map (Result.map (Concepts.Tuple.project attrs)) (from bindings)
+       let from = compile handler cap from in
+       fun ~bindings ~yield ->
+       from ~bindings ~yield:(fun tuple -> yield (Concepts.Tuple.project attrs tuple))
     | Rename {attrs; from} ->
-       let from = compile cursors from in
-       fun bindings -> BatSeq.map (Result.map (Concepts.Tuple.rename attrs)) (from bindings)
+       let from = compile handler cap from in
+       fun ~bindings ~yield ->
+       from ~bindings ~yield:(fun tuple -> yield (Concepts.Tuple.rename attrs tuple))
     | Take {limit; from} ->
-       let from = compile cursors from in
-       fun bindings -> BatSeq.take limit (from bindings)
+       let from = compile handler cap from in
+       fun ~bindings ~yield ->
+       let remaining = ref limit in
+       let stopped = ref false in
+       let capped tuple =
+         if !remaining <= 0 then Ok Stop
+         else begin
+           decr remaining ;
+           match yield tuple with
+           | Ok Stop -> stopped := true ; Ok Stop
+           | Ok Continue -> if !remaining <= 0 then Ok Stop else Ok Continue
+           | Error condition -> Error condition
+         end
+       in
+       (match from ~bindings ~yield:capped with
+        | Error condition -> Error condition
+        | Ok _ -> if !stopped then Ok Stop else Ok Continue)
     | Union plans ->
-       let compiled = BatFingerTree.map (compile cursors) plans in
-       fun bindings ->
-       BatFingerTree.fold_right (fun rest c -> BatSeq.append (c bindings) rest) BatSeq.empty compiled
+       let compiled = BatFingerTree.map (compile handler cap) plans in
+       fun ~bindings ~yield ->
+       BatFingerTree.fold_left
+         (fun acc from -> match acc with Ok Continue -> from ~bindings ~yield | other -> other)
+         (Ok Continue) compiled
     | Join {left; right; attrs} ->
-       let left = compile cursors left and right = compile cursors right in
+       let left = compile handler cap left and right = compile handler cap right in
        let matches =
          match attrs with
          | None ->
@@ -139,21 +175,41 @@ module Make (Cursors : Managers.Cursor.CURSOR_MANAGER) = struct
                 (fun attr -> Concepts.Tuple.access attr l = Concepts.Tuple.access attr r)
                 attrs
        in
-       fun bindings ->
-       left bindings
-       |> BatSeq.concat_map
-            (function
-             | Error _ as error -> singleton error
-             | Ok l ->
-                right l
-                |> BatSeq.filter (function Ok r -> matches l r | Error _ -> true)
-                |> BatSeq.map (Result.map (Concepts.Tuple.merge l)))
+       fun ~bindings ~yield ->
+       left ~bindings ~yield:(fun l ->
+         right ~bindings:l ~yield:(fun r ->
+           if matches l r then yield (Concepts.Tuple.merge l r) else Ok Continue))
     | Materialize from ->
-       let cached = lazy (BatSeq.memoize (compile cursors from Concepts.Tuple.empty)) in
-       fun _ -> Lazy.force cached
+       let from = compile handler cap from in
+       let cache = ref None in
+       fun ~bindings:_ ~yield ->
+       (match !cache with
+        | Some rows -> replay rows ~yield
+        | None ->
+           let buffer = ref [] in
+           (match
+              from ~bindings:Concepts.Tuple.empty ~yield:(fun tuple ->
+                buffer := tuple :: !buffer ; Ok Continue)
+            with
+            | Error condition -> Error condition
+            | Ok _ ->
+               let rows = List.rev !buffer in
+               cache := Some rows ;
+               replay rows ~yield))
 
-  (** [run cursors plan] Executes [plan] under the empty binding.
-      @return the resulting tuple stream. *)
-  let run (cursors : Cursors.t) (plan : Plan.t) : stream =
-    compile cursors plan Concepts.Tuple.empty
+  (** [fold handler cap plan ~init ~f] runs [plan] under the empty binding
+      and folds [f] over its tuples.
+      @return the final accumulator, or the condition that stopped it. *)
+  let fold handler cap plan ~init ~f =
+    let acc = ref init in
+    let yield tuple = acc := f !acc tuple ; Ok Continue in
+    match compile handler cap plan ~bindings:Concepts.Tuple.empty ~yield with
+    | Ok _ -> Ok !acc
+    | Error condition -> Error condition
+
+  (** [to_list handler cap plan] runs [plan] and collects its tuples.
+      @return the tuples in order, or the condition that stopped them. *)
+  let to_list handler cap plan =
+    fold handler cap plan ~init:[] ~f:(fun acc tuple -> tuple :: acc)
+    |> Result.map List.rev
 end
