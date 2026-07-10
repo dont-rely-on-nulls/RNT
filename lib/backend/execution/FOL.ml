@@ -22,7 +22,10 @@ module Plan = struct
        [Object.find] walks. [args] are ephemeral generator inputs, not
        part of the namespace. *)
     | Scan of {path: string BatFingerTree.t; args: path_arg BatFingerTree.t}
-    | Join of {left: t; right: t; attrs: BatSet.String.t}
+    (* [attrs] is [None] for a natural join, which matches on the
+       attributes [left] and [right] share. [Some s] joins on [s]
+       instead. *)
+    | Join of {left: t; right: t; attrs: BatSet.String.t option}
     | Take of {limit: int; from: t}
     | Project of {attrs: BatSet.String.t; from: t}
     | Materialize of t
@@ -37,10 +40,6 @@ type stream = (Concepts.Tuple.t, Concepts.Condition.condition) result BatSeq.t
 (** [singleton x] The stream with the single element [x]. *)
 let singleton (x : ('a, 'e) result) : ('a, 'e) result BatSeq.t =
   fun () -> BatSeq.Cons (x, BatSeq.empty)
-
-(*
-  1. Figure out block nested loop joins with path variables
- *)
 
 (** Condition builders for execution errors. *)
 module Error = struct
@@ -122,8 +121,23 @@ module Make (Cursors : Managers.Cursor.CURSOR_MANAGER) = struct
        BatFingerTree.fold_right (fun rest c -> BatSeq.append (c bindings) rest) BatSeq.empty compiled
     | Join {left; right; attrs} ->
        let left = compile cursors left and right = compile cursors right in
-       let matches l r =
-         BatSet.String.for_all (fun attr -> Concepts.Tuple.access attr l = Concepts.Tuple.access attr r) attrs
+       let matches =
+         match attrs with
+         | None ->
+            (* Natural join: agree on every attribute the two tuples
+               share. Attributes on one side only impose no condition. *)
+            fun l r ->
+              BatMap.String.for_all
+                (fun name value ->
+                  match Concepts.Tuple.access name r with
+                  | Some value' -> value = value'
+                  | None -> true)
+                l
+         | Some attrs ->
+            fun l r ->
+              BatSet.String.for_all
+                (fun attr -> Concepts.Tuple.access attr l = Concepts.Tuple.access attr r)
+                attrs
        in
        fun bindings ->
        left bindings
