@@ -3,10 +3,7 @@ module type HANDLER = sig
   type handle
   type cursor
 
-  val open_ :
-    t ->
-    path:Concepts.Path.t ->
-    (handle, Concepts.Condition.condition) result
+  val open_ : t -> path:Concepts.Path.t -> (handle, Concepts.Condition.condition) result
 
   val open_cursor :
     handle ->
