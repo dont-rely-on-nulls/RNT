@@ -25,10 +25,9 @@ module Plan = struct
        [Object.find] walks. [args] are ephemeral generator inputs, not
        part of the namespace. *)
     | Scan of {path: Concepts.Path.t; args: path_arg BatFingerTree.t}
-    (* [attrs] is [None] for a natural join, which matches on the
-       attributes [left] and [right] share. [Some s] joins on [s]
-       instead. *)
-    | Join of {left: t; right: t; attrs: BatSet.String.t option}
+    (* Natural join: matches on the attributes [left] and [right] share,
+       coalescing them; attributes on one side only impose no condition. *)
+    | Natural of {left: t; right: t}
     | Take of {limit: int; from: t}
     | Project of {attrs: BatSet.String.t; from: t}
     | Materialize of t
@@ -155,25 +154,15 @@ module Make (Handler : Managers.Handler.HANDLER) = struct
        BatFingerTree.fold_left
          (fun acc from -> match acc with Ok Continue -> from ~bindings ~yield | other -> other)
          (Ok Continue) compiled
-    | Join {left; right; attrs} ->
+    | Natural {left; right} ->
        let left = compile handler cap left and right = compile handler cap right in
-       let matches =
-         match attrs with
-         | None ->
-            (* Natural join: agree on every attribute the two tuples
-               share. Attributes on one side only impose no condition. *)
-            fun l r ->
-              BatMap.String.for_all
-                (fun name value ->
-                  match Concepts.Tuple.access name r with
-                  | Some value' -> value = value'
-                  | None -> true)
-                l
-         | Some attrs ->
-            fun l r ->
-              BatSet.String.for_all
-                (fun attr -> Concepts.Tuple.access attr l = Concepts.Tuple.access attr r)
-                attrs
+       let matches l r =
+         BatMap.String.for_all
+           (fun name value ->
+             match Concepts.Tuple.access name r with
+             | Some value' -> value = value'
+             | None -> true)
+           l
        in
        fun ~bindings ~yield ->
        left ~bindings ~yield:(fun l ->

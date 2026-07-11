@@ -12,17 +12,17 @@ let empty : t = AttributeMap.empty
     @return the attribute, or [None] when [name] is unbound. *)
 let access (name : string) (t : t) : Value.value option = AttributeMap.find_opt name t
 
-(** [merge left right] Combines two tuples. An attribute present on
-    only one side is kept; an attribute present on both is kept when
-    the values are equal and dropped when they differ.
+(** [merge left right] Unions two tuples. Shared attributes take the
+    [left] value; one-sided attributes are kept. Precondition: shared
+    attributes agree (the natural-join matcher guarantees this), so the
+    [left] bias is never observable.
     @param left first tuple.
     @param right second tuple.
     @return the merged tuple. *)
 let merge (left : t) (right : t) : t =
   let merger _ (left : Value.value option) (right : Value.value option) : Value.value option =
     match left, right with
-    | Some a, Some b -> if a = b then Some a else None
-    | (Some _ as a), None | None, (Some _ as a) -> a
+    | (Some _ as v), _ | None, (Some _ as v) -> v
     | None, None -> None
   in
   AttributeMap.merge merger left right
