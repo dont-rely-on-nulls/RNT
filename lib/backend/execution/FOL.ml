@@ -30,12 +30,14 @@ let resolve (args : Plan.path_arg BatFingerTree.t) (bindings : Concepts.Tuple.t)
   BatFingerTree.fold_left
     (fun acc arg ->
       let* acc = acc in
-      match arg with
-      | Plan.Const value -> Ok (BatFingerTree.snoc acc value)
-      | Plan.Var name -> (
-        match Concepts.Tuple.access name bindings with
-        | Some value -> Ok (BatFingerTree.snoc acc value)
-        | None -> Error (Error.unbound_variable name) ) )
+      let* value =
+        match arg with
+        | Plan.Const value -> Ok value
+        | Plan.Var name ->
+            Option.to_result ~none:(Error.unbound_variable name)
+              (Concepts.Tuple.access name bindings)
+      in
+      Ok (BatFingerTree.snoc acc value) )
     (Ok BatFingerTree.empty) args
 
 type yield = Concepts.Tuple.t -> (control, Concepts.Condition.condition) result
@@ -143,17 +145,4 @@ module Make (Handler : Managers.Handle.HANDLER) = struct
     | Union plans -> Algebra.union (BatFingerTree.map (compile handler cap) plans)
     | Natural {left; right} -> Algebra.natural (compile handler cap left) (compile handler cap right)
     | Materialize from -> Algebra.materialize (compile handler cap from)
-
-  let fold handler cap plan ~init ~f =
-    let acc = ref init in
-    let yield tuple =
-      acc := f !acc tuple;
-      Ok Continue
-    in
-    match compile handler cap plan ~bindings:Concepts.Tuple.empty ~yield with
-    | Ok _ -> Ok !acc
-    | Error condition -> Error condition
-
-  let to_list handler cap plan =
-    fold handler cap plan ~init:[] ~f:(fun acc tuple -> tuple :: acc) |> Result.map List.rev
 end
