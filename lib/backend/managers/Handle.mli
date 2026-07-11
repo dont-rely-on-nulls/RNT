@@ -10,13 +10,13 @@ module type HANDLER = sig
     claim:Permission.claim ->
     (handle, Concepts.Condition.condition) result
 
-  val with_cursor :
+  val open_cursor :
     handle ->
     args:Concepts.Value.value BatFingerTree.t ->
-    (cursor -> 'a) ->
-    ('a, Concepts.Condition.condition) result
+    (cursor, Concepts.Condition.condition) result
 
   val next : cursor -> (Concepts.Tuple.t option, Concepts.Condition.condition) result
+  val close : cursor -> unit
 end
 
 module Make (Store : Abstract.Storage.STORAGE) : sig

@@ -11,9 +11,10 @@ module Plan = struct
     | Union of t BatFingerTree.t
 end
 
-type control =
-  | Continue
-  | Stop
+type stream = (Concepts.Tuple.t, Concepts.Condition.condition) result BatSeq.t
+
+let singleton (x : ('a, 'e) result) : ('a, 'e) result BatSeq.t =
+ fun () -> BatSeq.Cons (x, BatSeq.empty)
 
 module Error = struct
   open Concepts.Condition
@@ -40,109 +41,65 @@ let resolve (args : Plan.path_arg BatFingerTree.t) (bindings : Concepts.Tuple.t)
       Ok (BatFingerTree.snoc acc value) )
     (Ok BatFingerTree.empty) args
 
-type yield = Concepts.Tuple.t -> (control, Concepts.Condition.condition) result
-
-type pusher =
-  bindings:Concepts.Tuple.t -> yield:yield -> (control, Concepts.Condition.condition) result
-
 module Make (Handler : Managers.Handle.HANDLER) = struct
-  module Algebra = struct
-    let rec drain cursor ~yield =
-      match Handler.next cursor with
-      | Error condition -> Error condition
-      | Ok None -> Ok Continue
-      | Ok (Some tuple) -> (
-        match yield tuple with Ok Continue -> drain cursor ~yield | other -> other )
-
-    let rec replay rows ~yield =
-      match rows with
-      | [] -> Ok Continue
-      | tuple :: rows -> (
-        match yield tuple with Ok Continue -> replay rows ~yield | other -> other )
-
-    let scan handler cap ~path ~args : pusher =
-      fun ~bindings ~yield ->
-        match resolve args bindings with
-        | Error condition -> Error condition
-        | Ok args -> (
-          match Handler.open_ handler cap ~path ~claim:Managers.Permission.Read with
-          | Error condition -> Error condition
-          | Ok handle -> (
-            match Handler.with_cursor handle ~args (fun cursor -> drain cursor ~yield) with
-            | Error condition -> Error condition
-            | Ok result -> result ) )
-
-    let project attrs (from : pusher) : pusher =
-      fun ~bindings ~yield ->
-        from ~bindings ~yield:(fun tuple -> yield (Concepts.Tuple.project attrs tuple))
-
-    let rename attrs (from : pusher) : pusher =
-      fun ~bindings ~yield ->
-        from ~bindings ~yield:(fun tuple -> yield (Concepts.Tuple.rename attrs tuple))
-
-    let take limit (from : pusher) : pusher =
-      fun ~bindings ~yield ->
-        let remaining = ref limit in
-        let stopped = ref false in
-        let capped tuple =
-          if !remaining <= 0 then Ok Stop
-          else begin
-            decr remaining;
-            match yield tuple with
-            | Ok Stop ->
-                stopped := true;
-                Ok Stop
-            | Ok Continue -> if !remaining <= 0 then Ok Stop else Ok Continue
-            | Error condition -> Error condition
-          end
+  let scan handler cap ~path ~args : stream =
+    let opened =
+      let open Utilities.Result in
+      let* handle = Handler.open_ handler cap ~path ~claim:Managers.Permission.Read in
+      Handler.open_cursor handle ~args
+    in
+    match opened with
+    | Error condition -> singleton (Error condition)
+    | Ok cursor ->
+        let rec pull () =
+          match Handler.next cursor with
+          | Error condition -> BatSeq.Cons (Error condition, BatSeq.empty)
+          | Ok None -> BatSeq.Nil
+          | Ok (Some tuple) -> BatSeq.Cons (Ok tuple, pull)
         in
-        ( match from ~bindings ~yield:capped with
-        | Error condition -> Error condition
-        | Ok _ -> if !stopped then Ok Stop else Ok Continue )
+        pull
 
-    let union (compiled : pusher BatFingerTree.t) : pusher =
-      fun ~bindings ~yield ->
-        BatFingerTree.fold_left
-          (fun acc from -> match acc with Ok Continue -> from ~bindings ~yield | other -> other)
-          (Ok Continue) compiled
+  let rec compile handler cap : Plan.t -> Concepts.Tuple.t -> stream = function
+    | Scan {path; args} -> (
+        fun bindings ->
+          match resolve args bindings with
+          | Ok args -> scan handler cap ~path ~args
+          | Error condition -> singleton (Error condition) )
+    | Project {attrs; from} ->
+        let from = compile handler cap from in
+        fun bindings -> BatSeq.map (Result.map (Concepts.Tuple.project attrs)) (from bindings)
+    | Rename {attrs; from} ->
+        let from = compile handler cap from in
+        fun bindings -> BatSeq.map (Result.map (Concepts.Tuple.rename attrs)) (from bindings)
+    | Take {limit; from} ->
+        let from = compile handler cap from in
+        fun bindings -> BatSeq.take limit (from bindings)
+    | Union plans ->
+        let compiled = BatFingerTree.map (compile handler cap) plans in
+        fun bindings ->
+          BatFingerTree.fold_right
+            (fun rest c -> BatSeq.append (c bindings) rest)
+            BatSeq.empty compiled
+    | Natural {left; right} ->
+        let left = compile handler cap left and right = compile handler cap right in
+        let matches l r =
+          BatMap.String.for_all
+            (fun name value ->
+              match Concepts.Tuple.access name r with Some value' -> value = value' | None -> true )
+            l
+        in
+        fun bindings ->
+          left bindings
+          |> BatSeq.concat_map (function
+            | Error _ as error -> singleton error
+            | Ok l ->
+                right l
+                |> BatSeq.filter (function Ok r -> matches l r | Error _ -> true)
+                |> BatSeq.map (Result.map (Concepts.Tuple.merge l)) )
+    | Materialize from ->
+        let cached = lazy (BatSeq.memoize (compile handler cap from Concepts.Tuple.empty)) in
+        fun _ -> Lazy.force cached
 
-    let natural (left : pusher) (right : pusher) : pusher =
-      let matches l r =
-        BatMap.String.for_all
-          (fun name value ->
-            match Concepts.Tuple.access name r with Some value' -> value = value' | None -> true )
-          l
-      in
-      fun ~bindings ~yield ->
-        left ~bindings ~yield:(fun l ->
-            right ~bindings:l ~yield:(fun r ->
-                if matches l r then yield (Concepts.Tuple.merge l r) else Ok Continue ) )
-
-    let materialize (from : pusher) : pusher =
-      let cache = ref None in
-      fun ~bindings:_ ~yield ->
-        match !cache with
-        | Some rows -> replay rows ~yield
-        | None -> (
-            let buffer = ref [] in
-            match
-              from ~bindings:Concepts.Tuple.empty ~yield:(fun tuple ->
-                  buffer := tuple :: !buffer;
-                  Ok Continue )
-            with
-            | Error condition -> Error condition
-            | Ok _ ->
-                let rows = List.rev !buffer in
-                cache := Some rows;
-                replay rows ~yield )
-  end
-
-  let rec compile handler cap : Plan.t -> pusher = function
-    | Scan {path; args} -> Algebra.scan handler cap ~path ~args
-    | Project {attrs; from} -> Algebra.project attrs (compile handler cap from)
-    | Rename {attrs; from} -> Algebra.rename attrs (compile handler cap from)
-    | Take {limit; from} -> Algebra.take limit (compile handler cap from)
-    | Union plans -> Algebra.union (BatFingerTree.map (compile handler cap) plans)
-    | Natural {left; right} -> Algebra.natural (compile handler cap left) (compile handler cap right)
-    | Materialize from -> Algebra.materialize (compile handler cap from)
+  (* TODO: This should produce ephemeral relations with support of the sublanguage to manage it. *)
+  let run handler cap plan : stream = compile handler cap plan Concepts.Tuple.empty
 end

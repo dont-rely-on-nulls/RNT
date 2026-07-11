@@ -10,13 +10,13 @@ module type HANDLER = sig
     claim:Permission.claim ->
     (handle, Concepts.Condition.condition) result
 
-  val with_cursor :
+  val open_cursor :
     handle ->
     args:Concepts.Value.value BatFingerTree.t ->
-    (cursor -> 'a) ->
-    ('a, Concepts.Condition.condition) result
+    (cursor, Concepts.Condition.condition) result
 
   val next : cursor -> (Concepts.Tuple.t option, Concepts.Condition.condition) result
+  val close : cursor -> unit
 end
 
 let blocked (path : Permission.path) (claim : Permission.claim) : Concepts.Condition.condition =
@@ -58,13 +58,13 @@ module Make (Store : Abstract.Storage.STORAGE) = struct
         Ok (Cursor.Ephemeral {merkle_root; dependencies})
     | _ -> Error (not_a_relation ())
 
-  let with_cursor handle ~args f =
+  let open_cursor handle ~args =
     let open Utilities.Result in
     let* descriptor = relation_descriptor handle.object_ in
-    let* cursor = Cur.open_ handle.txn descriptor ~args in
-    Ok (Fun.protect ~finally:(fun () -> Cur.close cursor) (fun () -> f cursor))
+    Cur.open_ handle.txn descriptor ~args
 
   let next = Cur.next
+  let close = Cur.close
   let object_ (handle : handle) = handle.object_
   let capability (handle : handle) = handle.capability
 end
