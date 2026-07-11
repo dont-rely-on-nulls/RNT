@@ -1,5 +1,5 @@
 (** Compiles relational plans ([Plan.t]) into a push-based fold and runs
-    them through capability-checked handles ([Managers.Handler.HANDLER]).
+    them through capability-checked handles ([Managers.Handle.HANDLER]).
 
     Each [Scan] opens a handle on its relation — admitted only when the
     supplied [Managers.Permission.capability] authorizes it — and pulls
@@ -83,10 +83,10 @@ type pusher =
     tuple, and reports whether the consumer stopped or an error arose. *)
 
 (** Compiles and runs plans by pushing tuples through capability-checked
-    handles ([Managers.Handler.HANDLER]). Relation paths, authorization,
+    handles ([Managers.Handle.HANDLER]). Relation paths, authorization,
     Merkle paging, and the object namespace all live behind that seam.
     This module never touches storage or the object tree directly. *)
-module Make (Handler : Managers.Handler.HANDLER) = struct
+module Make (Handler : Managers.Handle.HANDLER) = struct
   (** [drain cursor ~yield] pushes every tuple from [cursor] to [yield],
       stopping when [yield] returns [Stop] or the cursor errors. *)
   let rec drain cursor ~yield =
