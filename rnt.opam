@@ -9,7 +9,7 @@ license: "AGPL-3.0-only"
 homepage: "https://github.com/dont-rely-on-nulls/RNT"
 bug-reports: "https://github.com/dont-rely-on-nulls/RNT/issues"
 depends: [
-  "dune" {>= "3.6"}
+  "dune" {>= "3.7"}
   "ocaml" {>= "4.14"}
   "batteries"
   "alcotest" {with-test}

@@ -1,69 +1,9 @@
-(** A plan is pure data ([Plan.t]) and execution state is never
-    reified: a compiled plan is a [Seq.t], whose forcing is the
-    Volcano eruption [Next]
-
-    The only effects sit at scan leaves, and those are idempotent page
-    reads against a pinned [Multigroup] snapshot. A stream node may be
-    forced twice and observe the same tuples. If a truly destructive
-    source ever appears, wrap its stream in [Seq.once]. *)
-
-module Tuple = struct
-  module AttributeMap = BatMap.String
-
-  (* TODO: The assumption here is that every value is stringified *)
-  (* TODO: The field [type'] currently is not enforced as all the
-     available types of RNT *)
-  type attribute = {value: string; type': string}
-  type t = attribute AttributeMap.t
-
-  let empty : t = AttributeMap.empty
-  let access (name : string) (t : t) : attribute option = AttributeMap.find_opt name t
-
-  let merge (left : t) (right : t) : t =
-    let merger _ (left : attribute option) (right : attribute option) : attribute option =
-      match left, right with
-      | Some a, Some b -> if a = b then Some a else None (* conflicting binding gets droped out *)
-      | (Some _ as a), None | None, (Some _ as a) -> a
-      | None, None -> None
-    in
-    AttributeMap.merge merger left right
-
-  let project (keep : BatSet.String.t) (t : t) : t =
-    AttributeMap.filter (fun name _ -> BatSet.String.mem name keep) t
-
-  let rename (mapping : string BatMap.String.t) (t : t) : t =
-    AttributeMap.fold
-      (fun name attr acc ->
-        let name = BatMap.String.find_default name name mapping in
-        AttributeMap.add name attr acc )
-      t AttributeMap.empty
-end
-
-(** Stub of the cursor layer (CursorManager + Merkle paging). [page]
-    yields the tuples of [relation] starting at [offset]; an empty
-    result marks exhaustion. [args] carries the bound values for
-    parameterized (ephemeral) relations and is ignored for stored
-    ones. *)
-module Source = struct
-  type t =
-    {page: relation:string -> args:string BatFingerTree.t -> offset:int -> Tuple.t BatFingerTree.t}
-
-  let unimplemented : t = {page= (fun ~relation:_ ~args:_ ~offset:_ -> failwith "NOT IMPLEMENTED")}
-end
-
-(** The stateless operator tree representing one constructor per
-    relational operator, carrying only its description without any
-    associated cursors, counters and buffers. *)
 module Plan = struct
-  (** One segment of a parameterized relation path in a SCAN. [Var]
-      segments are resolved from the enclosing JOIN's outer tuple at
-      execution time; [Const] segments are ground literals fixed at
-      the plan construction. *)
-  type path_arg = Var of string | Const of string
+  type path_arg = Var of string | Const of Concepts.Value.value
 
   type t =
-    | Scan of {relation: string; args: path_arg BatFingerTree.t}
-    | Join of {left: t; right: t; attrs: BatSet.String.t}
+    | Scan of {path: Concepts.Path.t; args: path_arg BatFingerTree.t}
+    | Natural of {left: t; right: t}
     | Take of {limit: int; from: t}
     | Project of {attrs: BatSet.String.t; from: t}
     | Materialize of t
@@ -71,34 +11,95 @@ module Plan = struct
     | Union of t BatFingerTree.t
 end
 
-(** Compiles a [Plan.t] into a demand driven tuple stream. *)
-module FOL = struct
-  type stream = Tuple.t BatSeq.t
+type stream = (Concepts.Tuple.t, Concepts.Condition.condition) result BatSeq.t
 
-  (** Resolves a scan arguments template against the enclosing
-      bindings. *)
-  (* TODO: A [Var] missing from the bindings resolves to [""] to
-     mirror the C++ engine. This is a poor representation in the type
-     system. *)
-  let resolve (args : Plan.path_arg BatFingerTree.t) (bindings : Tuple.t) : string BatFingerTree.t =
-    BatFingerTree.map
-      (function
-        | Plan.Const value -> value
-        | Plan.Var name -> (match Tuple.access name bindings with Some a -> a.value | None -> "" ))
-      args
+let singleton (x : ('a, 'e) result) : ('a, 'e) result BatSeq.t =
+ fun () -> BatSeq.Cons (x, BatSeq.empty)
 
-  (** Pages through [relation] one fetch at a time. The offset lives
-      in the closure of each stream node, so re-forcing any node
-      re-reads the same page. This is the functional equivalent of the
-      cursor's [fetch_offset]. Only the current page should be
-      live. *)
-  let scan (src : Source.t) ~(relation : string) ~(args : string BatFingerTree.t) : stream =
-    let rec from offset () =
-      let page = src.page ~relation ~args ~offset in
-      if BatFingerTree.is_empty page then BatSeq.Nil
-      else
-        let rest = from (offset + BatFingerTree.size page) in
-        (BatFingerTree.fold_right (fun rest tuple () -> BatSeq.Cons (tuple, rest)) rest page) ()
+module Error = struct
+  open Concepts.Condition
+
+  let unbound_variable name =
+    condition "unbound-variable"
+      (Printf.sprintf "path variable %S is not bound in the enclosing tuple" name)
+      ("variable" |=| Concepts.Value.String name)
+end
+
+let resolve (args : Plan.path_arg BatFingerTree.t) (bindings : Concepts.Tuple.t) :
+    (Concepts.Value.value BatFingerTree.t, Concepts.Condition.condition) result =
+  let open Utilities.Result in
+  BatFingerTree.fold_left
+    (fun acc arg ->
+      let* acc = acc in
+      let* value =
+        match arg with
+        | Plan.Const value -> Ok value
+        | Plan.Var name ->
+            Option.to_result ~none:(Error.unbound_variable name)
+              (Concepts.Tuple.access name bindings)
+      in
+      Ok (BatFingerTree.snoc acc value) )
+    (Ok BatFingerTree.empty) args
+
+module Make (Handler : Managers.Handle.HANDLER) = struct
+  let scan handler ~path ~args : stream =
+    let opened =
+      let open Utilities.Result in
+      let* handle = Handler.open_ handler ~path in
+      Handler.open_cursor handle ~args
     in
-    from 0
+    match opened with
+    | Error condition -> singleton (Error condition)
+    | Ok cursor ->
+        let rec pull () =
+          match Handler.next cursor with
+          | Error condition -> BatSeq.Cons (Error condition, BatSeq.empty)
+          | Ok None -> BatSeq.Nil
+          | Ok (Some tuple) -> BatSeq.Cons (Ok tuple, pull)
+        in
+        pull
+
+  let rec compile handler : Plan.t -> Concepts.Tuple.t -> stream = function
+    | Scan {path; args} -> (
+        fun bindings ->
+          match resolve args bindings with
+          | Ok args -> scan handler ~path ~args
+          | Error condition -> singleton (Error condition) )
+    | Project {attrs; from} ->
+        let from = compile handler from in
+        fun bindings -> BatSeq.map (Result.map (Concepts.Tuple.project attrs)) (from bindings)
+    | Rename {attrs; from} ->
+        let from = compile handler from in
+        fun bindings -> BatSeq.map (Result.map (Concepts.Tuple.rename attrs)) (from bindings)
+    | Take {limit; from} ->
+        let from = compile handler from in
+        fun bindings -> BatSeq.take limit (from bindings)
+    | Union plans ->
+        let compiled = BatFingerTree.map (compile handler) plans in
+        fun bindings ->
+          BatFingerTree.fold_right
+            (fun rest c -> BatSeq.append (c bindings) rest)
+            BatSeq.empty compiled
+    | Natural {left; right} ->
+        let left = compile handler left and right = compile handler right in
+        let matches l r =
+          BatMap.String.for_all
+            (fun name value ->
+              match Concepts.Tuple.access name r with Some value' -> value = value' | None -> true )
+            l
+        in
+        fun bindings ->
+          left bindings
+          |> BatSeq.concat_map (function
+            | Error _ as error -> singleton error
+            | Ok l ->
+                right l
+                |> BatSeq.filter (function Ok r -> matches l r | Error _ -> true)
+                |> BatSeq.map (Result.map (Concepts.Tuple.merge l)) )
+    | Materialize from ->
+        let cached = lazy (BatSeq.memoize (compile handler from Concepts.Tuple.empty)) in
+        fun _ -> Lazy.force cached
+
+  (* TODO: This should produce ephemeral relations with support of the sublanguage to manage it. *)
+  let run handler plan : stream = compile handler plan Concepts.Tuple.empty
 end

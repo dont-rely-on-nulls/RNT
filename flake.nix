@@ -26,7 +26,11 @@
             duneVersion = "3";
             src = self;
 
-            propagatedBuildInputs = [ ocamlPackages.batteries ];
+            propagatedBuildInputs = [
+              ocamlPackages.batteries
+              ocamlPackages.ctypes
+              ocamlPackages.ctypes-foreign
+            ];
             checkInputs = [ ocamlPackages.alcotest ];
             doCheck = true;
 
@@ -52,6 +56,8 @@
               ocamlPackages.utop
               ocamlPackages.batteries
               ocamlPackages.alcotest
+              ocamlPackages.ctypes
+              ocamlPackages.ctypes-foreign
             ];
           };
         });

@@ -1,4 +1,5 @@
-(** A tagged concrete value *)
-type value
-  = String of string
-  | Integer of int
+(** a tagged concrete value *)
+type value = String of string | Integer of int
+
+(** given a value, return a string representation of it *)
+val to_string : value -> string
