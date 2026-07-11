@@ -1,32 +1,8 @@
-(** Compiles relational plans ([Plan.t]) into a push-based fold and runs
-    them through capability-checked handles ([Managers.Handle.HANDLER]).
-
-    Each [Scan] opens a handle on its relation — admitted only when the
-    supplied [Managers.Permission.capability] authorizes it — and pulls
-    tuples through a cursor whose lifetime is bounded by [with_cursor].
-    Tuples are pushed to a [yield] continuation rather than returned as a
-    lazy sequence, so no cursor outlives the scope that opened it. [Join]
-    re-scans its inner side once per outer tuple by re-applying the
-    compiled pusher to a fresh binding. Only [Materialize] keeps anything
-    between runs, because it caches. *)
-
-(** The operator tree. One constructor per operator, holding its
-    description and no runtime state. *)
 module Plan = struct
-  (** One [args] segment. [args] feed an ephemeral relation's generator
-      and are ignored for stored relations.
-      [Var "x"] is an attribute name. It resolves to the outer tuple's
-      value for ["x"] ([Value.value]).
-      [Const v] is a literal value ([Value.value]). *)
   type path_arg = Var of string | Const of Concepts.Value.value
 
   type t =
-    (* [path] is the relation's namespace address: fixed strings that
-       [Object.find] walks. [args] are ephemeral generator inputs, not
-       part of the namespace. *)
     | Scan of {path: Concepts.Path.t; args: path_arg BatFingerTree.t}
-    (* Natural join: matches on the attributes [left] and [right] share,
-       coalescing them; attributes on one side only impose no condition. *)
     | Natural of {left: t; right: t}
     | Take of {limit: int; from: t}
     | Project of {attrs: BatSet.String.t; from: t}
@@ -38,28 +14,16 @@ end
 type control =
   | Continue
   | Stop
-      (** Whether a consumer wants more tuples ([Continue]) or has stopped
-    ([Stop]). Returned by a [yield] continuation and propagated up. *)
 
-(** Condition builders for execution errors. *)
 module Error = struct
   open Concepts.Condition
 
-  (** A [Var] named [name] but no such attribute is bound in the outer
-      tuple. *)
   let unbound_variable name =
     condition "unbound-variable"
       (Printf.sprintf "path variable %S is not bound in the enclosing tuple" name)
       ("variable" |=| Concepts.Value.String name)
 end
 
-(** [resolve args bindings] turns an [args] template into the value
-    vector fed to a relation's generator: each [Var] becomes the value
-    bound to that attribute, each [Const] stays as is.
-    @param args argument template.
-    @param bindings tuple supplying the variable values.
-    @return the resolved argument values, or [unbound_variable] when a
-    [Var] has no binding. *)
 let resolve (args : Plan.path_arg BatFingerTree.t) (bindings : Concepts.Tuple.t) :
     (Concepts.Value.value BatFingerTree.t, Concepts.Condition.condition) result =
   let open Utilities.Result in
@@ -74,22 +38,12 @@ let resolve (args : Plan.path_arg BatFingerTree.t) (bindings : Concepts.Tuple.t)
         | None -> Error (Error.unbound_variable name) ) )
     (Ok BatFingerTree.empty) args
 
-(** A tuple consumer. Returns [Continue] to keep receiving, [Stop] to end
-    the scan, or a condition to abort it. *)
 type yield = Concepts.Tuple.t -> (control, Concepts.Condition.condition) result
 
-(** A compiled operator: pushes its tuples to [yield] under a binding
-    tuple, and reports whether the consumer stopped or an error arose. *)
 type pusher =
   bindings:Concepts.Tuple.t -> yield:yield -> (control, Concepts.Condition.condition) result
 
-(** Compiles and runs plans by pushing tuples through capability-checked
-    handles ([Managers.Handle.HANDLER]). Relation paths, authorization,
-    Merkle paging, and the object namespace all live behind that seam.
-    This module never touches storage or the object tree directly. *)
 module Make (Handler : Managers.Handle.HANDLER) = struct
-  (** [drain cursor ~yield] pushes every tuple from [cursor] to [yield],
-      stopping when [yield] returns [Stop] or the cursor errors. *)
   let rec drain cursor ~yield =
     match Handler.next cursor with
     | Error condition -> Error condition
@@ -97,16 +51,12 @@ module Make (Handler : Managers.Handle.HANDLER) = struct
     | Ok (Some tuple) -> (
       match yield tuple with Ok Continue -> drain cursor ~yield | other -> other )
 
-  (** [replay rows ~yield] pushes each of [rows] to [yield] in order,
-      stopping on [Stop] or error. *)
   let rec replay rows ~yield =
     match rows with
     | [] -> Ok Continue
     | tuple :: rows -> (
       match yield tuple with Ok Continue -> replay rows ~yield | other -> other )
 
-  (** [compile handler cap plan] turns [plan] into a pusher.
-      @return the compiled pusher. *)
   let rec compile handler cap : Plan.t -> pusher = function
     | Scan {path; args} -> (
         fun ~bindings ~yield ->
@@ -184,9 +134,6 @@ module Make (Handler : Managers.Handle.HANDLER) = struct
                   cache := Some rows;
                   replay rows ~yield ) )
 
-  (** [fold handler cap plan ~init ~f] runs [plan] under the empty binding
-      and folds [f] over its tuples.
-      @return the final accumulator, or the condition that stopped it. *)
   let fold handler cap plan ~init ~f =
     let acc = ref init in
     let yield tuple =
@@ -197,8 +144,6 @@ module Make (Handler : Managers.Handle.HANDLER) = struct
     | Ok _ -> Ok !acc
     | Error condition -> Error condition
 
-  (** [to_list handler cap plan] runs [plan] and collects its tuples.
-      @return the tuples in order, or the condition that stopped them. *)
   let to_list handler cap plan =
     fold handler cap plan ~init:[] ~f:(fun acc tuple -> tuple :: acc) |> Result.map List.rev
 end
