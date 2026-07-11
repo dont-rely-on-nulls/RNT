@@ -55,8 +55,11 @@ module C = struct
     foreign "mdb_txn_begin"
       (ptr mdb_env @-> ptr mdb_txn @-> uint @-> ptr (ptr mdb_txn) @-> returning mdb_result)
 
-  let mdb_txn_begin' env parent flags =
-    with_output_pointer (ptr mdb_txn) (from_voidp mdb_txn null) (mdb_txn_begin env parent flags)
+  let mdb_txn_begin' env parent flags = with_output_pointer
+                                          (ptr mdb_txn)
+                                          (from_voidp mdb_txn null)
+                                          (mdb_txn_begin env parent flags)
+  [@@ocamlformat "disable"]
 
   let mdb_txn_commit = foreign "mdb_txn_commit" (ptr mdb_txn @-> returning mdb_result)
   let mdb_txn_abort = foreign "mdb_txn_abort" (ptr mdb_txn @-> returning mdb_result)
