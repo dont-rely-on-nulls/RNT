@@ -54,6 +54,7 @@
               ocamlPackages.alcotest
               ocamlPackages.ctypes
               ocamlPackages.ctypes-foreign
+              ocamlPackages.sexplib
             ];
           };
         });

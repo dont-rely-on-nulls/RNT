@@ -2,7 +2,7 @@ module type STORAGE = sig
   type connection
   type transaction
 
-  val connect: Concepts.Configuration.configuration -> (connection, Concepts.Condition.condition) result
+  val connect: Concepts.Configuration.term -> (connection, Concepts.Condition.condition) result
 
   (** begin a transaction within `connection` *)
   val start: connection -> (transaction, Concepts.Condition.condition) result
