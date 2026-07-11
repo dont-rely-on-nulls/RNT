@@ -2,17 +2,12 @@ type path = Concepts.Path.t
 type scope = path
 type claim = Read | Write
 type claims = claim BatSet.t
-
 type capability = {scope: scope; claims: claims}
 type authority = Authority
 
 let root = Authority
-
 let grant Authority scope claims = {scope; claims}
-
-let claim_name : claim -> string = function
-  | Read -> "read"
-  | Write -> "write"
+let claim_name : claim -> string = function Read -> "read" | Write -> "write"
 
 let attenuate cap ?scope ?claims () =
   let scope = Option.value scope ~default:cap.scope in

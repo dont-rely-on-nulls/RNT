@@ -1,8 +1,6 @@
 module type HANDLER = sig
   type t
-
   type handle
-
   type cursor
 
   val open_ :
@@ -25,8 +23,6 @@ module Make (Store : Abstract.Storage.STORAGE) : sig
   include HANDLER
 
   val create : Object.rnt_object_tree -> Store.transaction -> t
-
   val object_ : handle -> Object.registry
-
   val capability : handle -> Permission.capability
 end

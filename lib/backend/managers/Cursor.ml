@@ -6,9 +6,9 @@ module Make (Store : Abstract.Storage.STORAGE) = struct
   type cursor = unit
 
   let open_ (_txn : Store.transaction) (descriptor : descriptor)
-      ~(args : Concepts.Value.value BatFingerTree.t) :
-      (cursor, Concepts.Condition.condition) result =
-    ignore (descriptor, args) ;
+      ~(args : Concepts.Value.value BatFingerTree.t) : (cursor, Concepts.Condition.condition) result
+      =
+    ignore (descriptor, args);
     failwith "NOT IMPLEMENTED: open a cursor by paging the relation's Merkle tree over Store.get"
 
   let next (_cursor : cursor) : (Concepts.Tuple.t option, Concepts.Condition.condition) result =

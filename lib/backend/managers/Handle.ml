@@ -23,21 +23,19 @@ let blocked (path : Permission.path) (claim : Permission.claim) : Concepts.Condi
   let open Concepts.Condition in
   let path_string = Concepts.Path.to_string path in
   condition "access-blocked"
-    (Printf.sprintf "capability does not authorize %s on %S"
-       (Permission.claim_name claim) path_string)
+    (Printf.sprintf "capability does not authorize %s on %S" (Permission.claim_name claim)
+       path_string )
     ("path" |=| Concepts.Value.String path_string)
 
 let not_a_relation () : Concepts.Condition.condition =
   Concepts.Condition.condition "not-a-relation"
-    "handle does not refer to a stored or ephemeral relation"
-    Concepts.Condition.empty
+    "handle does not refer to a stored or ephemeral relation" Concepts.Condition.empty
 
 module Make (Store : Abstract.Storage.STORAGE) = struct
   module Cur = Cursor.Make (Store)
 
   type t = {objects: Object.rnt_object_tree; txn: Store.transaction}
-  type handle =
-    {object_: Object.registry; capability: Permission.capability; txn: Store.transaction}
+  type handle = {object_: Object.registry; capability: Permission.capability; txn: Store.transaction}
   type cursor = Cur.cursor
 
   let create objects txn = {objects; txn}
@@ -48,8 +46,8 @@ module Make (Store : Abstract.Storage.STORAGE) = struct
       match Permission.attenuate cap ~scope:path () with
       | None -> Error (blocked path claim)
       | Some capability ->
-         let object_ = Object.find path t.objects in
-         Ok {object_; capability; txn = t.txn}
+          let object_ = Object.find path t.objects in
+          Ok {object_; capability; txn= t.txn}
 
   let relation_descriptor (object_ : Object.registry) :
       (Cursor.descriptor, Concepts.Condition.condition) result =
@@ -57,7 +55,7 @@ module Make (Store : Abstract.Storage.STORAGE) = struct
     match entry.Object.kind with
     | Object.Relation {merkle_root} -> Ok (Cursor.Stored {merkle_root})
     | Object.EphemeralRelation {merkle_root; dependencies} ->
-       Ok (Cursor.Ephemeral {merkle_root; dependencies})
+        Ok (Cursor.Ephemeral {merkle_root; dependencies})
     | _ -> Error (not_a_relation ())
 
   let with_cursor handle ~args f =
@@ -67,7 +65,6 @@ module Make (Store : Abstract.Storage.STORAGE) = struct
     Ok (Fun.protect ~finally:(fun () -> Cur.close cursor) (fun () -> f cursor))
 
   let next = Cur.next
-
   let object_ (handle : handle) = handle.object_
   let capability (handle : handle) = handle.capability
 end

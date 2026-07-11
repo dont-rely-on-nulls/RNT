@@ -1,7 +1,7 @@
 module AttributeMap = BatMap.String
 
-type t = Value.value AttributeMap.t
 (** A tuple: a finite map from attribute name to attribute. *)
+type t = Value.value AttributeMap.t
 
 (** [empty] The tuple with no attributes. *)
 let empty : t = AttributeMap.empty
@@ -21,9 +21,7 @@ let access (name : string) (t : t) : Value.value option = AttributeMap.find_opt 
     @return the merged tuple. *)
 let merge (left : t) (right : t) : t =
   let merger _ (left : Value.value option) (right : Value.value option) : Value.value option =
-    match left, right with
-    | (Some _ as v), _ | None, (Some _ as v) -> v
-    | None, None -> None
+    match left, right with (Some _ as v), _ | None, (Some _ as v) -> v | None, None -> None
   in
   AttributeMap.merge merger left right
 

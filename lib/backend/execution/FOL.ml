@@ -35,8 +35,10 @@ module Plan = struct
     | Union of t BatFingerTree.t
 end
 
-type control = Continue | Stop
-(** Whether a consumer wants more tuples ([Continue]) or has stopped
+type control =
+  | Continue
+  | Stop
+      (** Whether a consumer wants more tuples ([Continue]) or has stopped
     ([Stop]). Returned by a [yield] continuation and propagated up. *)
 
 (** Condition builders for execution errors. *)
@@ -66,21 +68,20 @@ let resolve (args : Plan.path_arg BatFingerTree.t) (bindings : Concepts.Tuple.t)
       let* acc = acc in
       match arg with
       | Plan.Const value -> Ok (BatFingerTree.snoc acc value)
-      | Plan.Var name ->
-         (match Concepts.Tuple.access name bindings with
-          | Some value -> Ok (BatFingerTree.snoc acc value)
-          | None -> Error (Error.unbound_variable name)))
-    (Ok BatFingerTree.empty)
-    args
+      | Plan.Var name -> (
+        match Concepts.Tuple.access name bindings with
+        | Some value -> Ok (BatFingerTree.snoc acc value)
+        | None -> Error (Error.unbound_variable name) ) )
+    (Ok BatFingerTree.empty) args
 
-type yield = Concepts.Tuple.t -> (control, Concepts.Condition.condition) result
 (** A tuple consumer. Returns [Continue] to keep receiving, [Stop] to end
     the scan, or a condition to abort it. *)
+type yield = Concepts.Tuple.t -> (control, Concepts.Condition.condition) result
 
-type pusher =
-  bindings:Concepts.Tuple.t -> yield:yield -> (control, Concepts.Condition.condition) result
 (** A compiled operator: pushes its tuples to [yield] under a binding
     tuple, and reports whether the consumer stopped or an error arose. *)
+type pusher =
+  bindings:Concepts.Tuple.t -> yield:yield -> (control, Concepts.Condition.condition) result
 
 (** Compiles and runs plans by pushing tuples through capability-checked
     handles ([Managers.Handle.HANDLER]). Relation paths, authorization,
@@ -93,105 +94,105 @@ module Make (Handler : Managers.Handle.HANDLER) = struct
     match Handler.next cursor with
     | Error condition -> Error condition
     | Ok None -> Ok Continue
-    | Ok (Some tuple) ->
-       (match yield tuple with
-        | Ok Continue -> drain cursor ~yield
-        | other -> other)
+    | Ok (Some tuple) -> (
+      match yield tuple with Ok Continue -> drain cursor ~yield | other -> other )
 
   (** [replay rows ~yield] pushes each of [rows] to [yield] in order,
       stopping on [Stop] or error. *)
   let rec replay rows ~yield =
     match rows with
     | [] -> Ok Continue
-    | tuple :: rows ->
-       (match yield tuple with
-        | Ok Continue -> replay rows ~yield
-        | other -> other)
+    | tuple :: rows -> (
+      match yield tuple with Ok Continue -> replay rows ~yield | other -> other )
 
   (** [compile handler cap plan] turns [plan] into a pusher.
       @return the compiled pusher. *)
   let rec compile handler cap : Plan.t -> pusher = function
-    | Scan {path; args} ->
-       fun ~bindings ~yield ->
-       (match resolve args bindings with
-        | Error condition -> Error condition
-        | Ok args ->
-           (match Handler.open_ handler cap ~path ~claim:Managers.Permission.Read with
+    | Scan {path; args} -> (
+        fun ~bindings ~yield ->
+          match resolve args bindings with
+          | Error condition -> Error condition
+          | Ok args -> (
+            match Handler.open_ handler cap ~path ~claim:Managers.Permission.Read with
             | Error condition -> Error condition
-            | Ok handle ->
-               (match Handler.with_cursor handle ~args (fun cursor -> drain cursor ~yield) with
-                | Error condition -> Error condition
-                | Ok result -> result)))
+            | Ok handle -> (
+              match Handler.with_cursor handle ~args (fun cursor -> drain cursor ~yield) with
+              | Error condition -> Error condition
+              | Ok result -> result ) ) )
     | Project {attrs; from} ->
-       let from = compile handler cap from in
-       fun ~bindings ~yield ->
-       from ~bindings ~yield:(fun tuple -> yield (Concepts.Tuple.project attrs tuple))
+        let from = compile handler cap from in
+        fun ~bindings ~yield ->
+          from ~bindings ~yield:(fun tuple -> yield (Concepts.Tuple.project attrs tuple))
     | Rename {attrs; from} ->
-       let from = compile handler cap from in
-       fun ~bindings ~yield ->
-       from ~bindings ~yield:(fun tuple -> yield (Concepts.Tuple.rename attrs tuple))
-    | Take {limit; from} ->
-       let from = compile handler cap from in
-       fun ~bindings ~yield ->
-       let remaining = ref limit in
-       let stopped = ref false in
-       let capped tuple =
-         if !remaining <= 0 then Ok Stop
-         else begin
-           decr remaining ;
-           match yield tuple with
-           | Ok Stop -> stopped := true ; Ok Stop
-           | Ok Continue -> if !remaining <= 0 then Ok Stop else Ok Continue
-           | Error condition -> Error condition
-         end
-       in
-       (match from ~bindings ~yield:capped with
-        | Error condition -> Error condition
-        | Ok _ -> if !stopped then Ok Stop else Ok Continue)
+        let from = compile handler cap from in
+        fun ~bindings ~yield ->
+          from ~bindings ~yield:(fun tuple -> yield (Concepts.Tuple.rename attrs tuple))
+    | Take {limit; from} -> (
+        let from = compile handler cap from in
+        fun ~bindings ~yield ->
+          let remaining = ref limit in
+          let stopped = ref false in
+          let capped tuple =
+            if !remaining <= 0 then Ok Stop
+            else begin
+              decr remaining;
+              match yield tuple with
+              | Ok Stop ->
+                  stopped := true;
+                  Ok Stop
+              | Ok Continue -> if !remaining <= 0 then Ok Stop else Ok Continue
+              | Error condition -> Error condition
+            end
+          in
+          match from ~bindings ~yield:capped with
+          | Error condition -> Error condition
+          | Ok _ -> if !stopped then Ok Stop else Ok Continue )
     | Union plans ->
-       let compiled = BatFingerTree.map (compile handler cap) plans in
-       fun ~bindings ~yield ->
-       BatFingerTree.fold_left
-         (fun acc from -> match acc with Ok Continue -> from ~bindings ~yield | other -> other)
-         (Ok Continue) compiled
+        let compiled = BatFingerTree.map (compile handler cap) plans in
+        fun ~bindings ~yield ->
+          BatFingerTree.fold_left
+            (fun acc from -> match acc with Ok Continue -> from ~bindings ~yield | other -> other)
+            (Ok Continue) compiled
     | Natural {left; right} ->
-       let left = compile handler cap left and right = compile handler cap right in
-       let matches l r =
-         BatMap.String.for_all
-           (fun name value ->
-             match Concepts.Tuple.access name r with
-             | Some value' -> value = value'
-             | None -> true)
-           l
-       in
-       fun ~bindings ~yield ->
-       left ~bindings ~yield:(fun l ->
-         right ~bindings:l ~yield:(fun r ->
-           if matches l r then yield (Concepts.Tuple.merge l r) else Ok Continue))
-    | Materialize from ->
-       let from = compile handler cap from in
-       let cache = ref None in
-       fun ~bindings:_ ~yield ->
-       (match !cache with
-        | Some rows -> replay rows ~yield
-        | None ->
-           let buffer = ref [] in
-           (match
-              from ~bindings:Concepts.Tuple.empty ~yield:(fun tuple ->
-                buffer := tuple :: !buffer ; Ok Continue)
-            with
-            | Error condition -> Error condition
-            | Ok _ ->
-               let rows = List.rev !buffer in
-               cache := Some rows ;
-               replay rows ~yield))
+        let left = compile handler cap left and right = compile handler cap right in
+        let matches l r =
+          BatMap.String.for_all
+            (fun name value ->
+              match Concepts.Tuple.access name r with Some value' -> value = value' | None -> true )
+            l
+        in
+        fun ~bindings ~yield ->
+          left ~bindings ~yield:(fun l ->
+              right ~bindings:l ~yield:(fun r ->
+                  if matches l r then yield (Concepts.Tuple.merge l r) else Ok Continue ) )
+    | Materialize from -> (
+        let from = compile handler cap from in
+        let cache = ref None in
+        fun ~bindings:_ ~yield ->
+          match !cache with
+          | Some rows -> replay rows ~yield
+          | None -> (
+              let buffer = ref [] in
+              match
+                from ~bindings:Concepts.Tuple.empty ~yield:(fun tuple ->
+                    buffer := tuple :: !buffer;
+                    Ok Continue )
+              with
+              | Error condition -> Error condition
+              | Ok _ ->
+                  let rows = List.rev !buffer in
+                  cache := Some rows;
+                  replay rows ~yield ) )
 
   (** [fold handler cap plan ~init ~f] runs [plan] under the empty binding
       and folds [f] over its tuples.
       @return the final accumulator, or the condition that stopped it. *)
   let fold handler cap plan ~init ~f =
     let acc = ref init in
-    let yield tuple = acc := f !acc tuple ; Ok Continue in
+    let yield tuple =
+      acc := f !acc tuple;
+      Ok Continue
+    in
     match compile handler cap plan ~bindings:Concepts.Tuple.empty ~yield with
     | Ok _ -> Ok !acc
     | Error condition -> Error condition
@@ -199,6 +200,5 @@ module Make (Handler : Managers.Handle.HANDLER) = struct
   (** [to_list handler cap plan] runs [plan] and collects its tuples.
       @return the tuples in order, or the condition that stopped them. *)
   let to_list handler cap plan =
-    fold handler cap plan ~init:[] ~f:(fun acc tuple -> tuple :: acc)
-    |> Result.map List.rev
+    fold handler cap plan ~init:[] ~f:(fun acc tuple -> tuple :: acc) |> Result.map List.rev
 end

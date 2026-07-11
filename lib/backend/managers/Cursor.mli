@@ -12,6 +12,5 @@ module Make (Store : Abstract.Storage.STORAGE) : sig
     (cursor, Concepts.Condition.condition) result
 
   val next : cursor -> (Concepts.Tuple.t option, Concepts.Condition.condition) result
-
   val close : cursor -> unit
 end
