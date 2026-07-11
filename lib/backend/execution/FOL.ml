@@ -42,10 +42,10 @@ let resolve (args : Plan.path_arg BatFingerTree.t) (bindings : Concepts.Tuple.t)
     (Ok BatFingerTree.empty) args
 
 module Make (Handler : Managers.Handle.HANDLER) = struct
-  let scan handler cap ~path ~args : stream =
+  let scan handler ~path ~args : stream =
     let opened =
       let open Utilities.Result in
-      let* handle = Handler.open_ handler cap ~path ~claim:Managers.Permission.Read in
+      let* handle = Handler.open_ handler ~path in
       Handler.open_cursor handle ~args
     in
     match opened with
@@ -59,29 +59,29 @@ module Make (Handler : Managers.Handle.HANDLER) = struct
         in
         pull
 
-  let rec compile handler cap : Plan.t -> Concepts.Tuple.t -> stream = function
+  let rec compile handler : Plan.t -> Concepts.Tuple.t -> stream = function
     | Scan {path; args} -> (
         fun bindings ->
           match resolve args bindings with
-          | Ok args -> scan handler cap ~path ~args
+          | Ok args -> scan handler ~path ~args
           | Error condition -> singleton (Error condition) )
     | Project {attrs; from} ->
-        let from = compile handler cap from in
+        let from = compile handler from in
         fun bindings -> BatSeq.map (Result.map (Concepts.Tuple.project attrs)) (from bindings)
     | Rename {attrs; from} ->
-        let from = compile handler cap from in
+        let from = compile handler from in
         fun bindings -> BatSeq.map (Result.map (Concepts.Tuple.rename attrs)) (from bindings)
     | Take {limit; from} ->
-        let from = compile handler cap from in
+        let from = compile handler from in
         fun bindings -> BatSeq.take limit (from bindings)
     | Union plans ->
-        let compiled = BatFingerTree.map (compile handler cap) plans in
+        let compiled = BatFingerTree.map (compile handler) plans in
         fun bindings ->
           BatFingerTree.fold_right
             (fun rest c -> BatSeq.append (c bindings) rest)
             BatSeq.empty compiled
     | Natural {left; right} ->
-        let left = compile handler cap left and right = compile handler cap right in
+        let left = compile handler left and right = compile handler right in
         let matches l r =
           BatMap.String.for_all
             (fun name value ->
@@ -97,9 +97,9 @@ module Make (Handler : Managers.Handle.HANDLER) = struct
                 |> BatSeq.filter (function Ok r -> matches l r | Error _ -> true)
                 |> BatSeq.map (Result.map (Concepts.Tuple.merge l)) )
     | Materialize from ->
-        let cached = lazy (BatSeq.memoize (compile handler cap from Concepts.Tuple.empty)) in
+        let cached = lazy (BatSeq.memoize (compile handler from Concepts.Tuple.empty)) in
         fun _ -> Lazy.force cached
 
   (* TODO: This should produce ephemeral relations with support of the sublanguage to manage it. *)
-  let run handler cap plan : stream = compile handler cap plan Concepts.Tuple.empty
+  let run handler plan : stream = compile handler plan Concepts.Tuple.empty
 end

@@ -5,9 +5,7 @@ module type HANDLER = sig
 
   val open_ :
     t ->
-    Permission.capability ->
-    path:Permission.path ->
-    claim:Permission.claim ->
+    path:Concepts.Path.t ->
     (handle, Concepts.Condition.condition) result
 
   val open_cursor :
@@ -24,5 +22,4 @@ module Make (Store : Abstract.Storage.STORAGE) : sig
 
   val create : Object.rnt_object_tree -> Store.transaction -> t
   val object_ : handle -> Object.registry
-  val capability : handle -> Permission.capability
 end
