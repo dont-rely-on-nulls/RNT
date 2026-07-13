@@ -116,12 +116,21 @@ end
 type connection = { env: C.mdb_env_ptr; dbi: C.mdb_dbi }
 type transaction = { tx: C.mdb_txn_ptr; dbi: C.mdb_dbi }
 
-let connect (_: Concepts.Configuration.configuration) =
+let parse (c: Concepts.Configuration.term) =
+  let open Concepts.Configuration in
+  let open Utilities.Result in
+  let* config = as_dictionary c "lmdb" in
+  let* path = value_for "path" config |> fmap as_string in
+  let* mode = value_for "mode" config |> fmap as_int in
+  Ok (path, mode)
+
+let connect (c: Concepts.Configuration.term) =
+  let open Utilities.Result in
+  let* (path, mode) = parse c in
   begin
-    let open Utilities.Result in
     let* env = C.mdb_env_create' () in
     (* TODO: make the path, POSIX mode a config parameter *)
-    match C.mdb_env_open env "/tmp/sakura.db" Unsigned.UInt.zero (PosixTypes.Mode.of_int 420) with
+    match C.mdb_env_open env path Unsigned.UInt.zero (PosixTypes.Mode.of_int mode) with
     | Error x ->
        C.mdb_env_close env;
        Error x
