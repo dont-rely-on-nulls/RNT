@@ -31,6 +31,8 @@ module Error = struct
                             ~parent:(syntax_error form) empty
 end
 
+let term_of_sexp t = t
+
 let tag_of = function
   | List ((Atom tag)::_) -> Ok tag
   | form -> Error (Error.tagless_form form)

@@ -1,6 +1,8 @@
 (** an abstract representation of a system configuration expression *)
 type term
 
+val term_of_sexp: Sexplib.Sexp.t -> term
+
 val tag_of: term -> (string, Condition.condition) result
 
 (** an abstract type associating strings to configuration values *)
