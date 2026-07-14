@@ -1,3 +1,5 @@
+(include_subdirs qualified)
+
 (test
  (name test_rnt)
  (libraries rnt alcotest))
