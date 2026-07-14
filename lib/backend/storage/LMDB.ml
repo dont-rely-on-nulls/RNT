@@ -129,7 +129,6 @@ let connect (c: Concepts.Configuration.term) =
   let* (path, mode) = parse c in
   begin
     let* env = C.mdb_env_create' () in
-    (* TODO: make the path, POSIX mode a config parameter *)
     match C.mdb_env_open env path Unsigned.UInt.zero (PosixTypes.Mode.of_int mode) with
     | Error x ->
        C.mdb_env_close env;
@@ -141,6 +140,9 @@ let connect (c: Concepts.Configuration.term) =
        Ok { env; dbi }
   end
   |> Result.map_error Error.lmdb_error
+  |> Result.map_error Concepts.Condition.(complement
+                                            ("path" |=| Concepts.Value.String path &
+                                             "mode" |=| Concepts.Value.Integer mode))
 
 let start ({ env; dbi }: connection) =
   C.mdb_txn_begin' env C.null_txn Unsigned.UInt.zero

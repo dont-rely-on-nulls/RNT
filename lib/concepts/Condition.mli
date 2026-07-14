@@ -10,5 +10,8 @@ val empty: ps
 (** construct a condition out of a name, a message, a set of properties and an optional parent *)
 val condition: string -> string -> ?parent:condition -> ps -> condition
 
+(** complement a condition with an extra set of properties *)
+val complement: ps -> condition -> condition
+
 (** print a condition to a human-readable string *)
 val to_string_hum: condition -> string
