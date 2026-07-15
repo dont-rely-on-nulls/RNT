@@ -33,6 +33,7 @@
               ctypes
               ctypes-foreign
               sexplib
+              digestif
             ]);
 
             checkInputs = [ ocamlPackages.alcotest ];
