@@ -18,6 +18,8 @@ let condition name message ?parent props =
       |> Option.value ~default:BatMap.empty
       |> props }
 
+let complement props ({properties; _} as condition) = {condition with properties= props properties}
+
 let to_string_hum {name; message; properties; backtrace} =
   let properties' =
     properties

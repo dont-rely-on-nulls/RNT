@@ -55,11 +55,8 @@ module C = struct
     foreign "mdb_txn_begin"
       (ptr mdb_env @-> ptr mdb_txn @-> uint @-> ptr (ptr mdb_txn) @-> returning mdb_result)
 
-  let mdb_txn_begin' env parent flags = with_output_pointer
-                                          (ptr mdb_txn)
-                                          (from_voidp mdb_txn null)
-                                          (mdb_txn_begin env parent flags)
-  [@@ocamlformat "disable"]
+  let mdb_txn_begin' env parent flags =
+    with_output_pointer (ptr mdb_txn) (from_voidp mdb_txn null) (mdb_txn_begin env parent flags)
 
   let mdb_txn_commit = foreign "mdb_txn_commit" (ptr mdb_txn @-> returning mdb_result)
   let mdb_txn_abort = foreign "mdb_txn_abort" (ptr mdb_txn @-> returning mdb_result)
@@ -125,12 +122,20 @@ end
 type connection = {env: C.mdb_env_ptr; dbi: C.mdb_dbi}
 type transaction = {tx: C.mdb_txn_ptr; dbi: C.mdb_dbi}
 
-let connect (_ : Concepts.Configuration.configuration) =
+let parse (c : Concepts.Configuration.term) =
+  let open Concepts.Configuration in
+  let open Utilities.Result in
+  let* config = as_dictionary c "lmdb" in
+  let* path = value_for "path" config |> fmap as_string in
+  let* mode = value_for "mode" config |> fmap as_int in
+  Ok (path, mode)
+
+let connect (c : Concepts.Configuration.term) =
+  let open Utilities.Result in
+  let* path, mode = parse c in
   begin
-    let open Utilities.Result in
     let* env = C.mdb_env_create' () in
-    (* TODO: make the path, POSIX mode a config parameter *)
-    match C.mdb_env_open env "/tmp/sakura.db" Unsigned.UInt.zero (PosixTypes.Mode.of_int 420) with
+    match C.mdb_env_open env path Unsigned.UInt.zero (PosixTypes.Mode.of_int mode) with
     | Error x -> C.mdb_env_close env; Error x
     | Ok () ->
         let* tx = C.mdb_txn_begin' env C.null_txn Unsigned.UInt.zero in
@@ -139,6 +144,9 @@ let connect (_ : Concepts.Configuration.configuration) =
         Ok {env; dbi}
   end
   |> Result.map_error Error.lmdb_error
+  |> Result.map_error
+       Concepts.Condition.(
+         complement ("path" |=| Concepts.Value.String path & "mode" |=| Concepts.Value.Integer mode) )
 
 let start ({env; dbi} : connection) =
   C.mdb_txn_begin' env C.null_txn Unsigned.UInt.zero

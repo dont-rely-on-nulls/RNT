@@ -26,12 +26,18 @@
             duneVersion = "3";
             src = self;
 
-            propagatedBuildInputs = [
-              ocamlPackages.batteries
-              ocamlPackages.ctypes
-              ocamlPackages.ctypes-foreign
-            ];
+            propagatedBuildInputs = (with pkgs; [
+              lmdb
+            ]) ++ (with ocamlPackages; [
+              batteries
+              ctypes
+              ctypes-foreign
+              sexplib
+              digestif
+            ]);
+
             checkInputs = [ ocamlPackages.alcotest ];
+
             doCheck = true;
 
             meta = {
@@ -48,17 +54,11 @@
         {
           default = pkgs.mkShell {
             inputsFrom = [ self.packages.${pkgs.system}.default ];
-            packages = [
-              pkgs.dune_3
-              ocamlPackages.ocaml
-              ocamlPackages.ocaml-lsp
-              ocamlPackages.ocamlformat
-              ocamlPackages.utop
-              ocamlPackages.batteries
-              ocamlPackages.alcotest
-              ocamlPackages.ctypes
-              ocamlPackages.ctypes-foreign
-            ];
+            packages = (with ocamlPackages; [
+              ocaml-lsp
+              ocamlformat
+              utop
+            ]);
           };
         });
     };

@@ -3,4 +3,5 @@
 (library
  (name rnt)
  (public_name rnt)
- (libraries batteries ctypes ctypes-foreign))
+ (libraries batteries ctypes ctypes-foreign sexplib digestif)
+ (flags :standard -cclib -llmdb))
