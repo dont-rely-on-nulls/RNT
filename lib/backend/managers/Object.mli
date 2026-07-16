@@ -25,19 +25,8 @@ type rnt_object_tree =
   | Intermediary of {label: string; data: registry; subsequent: rnt_object_tree BatFingerTree.t}
   | Final of {label: string; data: registry}
 
-let register (_path : Concepts.Path.t) (_tree : rnt_object_tree) (_object : rnt_object) :
-    rnt_object_tree =
-  failwith "NOT IMPLEMENTED: walk path, insert Final/Intermediary node persistently"
-
-let find (_path : Concepts.Path.t) (_tree : rnt_object_tree) : registry option =
-  failwith "NOT IMPLEMENTED: walk path component-by-component, return entry data"
-
-let unregister (_path : Concepts.Path.t) (_tree : rnt_object_tree) : rnt_object_tree =
-  failwith "NOT IMPLEMENTED: splice out node at path, rebuild ancestors"
-
-let update (_path : Concepts.Path.t) (_f : registry -> registry) (_tree : rnt_object_tree) :
-    rnt_object_tree =
-  failwith "NOT IMPLEMENTED: find node at path, apply f to its registry, rebuild ancestors"
-
-let fold (_f : Concepts.Path.t -> registry -> 'a -> 'a) (_acc : 'a) (_tree : rnt_object_tree) : 'a =
-  failwith "NOT IMPLEMENTED: pre-order walk, threading each node's full path"
+val register : Concepts.Path.t -> rnt_object_tree -> rnt_object -> rnt_object_tree
+val find : Concepts.Path.t -> rnt_object_tree -> registry option
+val unregister : Concepts.Path.t -> rnt_object_tree -> rnt_object_tree
+val update : Concepts.Path.t -> (registry -> registry) -> rnt_object_tree -> rnt_object_tree
+val fold : (Concepts.Path.t -> registry -> 'a -> 'a) -> 'a -> rnt_object_tree -> 'a

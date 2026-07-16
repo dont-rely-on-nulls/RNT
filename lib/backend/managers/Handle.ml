@@ -18,6 +18,10 @@ let not_a_relation () : Concepts.Condition.condition =
   Concepts.Condition.condition "not-a-relation"
     "handle does not refer to a stored or ephemeral relation" Concepts.Condition.empty
 
+let no_such_object () : Concepts.Condition.condition =
+  Concepts.Condition.condition "no-such-object" "no object registered at the given path"
+    Concepts.Condition.empty
+
 module Make (Store : Abstract.Storage.STORAGE) = struct
   module Cur = Cursor.Make (Store)
 
@@ -28,8 +32,9 @@ module Make (Store : Abstract.Storage.STORAGE) = struct
   let create objects txn = {objects; txn}
 
   let open_ t ~path =
-    let object_ = Object.find path t.objects in
-    Ok {object_; txn= t.txn}
+    match Object.find path t.objects with
+    | Some object_ -> Ok {object_; txn= t.txn}
+    | None -> Error (no_such_object ())
 
   let relation_descriptor (object_ : Object.registry) :
       (Cursor.descriptor, Concepts.Condition.condition) result =
