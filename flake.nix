@@ -30,6 +30,7 @@
               lmdb
             ]) ++ (with ocamlPackages; [
               batteries
+              nums
               ctypes
               ctypes-foreign
               sexplib
