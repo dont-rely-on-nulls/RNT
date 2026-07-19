@@ -1,0 +1,82 @@
+#+TITLE: Lifecycle Manager
+
+* Purpose
+
+The lifecycle manager decides when a registered object may leave memory. It
+operates purely on the object tree and never touches storage. "Collection"
+here means dropping the in-memory registry entry, not deleting anything on
+disk.
+
+* Three independent facts per object
+
+Each registry entry keeps three separate pieces of state, deliberately not
+merged:
+
+- =handle_count= :: how many handles are open on the object right now.
+- =reference_count= :: how many other objects depend on it staying resident.
+  This is bookkeeping of real dependency edges. It rises because a dependency
+  exists, never because someone asked to keep the object alive.
+- =pinned= :: an explicit override that bypasses collection regardless of the
+  counts. Pinning is a decision; reference counting is bookkeeping. They are
+  kept apart so the two reasons are never confused for one another.
+
+An object is eligible for collection only when =handle_count = 0=,
+=reference_count = 0=, =pinned = false=, and its kind is not exempt.
+
+* Collection is eviction, not deletion
+
+Durable-backed objects (relations, multigroups, branch trees) carry an encoded
+form and can be rebuilt on the next access, so evicting them is safe and keeps
+memory bounded. There is no reason to hold every object in memory at all
+times.
+
+Runtime-only objects have no durable form, so collecting them is a real
+teardown rather than an eviction. The manager does not act on storage itself;
+it returns these to the caller as *disposals* to run (close a session, and
+later roll back a transaction).
+
+* Reference edges
+
+The objects an object depends on are its reference edges. Registration bumps
+the =reference_count= of each edge target; unregistration drops it. The edge
+set is a per-kind property and lives next to the registry, because the object
+knows its own shape.
+
+Only ephemeral relations carry edges today. An ephemeral relation is a stored
+plan that reads other relations, so those inputs must not be collected while
+the plan can still be replayed. The edges are branch-local symlink paths, not
+version-pinned paths: as the branch head advances the inputs move with it, and
+=Namespace.resolve= turns the symlink into whatever object is current on this
+branch hash. This is what lets an ephemeral relation behave like a view.
+
+* Teardown order
+
+The order of teardown falls out of the counts rather than any external check.
+Collecting an object releases its edges, which drops the =reference_count= of
+each input and can make those inputs eligible in turn, so collection cascades
+into them. A dependent is always torn down before the inputs it held, because
+while it is alive its inputs cannot reach zero.
+
+A populated namespace is kept, not collected and not an error: it is
+scaffolding for the objects still living under it. A childless namespace is
+collectable like anything else.
+
+* Exempt and runtime kinds
+
+- *Branch* is exempt from collection: everything is reachable through it, so
+  collecting a branch would orphan its whole subtree.
+- *Session* is collectable but runtime-only. A lost connection is the trigger,
+  and only Sakura can say for certain that a client is gone. The intended
+  detection is an inactivity timer per session, with each timer modelled as an
+  object owned by the session so expiry drives collection of the session,
+  cascading into what it held exclusively (transactions first, temporary
+  relations perhaps later). This needs a timer facility the project does not
+  have yet and is left as a boundary.
+- *Transaction* is intended to become an object with rollback-on-disposal, but
+  is not part of =rnt_object_kind= yet.
+
+* Contention
+
+Separate from collection. An exclusive object with an open handle, such as a
+branch head being read, cannot be modified until the handle closes.
+=contention= reports this so writers can be gated.
