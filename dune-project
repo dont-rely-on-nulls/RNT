@@ -22,4 +22,5 @@
   (ocaml
    (>= 4.14))
   batteries
-  (alcotest :with-test)))
+  (alcotest :with-test)
+  (qcheck-alcotest :with-test)))

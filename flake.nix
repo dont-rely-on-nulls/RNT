@@ -37,7 +37,11 @@
               digestif
             ]);
 
-            checkInputs = [ ocamlPackages.alcotest ];
+            checkInputs = with ocamlPackages; [
+              alcotest
+              qcheck-core
+              qcheck-alcotest
+            ];
 
             doCheck = true;
 
@@ -59,6 +63,8 @@
               ocaml-lsp
               ocamlformat
               utop
+              qcheck-core
+              qcheck-alcotest
             ]);
           };
         });
