@@ -12,7 +12,9 @@ depends: [
   "dune" {>= "3.7"}
   "ocaml" {>= "4.14"}
   "batteries"
+  "digestif"
   "alcotest" {with-test}
+  "ocaml-lsp-server" {with-dev-setup}
   "odoc" {with-doc}
 ]
 build: [

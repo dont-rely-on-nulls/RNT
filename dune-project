@@ -22,4 +22,6 @@
   (ocaml
    (>= 4.14))
   batteries
-  (alcotest :with-test)))
+  digestif
+  (alcotest :with-test)
+  (ocaml-lsp-server :with-dev-setup)))  ; <-- Linha adicionada aqui
