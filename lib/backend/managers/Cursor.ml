@@ -1,6 +1,6 @@
 type descriptor =
   | Stored of {merkle_root: string}
-  | Ephemeral of {merkle_root: string; dependencies: string BatFingerTree.t}
+  | Ephemeral of {merkle_root: string; dependencies: Concepts.Path.t BatFingerTree.t}
 
 module Make (Store : Abstract.Storage.STORAGE) = struct
   type cursor = unit
