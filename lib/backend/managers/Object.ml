@@ -51,11 +51,25 @@ let make_object ?(disposable = false) ?(exclusive = false) ?(methods = BatSet.em
     (kind : rnt_object_kind) : rnt_object =
   {kind; disposable; methods; exclusive}
 
-let find (tree : rnt_object_tree) (path : Concepts.Path.t) : registry option =
+let find (path : Concepts.Path.t) (tree : rnt_object_tree) : registry option =
   let rec walk components node =
     match BatFingerTree.front components with
     | None -> Some node.data
     | Some (tail, head) -> Option.bind (BatMap.String.find_opt head node.subsequent) (walk tail)
+  in
+  walk path tree
+
+let update (path : Concepts.Path.t) (f : registry -> registry) (tree : rnt_object_tree) :
+    rnt_object_tree =
+  let rec walk components node =
+    match BatFingerTree.front components with
+    | None -> {node with data= f node.data}
+    | Some (tail, head) ->
+      begin match BatMap.String.find_opt head node.subsequent with
+      | None -> node
+      | Some child ->
+          {node with subsequent= BatMap.String.add head (walk tail child) node.subsequent}
+      end
   in
   walk path tree
 
@@ -95,7 +109,7 @@ let with_namespace (parent : Concepts.Path.t) (namespace_label : string)
     (tree : rnt_object_tree) : (rnt_object_tree, Concepts.Condition.condition) result =
   let namespace_path = Concepts.Path.snoc parent namespace_label in
   let tree_with_namespace =
-    match find tree namespace_path with
+    match find namespace_path tree with
     | None ->
         register namespace_path (make_object (Namespace {label= namespace_label; predicate})) tree
     | Some _ -> Ok tree
