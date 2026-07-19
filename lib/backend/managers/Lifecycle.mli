@@ -1,17 +1,16 @@
-module Make (Store : Abstract.Storage.STORAGE) : sig
-  type tree = Object.rnt_object_tree
+type tree = Object.rnt_object_tree
 
-  val monitor : tree -> Concepts.Path.t -> tree
-  val pin : tree -> Concepts.Path.t -> tree
-  val is_eligible_for_gc : tree -> Concepts.Path.t -> bool
-  val contention : tree -> Concepts.Path.t -> bool
+(* A collected runtime object that still needs an external teardown: a session
+   to close, and later a transaction to roll back. The caller drains these. *)
+type disposal = {path: Concepts.Path.t; kind: Object.rnt_object_kind}
 
-  val unmonitor :
-    Store.transaction -> tree -> Concepts.Path.t -> (tree, Concepts.Condition.condition) result
+val monitor : tree -> Concepts.Path.t -> tree
+val pin : tree -> Concepts.Path.t -> tree
+val unpin : tree -> Concepts.Path.t -> tree
+val is_eligible_for_gc : tree -> Concepts.Path.t -> bool
+val contention : tree -> Concepts.Path.t -> bool
 
-  val unpin :
-    Store.transaction -> tree -> Concepts.Path.t -> (tree, Concepts.Condition.condition) result
+val unmonitor :
+  tree -> Concepts.Path.t -> (tree * disposal list, Concepts.Condition.condition) result
 
-  val collect :
-    Store.transaction -> tree -> Concepts.Path.t -> (tree, Concepts.Condition.condition) result
-end
+val collect : tree -> Concepts.Path.t -> (tree * disposal list, Concepts.Condition.condition) result
