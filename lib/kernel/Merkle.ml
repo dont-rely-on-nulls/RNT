@@ -60,7 +60,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
 
   type 'a op = Update of address * 'a node | Split of address * 'a key * address * address
 
-  let emplace ft i v =
+  let emplace i v ft =
     let fl, fr = BatFingerTree.split_at ft i in
     BatFingerTree.singleton v
     |> BatFingerTree.append fl
@@ -71,7 +71,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     if present then
       { node with values = BatFingerTree.set values i value }
     else
-      { node with keys = emplace keys i key; values = emplace values i value }
+      { node with keys = emplace i key keys; values = emplace i value values }
 
   let ceil a b = (a + b - 1) / b
 
@@ -84,41 +84,44 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     let pivot = ceil (BatFingerTree.size keys) 2 in
     let kl, kp, kr = pivot_at keys pivot in
     let vl, vp, vr = pivot_at values pivot in
-    let pl, pr = BatFingerTree.split_at children pivot in
+    let pl, pr = BatFingerTree.split_at children (pivot + 1) in
     { keys = kl; values = vl; children = pl },
     kp, vp,
     { keys = kr; values = vr; children = pr }
 
+  let commit_node conn ({ keys; _ } as node) =
+    let open Utilities.Result in
+    if order = BatFingerTree.size keys then
+      let l, kp, vp, r = split node in
+      let* l_addr = persist conn l in
+      let* r_addr = persist conn r in
+      Ok (Split (l_addr, kp, vp, r_addr))
+    else
+      let* addr = persist conn node in
+      Ok (Update (addr, node))
+
   let rec insert' conn node key value =
     let open Utilities.Result in
     if is_leaf node then
-      let new_node = insert_value node key value in
-      if order = BatFingerTree.size new_node.keys then
-        let l, kp, vp, r = split new_node in
-        let* l_addr = persist conn l in
-        let* r_addr = persist conn r in
-        Ok (Split (l_addr, kp, vp, r_addr))
-      else
-        let* addr = persist conn new_node in
-        Ok (Update (addr, new_node))
+      insert_value node key value
+      |> commit_node conn
     else
       let i, present = lookup1 node.keys key 0 (BatFingerTree.size node.keys) in
       if present then
-        let new_node = insert_value node key value in
-        let* addr = persist conn new_node in
-        Ok (Update (addr, new_node))
+        insert_value node key value
+        |> commit_node conn
       else
         let* child = BatFingerTree.get node.children i |> find conn in
         let* r = insert' conn child key value in
         match r with
         | Update (addr, _) ->
-           let new_node = { node with children = BatFingerTree.set node.children i addr } in
-           let* addr = persist conn new_node in
-           Ok (Update (addr, new_node))
+           { node with children = BatFingerTree.set node.children i addr }
+           |> commit_node conn
         | Split (l, kp, vp, r) ->
-           failwith "TODO"
+           { keys = emplace i kp node.keys;
+             values = emplace i vp node.values;
+             children = BatFingerTree.set node.children i l |> emplace (i + 1) r }
+           |> commit_node conn
 
   let remove conn node key = failwith "TODO"
-
-  let lookup conn node key = failwith "TODO"
 end
