@@ -2,7 +2,6 @@ name: UML
 
 on:
   pull_request:
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -11,18 +10,16 @@ jobs:
   blueprint:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout PR branch
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          # Check out the PR's source branch (not the detached merge commit) so
-          # the regenerated diagram can be pushed straight back to it.
           ref: ${{ github.head_ref }}
 
-      - name: Install Nix
-        uses: cachix/install-nix-action@v27
+      - uses: cachix/install-nix-action@v27
 
-      - name: Generate PlantUML blueprint
-        # --strict fails the job if a @uses/@needs tag names an unknown module.
+      - name: Run tests
+        run: nix develop --command dune test
+
+      - name: Generate blueprint
         run: |
           nix shell nixpkgs#perl --command \
             perl tools/uml_blueprint.pl --src lib --out docs/architecture.puml --strict --no-notes
@@ -32,7 +29,7 @@ jobs:
           nix shell nixpkgs#plantuml --command \
             plantuml -tsvg docs/architecture.puml
 
-      - name: Upload blueprint artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: architecture-diagram
@@ -40,20 +37,15 @@ jobs:
             docs/architecture.puml
             docs/architecture.svg
 
-      - name: Commit updated diagram to the PR branch
-        # Only same-repo PRs can be pushed to; fork PRs get the artifact instead.
-        if: >-
-          github.event_name == 'pull_request' &&
-          github.event.pull_request.head.repo.full_name == github.repository
+      - name: Commit diagram to the PR branch
+        if: github.event.pull_request.head.repo.full_name == github.repository
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add docs/architecture.puml docs/architecture.svg
           if git diff --cached --quiet; then
-            echo "diagram unchanged — nothing to commit"
+            echo "unchanged"
           else
-            # [skip ci] stops this auto-commit from retriggering the workflow;
-            # the diff guard above stops it once the diagram stabilises.
             git commit -m "ci: update architecture diagram [skip ci]"
             git push origin HEAD:${{ github.head_ref }}
           fi
