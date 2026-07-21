@@ -24,4 +24,4 @@
   batteries
   digestif
   (alcotest :with-test)
-  (ocaml-lsp-server :with-dev-setup)))  ; <-- Linha adicionada aqui
+  (ocaml-lsp-server :with-dev-setup)))
