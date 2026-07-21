@@ -1,3 +1,11 @@
+(* @composes Storage -- functor parameter *)
+(* @composes Cursor -- applies Cursor.Make (Store) *)
+(* @uses Object -- find, registry/kind inspection *)
+(* @uses Condition -- builds not-a-relation / no-such-object errors *)
+(* @needs Path *)
+(* @needs Tuple *)
+(* @needs Value *)
+
 module type HANDLER = sig
   type t
   type handle

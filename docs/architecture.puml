@@ -1,0 +1,246 @@
+@startuml
+!theme toy
+title RNT Architecture
+hide empty members
+skinparam classAttributeIconSize 0
+skinparam linetype ortho
+skinparam nodesep 30
+skinparam ranksep 50
+skinparam defaultFontSize 15
+left to right direction
+
+class Condition <<module>> {
+  .. types ..
+  +condition
+  +ps
+  .. values ..
+  +"|=|"
+  +"&"
+  +empty() : ps
+  +condition() : condition
+  +complement() : condition
+  +to_string_hum() : string
+}
+
+class Configuration <<module>> {
+  .. types ..
+  +term
+  +dictionary
+  .. values ..
+  +term_of_sexp() : term
+  +tag_of() : string, Condition.condition result
+  +value_for() : term, Condition.condition result
+  +as_dictionary() : dictionary, Condition.condition result
+  +as_int() : int, Condition.condition result
+  +as_string() : string, Condition.condition result
+}
+
+class Cursor <<module>> {
+  .. types ..
+  +descriptor
+  +cursor
+  .. values ..
+  +open_() : cursor, Concepts.Condition.condition result
+  +next() : Concepts.Tuple.t option, Concepts.Condition.condition result
+  +close() : unit
+}
+
+class FOL <<module>> {
+  .. types ..
+  +path_arg
+  +t
+  +stream
+  +right
+  .. values ..
+  +singleton()
+  +resolve()
+}
+
+class Handle <<module>> {
+  .. types ..
+  +t
+  +handle
+  +cursor
+  .. values ..
+  +open_() : handle, Concepts.Condition.condition result
+  +open_cursor() : cursor, Concepts.Condition.condition result
+  +next() : Concepts.Tuple.t option, Concepts.Condition.condition result
+  +close() : unit
+  +create() : t
+  +object_() : Object.registry
+}
+
+class Hash <<module>> {
+  .. types ..
+  +hash
+  .. values ..
+  +hash_of_value() : hash
+  +hash_equals() : bool
+  +bytes_of_hash() : bytes
+}
+
+class Identity <<module>> {
+  .. values ..
+  +permits() : bool
+  +can_open() : bool
+  +can_close() : bool
+}
+
+class LMDB <<module>> {
+}
+
+class Lifecycle <<module>> {
+  .. types ..
+  +tree
+  +disposal
+  .. values ..
+  +monitor() : tree
+  +pin() : tree
+  +unpin() : tree
+  +is_eligible_for_gc() : bool
+  +contention() : bool
+  +unmonitor() : tree * disposal BatFingerTree.t, Concepts.Condition.condi...
+  +collect() : tree * disposal BatFingerTree.t, Concepts.Condition.condi...
+}
+
+class Namespace <<module>> {
+  .. types ..
+  +tree
+  .. values ..
+  +resolve() : Concepts.Path.t, Concepts.Condition.condition result
+}
+
+class Object <<module>> {
+  .. types ..
+  +multigroup
+  +relation
+  +ephemeral_relation
+  +transaction
+  +session
+  +branch
+  +branch_tree
+  +rnt_object_kind
+  +namespace
+  +rnt_method
+  +rnt_object
+  +registry
+  +rnt_object_tree
+  .. values ..
+  +make_object()
+  +root()
+  +find()
+  +update()
+  +reference_edges()
+  +adjust_references()
+  +is_gc_exempt()
+  +is_runtime()
+  +has_children()
+  +register()
+  +with_namespace()
+  +construct_multigroup()
+  +construct_relation()
+  +unregister()
+}
+
+class Path <<module>> {
+  .. types ..
+  +t
+  .. values ..
+  +empty() : t
+  +of_list() : t
+  +to_list() : string list
+  +snoc() : t
+  +to_string() : string
+  +is_prefix() : bool
+}
+
+class Representation <<module>> {
+  .. types ..
+  +blob
+  .. values ..
+  +blob_of_value() : blob
+  +value_of_blob() : Value.value
+  +blob_of_bytes() : blob
+  +bytes_of_blob() : bytes
+}
+
+class Storage <<module>> {
+  .. types ..
+  +connection
+  +transaction
+}
+
+class Tuple <<module>> {
+  .. types ..
+  +t
+  .. values ..
+  +empty() : t
+  +access() : Value.value option
+  +merge() : t
+  +project() : t
+  +rename() : t
+}
+
+class Utilities <<module>> {
+  .. values ..
+  +"let*"
+  +fmap() : 'b, 'e result
+}
+
+class Value <<module>> {
+  .. types ..
+  +value
+  .. values ..
+  +to_string() : string
+  +equal() : bool
+}
+
+Condition --> Value
+Configuration --> Condition
+Cursor ..> Condition
+Cursor ..> Path
+Cursor *-- Storage
+Cursor ..> Tuple
+Cursor ..> Value
+FOL ..> Condition
+FOL ..> Path
+FOL --> Tuple
+FOL ..> Value
+Handle --> Condition
+Handle *-- Cursor
+Handle --> Object
+Handle ..> Path
+Handle *-- Storage
+Handle ..> Tuple
+Handle ..> Value
+Hash ..> Value
+Identity ..> Object
+LMDB ..> Condition
+LMDB --> Configuration
+LMDB --> Hash
+LMDB --> Representation
+LMDB ..> Storage
+LMDB ..> Value
+Lifecycle ..> Condition
+Lifecycle --> Object
+Lifecycle ..> Path
+Namespace ..> Condition
+Namespace ..> Object
+Namespace ..> Path
+Namespace *-- Storage
+Object --> Condition
+Object --> Path
+Object ..> Value
+Representation ..> Value
+Storage ..> Condition
+Storage ..> Configuration
+Storage ..> Hash
+Storage ..> Representation
+Tuple ..> Value
+
+legend right
+  diamond A *-- B : functor composition (@composes)
+  solid   A --> B : declared call (@uses)
+  dashed  A ..> B : type-only coupling (@needs)
+endlegend
+@enduml

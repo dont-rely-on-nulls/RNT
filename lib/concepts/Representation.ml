@@ -1,3 +1,5 @@
+(* @needs Value *)
+
 type blob = bytes
 
 let blob_of_bytes (b : bytes) = b

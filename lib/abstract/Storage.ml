@@ -1,3 +1,8 @@
+(* @needs Configuration *)
+(* @needs Condition *)
+(* @needs Hash *)
+(* @needs Representation *)
+
 module type STORAGE = sig
   type connection
   type transaction

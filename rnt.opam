@@ -14,7 +14,6 @@ depends: [
   "batteries"
   "digestif"
   "alcotest" {with-test}
-  "qcheck-alcotest" {with-test}
   "ocaml-lsp-server" {with-dev-setup}
   "odoc" {with-doc}
 ]

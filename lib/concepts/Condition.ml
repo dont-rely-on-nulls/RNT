@@ -1,3 +1,5 @@
+(* @uses Value -- renders property values in to_string_hum *)
+
 type properties = (string, Value.value) BatMap.t
 type ps = properties -> properties
 

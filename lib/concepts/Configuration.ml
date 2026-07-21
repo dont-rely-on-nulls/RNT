@@ -1,3 +1,5 @@
+(* @uses Condition -- builds syntax/type errors *)
+
 open Sexplib.Sexp
 
 type term = Sexplib.Sexp.t

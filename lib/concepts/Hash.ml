@@ -1,3 +1,5 @@
+(* @needs Value *)
+
 type hash = Digestif.SHA256.t
 
 let hash_of_value (v : Value.value) =

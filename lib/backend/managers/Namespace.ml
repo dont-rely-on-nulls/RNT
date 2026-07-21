@@ -1,3 +1,8 @@
+(* @composes Storage -- functor parameter *)
+(* @needs Object *)
+(* @needs Path *)
+(* @needs Condition *)
+
 module Make (Store : Abstract.Storage.STORAGE) = struct
   type tree = Object.rnt_object_tree
 

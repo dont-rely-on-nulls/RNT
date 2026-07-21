@@ -8,6 +8,10 @@
    the manager surfaces those to the caller as disposals rather than acting on
    storage itself. *)
 
+(* @uses Object -- find/update, unregister, reference_edges, has_children *)
+(* @needs Path *)
+(* @needs Condition *)
+
 type tree = Object.rnt_object_tree
 
 (* A runtime object that was collected and now needs an external teardown the

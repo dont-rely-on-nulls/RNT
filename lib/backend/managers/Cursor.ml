@@ -1,3 +1,9 @@
+(* @composes Storage -- functor parameter *)
+(* @needs Path *)
+(* @needs Tuple *)
+(* @needs Value *)
+(* @needs Condition *)
+
 type descriptor =
   | Stored of {merkle_root: string}
   | Ephemeral of {merkle_root: string; dependencies: Concepts.Path.t BatFingerTree.t}

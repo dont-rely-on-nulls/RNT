@@ -1,3 +1,10 @@
+(* @uses Configuration -- reads config term to connect *)
+(* @uses Hash -- hash keys for get/put *)
+(* @uses Representation -- blob encode/decode *)
+(* @needs Condition *)
+(* @needs Value *)
+(* @needs Storage *)
+
 module C = struct
   open Ctypes
   open PosixTypes

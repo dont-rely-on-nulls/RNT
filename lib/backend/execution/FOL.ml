@@ -1,3 +1,8 @@
+(* @uses Tuple -- project, rename, merge over result streams *)
+(* @needs Value *)
+(* @needs Path *)
+(* @needs Condition *)
+
 module Plan = struct
   type path_arg = Var of string | Const of Concepts.Value.value
 

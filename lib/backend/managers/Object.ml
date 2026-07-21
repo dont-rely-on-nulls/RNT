@@ -1,3 +1,7 @@
+(* @uses Path -- snoc, to_string when building registry paths *)
+(* @uses Condition -- builds registry-object/path errors *)
+(* @needs Value *)
+
 type multigroup = {merkle_root: string}
 type relation = {merkle_root: string}
 

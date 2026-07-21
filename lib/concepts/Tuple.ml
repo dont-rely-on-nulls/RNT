@@ -1,3 +1,5 @@
+(* @needs Value *)
+
 module AttributeMap = BatMap.String
 
 (** A tuple: a finite map from attribute name to attribute. *)
