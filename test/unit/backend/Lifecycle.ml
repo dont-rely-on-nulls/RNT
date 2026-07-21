@@ -68,7 +68,7 @@ let test_cascade_follows_edges () =
   let tree, disposals = collect_exn tree (path ["er1"]) in
   Alcotest.(check bool) "the dependent is collected" false (present tree (path ["er1"]));
   Alcotest.(check bool) "the released input is cascaded out" false (present tree (path ["r1"]));
-  Alcotest.(check int) "durable collection needs no disposal" 0 (List.length disposals)
+  Alcotest.(check int) "durable collection needs no disposal" 0 (BatFingerTree.size disposals)
 
 (* A pin overrides the cascade: the input stays even after its dependent goes. *)
 let test_pin_survives_cascade () =
@@ -85,8 +85,8 @@ let test_runtime_collection_surfaces_disposal () =
   let tree = register_exn Object.root (path ["s1"]) (session ()) in
   let tree, disposals = collect_exn tree (path ["s1"]) in
   Alcotest.(check bool) "the session is removed" false (present tree (path ["s1"]));
-  match disposals with
-  | [{Lifecycle.kind= Object.Session _; _}] -> ()
+  match BatFingerTree.front disposals with
+  | Some (rest, {Lifecycle.kind= Object.Session _; _}) when BatFingerTree.is_empty rest -> ()
   | _ -> Alcotest.fail "expected exactly one session disposal"
 
 (* A namespace with objects under it is scaffolding, so it is kept rather than

@@ -50,17 +50,17 @@ let contention (tree : tree) (path : Concepts.Path.t) : bool =
   | None -> false
 
 (* Cascade the collection at path, threading the pruned tree and the disposals
-   gathered so far. Disposals are prepended (never appended), so the recursion
-   stays linear; the public entry points reverse once to hand back parent-first,
-   left-to-right order.
+   gathered so far. Disposals are appended (snoc) as each object is torn down,
+   so the finger tree hands them back parent-first, left-to-right without any
+   reversal pass.
 
    Order of teardown falls out of the counts. Collecting an object drops the
    reference_count of every input it depended on (Object.unregister undoes the
    edges), which can make those inputs eligible in turn, so we recurse into
    them. A populated namespace is kept, not collected and not an error: it is
    scaffolding for the objects still living under it. *)
-let rec cascade (tree : tree) (disposals : disposal list) (path : Concepts.Path.t) :
-    (tree * disposal list, Concepts.Condition.condition) result =
+let rec cascade (tree : tree) (disposals : disposal BatFingerTree.t) (path : Concepts.Path.t) :
+    (tree * disposal BatFingerTree.t, Concepts.Condition.condition) result =
   match Object.find path tree with
   | None -> Ok (tree, disposals)
   | Some r when not (registry_eligible r) -> Ok (tree, disposals)
@@ -70,7 +70,9 @@ let rec cascade (tree : tree) (disposals : disposal list) (path : Concepts.Path.
       | Object.Namespace _ when Object.has_children path tree -> Ok (tree, disposals)
       | _ ->
           let edges = Object.reference_edges kind in
-          let disposals = if Object.is_runtime kind then {path; kind} :: disposals else disposals in
+          let disposals =
+            if Object.is_runtime kind then BatFingerTree.snoc disposals {path; kind} else disposals
+          in
           Result.bind (Object.unregister path tree) (fun tree ->
               BatFingerTree.fold_left
                 (fun acc dep -> Result.bind acc (fun (tree, disposals) -> cascade tree disposals dep))
@@ -79,12 +81,12 @@ let rec cascade (tree : tree) (disposals : disposal list) (path : Concepts.Path.
       end
 
 let try_collect (tree : tree) (path : Concepts.Path.t) :
-    (tree * disposal list, Concepts.Condition.condition) result =
-  Result.map (fun (tree, disposals) -> (tree, List.rev disposals)) (cascade tree [] path)
+    (tree * disposal BatFingerTree.t, Concepts.Condition.condition) result =
+  cascade tree BatFingerTree.empty path
 
 (* Close a handle, then see whether the object can now go. *)
 let unmonitor (tree : tree) (path : Concepts.Path.t) :
-    (tree * disposal list, Concepts.Condition.condition) result =
+    (tree * disposal BatFingerTree.t, Concepts.Condition.condition) result =
   let tree =
     Object.update path
       (fun r ->
@@ -96,7 +98,7 @@ let unmonitor (tree : tree) (path : Concepts.Path.t) :
 
 (* Public entry point for an explicit collection request. *)
 let collect (tree : tree) (path : Concepts.Path.t) :
-    (tree * disposal list, Concepts.Condition.condition) result =
+    (tree * disposal BatFingerTree.t, Concepts.Condition.condition) result =
   try_collect tree path
 
 (* Session reaping is not built here yet. A lost connection is detected by a
