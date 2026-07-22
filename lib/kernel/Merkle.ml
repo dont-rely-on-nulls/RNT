@@ -123,5 +123,20 @@ module Make (S : Abstract.Storage.STORAGE) = struct
              children = BatFingerTree.set node.children i l |> emplace (i + 1) r }
            |> commit_node conn
 
+  let insert conn node key value =
+    let open Utilities.Result in
+    let* op = insert' conn node key value in
+    match op with
+    | Update (_, node) -> Ok node
+    | Split (l, kp, vp, r) ->
+       let new_root =
+         { keys = BatFingerTree.singleton kp;
+           values = BatFingerTree.singleton vp;
+           children = BatFingerTree.empty
+                      |> (Fun.flip BatFingerTree.snoc) l
+                      |> (Fun.flip BatFingerTree.snoc) r } in
+       let* _ = persist conn new_root in
+       Ok new_root
+
   let remove conn node key = failwith "TODO"
 end
