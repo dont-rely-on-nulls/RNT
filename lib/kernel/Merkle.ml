@@ -1,9 +1,7 @@
-type ordering = Equal | Smaller | Greater
-
 class type ['a] key = object
   method value : 'a
   method encode : Concepts.Representation.blob
-  method compare : 'a key -> ordering
+  method compare : 'a key -> Concepts.Ordering.ordering
 end
 
 module type TREE = functor (S : Abstract.Storage.STORAGE) -> sig
@@ -34,6 +32,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
         children : address BatFingerTree.t }
 
   let rec lookup1' keys key bottom top =
+    let open Concepts.Ordering in
     if bottom >= top then (bottom, false)
     else
       let mid = bottom + (top - bottom) / 2 in
