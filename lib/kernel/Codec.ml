@@ -39,12 +39,11 @@ module Error = struct
       ("expected" |=| Concepts.Value.String expected & "actual" |=| Concepts.Value.String actual)
 end
 
-(* Bencode: a small, canonical, self-describing serialization used as
-   the uniform wire format for durable objects. Chosen over an ad-hoc
-   key=value scheme because it nests (a multigroup holds a map of
-   relation hashes), round-trips losslessly, and has a single
-   canonical byte form for a given value (dict keys are emitted
-   sorted), which matters once these bytes are content-addressed.     
+(* A self-describing serialization used as the uniform wire format for
+   durable objects. Chosen over an ad-hoc key=value scheme because it
+   nests (a multigroup holds a map of relation hashes) and has a
+   single byte form for a given value (dict keys are emitted sorted),
+   which matters once these bytes are content-addressed.
 
    Grammar:
    - Int    "i" <decimal> "e" (negatives allowed)
