@@ -50,7 +50,23 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     | Leaf { keys; _ } -> keys
     | Trunk { keys; _ } -> keys
 
-  let find tx node = failwith "TODO" [@@warning "-27"]
+  let from_blob blob = failwith "TODO"
+
+  let to_bencode =
+    let open Concepts.Codec.Bencode in
+    let bencode_key k = failwith "TODO" in
+    let bencode_hash h = failwith "TODO" in
+    function
+    | Leaf { keys; values } ->
+       Tagged ('!', Dict [("keys", List (BatFingerTree.to_list keys |> List.map bencode_key));
+                          ("values", List (BatFingerTree.to_list values |> List.map bencode_hash))])
+    | Trunk { keys; children } ->
+       Tagged ('#', Dict [("keys", List (BatFingerTree.to_list keys |> List.map bencode_key));
+                          ("children", List (BatFingerTree.to_list children |> List.map bencode_hash))])
+
+  let to_blob node = failwith "TODO"
+
+  let find tx node = S.get tx node |> from_blob
 
   let rec lookup tx node key =
     let open Utilities.Result in
@@ -62,7 +78,12 @@ module Make (S : Abstract.Storage.STORAGE) = struct
        let* child = BatFingerTree.get children (if found then i+1 else i) |> find tx in
        lookup tx child key
 
-  let persist tx node = failwith "TODO" [@@warning "-27"]
+  let persist tx node =
+    let open Utilities.Result in
+    let data = to_blob node in
+    let addr = Concepts.Hash.hash_of_blob data in
+    let* () = S.put tx addr data in
+    Ok addr
 
   type 'a op = Update of address * 'a node | Split of address * 'a key * address
 

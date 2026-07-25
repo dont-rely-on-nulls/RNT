@@ -10,6 +10,9 @@ val hash_of_value : Value.value -> hash
 (** given a bag of bytes, compute it's hash *)
 val hash_of_bytes : bytes -> hash
 
+(** given a blob, compute it's hash *)
+val hash_of_blob : Representation.blob -> hash
+
 (** compare two hashes lexicographically *)
 val compare : hash -> hash -> Ordering.ordering
 
