@@ -1,5 +1,5 @@
-module Error = struct
-  open Concepts.Condition
+ module Error = struct
+  open Condition
 
   exception Condition of condition
 
@@ -13,30 +13,35 @@ module Error = struct
 
   let malformed_integer digits =
     condition "codec-malformed-integer" "A byte run is not a valid integer"
-      ("digits" |=| Concepts.Value.String digits)
+      ("digits" |=| Value.String digits)
 
   let unexpected_byte c =
     condition "codec-unexpected-byte" "Unexpected byte while decoding"
-      ("byte" |=| Concepts.Value.String (String.make 1 c))
+      ("byte" |=| Value.String (String.make 1 c))
 
   let string_out_of_bounds length =
     condition "codec-string-out-of-bounds" "A string length runs past the end of input"
-      ("length" |=| Concepts.Value.Integer length)
+      ("length" |=| Value.Integer length)
 
   let trailing_bytes =
     condition "codec-trailing-bytes" "Bytes remain after a complete value" empty
 
+  let tag_mismatch ~expected ~actual =
+    condition "codec-tag-mismatch" "A value with a different tag was expected"
+      ("expected" |=| Value.String (String.make 1 expected) &
+       "actual" |=| Value.String (String.make 1 actual))
+
   let type_mismatch ~expected =
     condition "codec-type-mismatch" "A Bencode value of a different shape was expected"
-      ("expected" |=| Concepts.Value.String expected)
+      ("expected" |=| Value.String expected)
 
   let missing_field key =
     condition "codec-missing-field" "A required field is absent"
-      ("field" |=| Concepts.Value.String key)
+      ("field" |=| Value.String key)
 
   let unexpected_object ~expected ~actual =
     condition "codec-unexpected-object" "The decoded object is not of the expected kind"
-      ("expected" |=| Concepts.Value.String expected & "actual" |=| Concepts.Value.String actual)
+      ("expected" |=| Value.String expected & "actual" |=| Value.String actual)
 end
 
 (* A self-describing serialization used as the uniform wire format for
@@ -51,9 +56,13 @@ end
    - List   "l" <element>* "e"
    - Dict   "d" (<String key> <value>)* "e" keys sorted on encode *)
 module Bencode = struct
-  type t = Int of int | String of string | List of t list | Dict of (string * t) list
+  type t = Tagged of char * t | Int of int | String of string | List of t list | Dict of (string * t) list
 
   let rec encode buf = function
+    | Tagged (tag, value) ->
+       Buffer.add_char buf 't';
+       Buffer.add_char buf tag;
+       encode buf value
     | Int n ->
        Buffer.add_char buf 'i';
        Buffer.add_string buf (string_of_int n);
@@ -98,8 +107,10 @@ module Bencode = struct
       | Some i -> i
       | None -> Error.signal (Error.malformed_integer digits)
     in
+    let read_char () = let c = peek () in advance (); c in
     let rec parse () =
       match peek () with
+      | 't' -> advance (); Tagged (read_char (), parse ())
       | 'i' -> advance (); Int (read_int 'e')
       | 'l' -> advance (); parse_list []
       | 'd' -> advance (); parse_dict []
@@ -124,10 +135,21 @@ module Bencode = struct
     if !pos <> n then Error.signal Error.trailing_bytes;
     value
 
+  let to_blob x = to_bytes x |> Representation.blob_of_bytes
+  let of_blob b = Representation.bytes_of_blob b |> of_bytes
+
   let as_string = function String s -> s | _ -> Error.signal (Error.type_mismatch ~expected:"string")
   let as_int = function Int n -> n | _ -> Error.signal (Error.type_mismatch ~expected:"integer")
   let as_list = function List l -> l | _ -> Error.signal (Error.type_mismatch ~expected:"list")
   let as_dict = function Dict d -> d | _ -> Error.signal (Error.type_mismatch ~expected:"dict")
+
+  let with_tag t = function
+    | Tagged (t', v) ->
+       if t = t' then
+         v
+       else
+         Error.signal (Error.tag_mismatch ~expected:t ~actual:t')
+    | _ -> Error.signal (Error.type_mismatch ~expected:"tagged")
 
   let field key = function
     | Dict kvs -> (
@@ -135,85 +157,4 @@ module Bencode = struct
       | Some v -> v
       | None -> Error.signal (Error.missing_field key) )
     | _ -> Error.signal (Error.type_mismatch ~expected:"dict")
-end
-
-(* Codec represents the durable and in-memory representation of the
-   objects the object manager only holds references to. The registry
-   stores a bare reference (a Merkle root that is) to keep memory
-   usage low; when a process first touches an object we decode its
-   full form here, and the same decoded value is shared by every later
-   reader (everything but branch tips is immutable, so sharing is
-   safe).
-
-   These records mirror the sakura domain classes, but flattened to
-   plain data without methods, closures, etc. Only what must survive a
-   round-trip through storage.  The wire format is Bencode so every
-   record serializes uniformly. Hashes are hex strings, matching the
-   merkle_root references carried in the object registry. *)
-
-(* A multigroup keeps only the names and content hashes of its
-   relations, not the relations themselves: the relation body is a
-   separate object, resolved on demand through its hash. *)
-module Multigroup = struct
-  type t = {name: string; relations: string BatMap.String.t; timestamp: float}
-
-  let to_bencode {name; relations; timestamp} : Bencode.t =
-    Bencode.Dict
-      [ ("type", String "multigroup");
-        ("name", String name);
-        ( "relations",
-          Dict (BatMap.String.bindings relations |> List.map (fun (n, h) -> (n, Bencode.String h)))
-        );
-        ("timestamp", String (Printf.sprintf "%.17g" timestamp)) ]
-
-  let of_bencode (b : Bencode.t) : t =
-    (match Bencode.(field "type" b |> as_string) with
-    | "multigroup" -> ()
-    | actual -> Error.signal (Error.unexpected_object ~expected:"multigroup" ~actual));
-    let relations =
-      Bencode.(field "relations" b |> as_dict)
-      |> List.fold_left
-           (fun acc (n, h) -> BatMap.String.add n (Bencode.as_string h) acc)
-           BatMap.String.empty
-    in
-    { name= Bencode.(field "name" b |> as_string);
-      relations;
-      timestamp= Bencode.(field "timestamp" b |> as_string) |> float_of_string }
-
-  let to_bytes t = Bencode.to_bytes (to_bencode t)
-  let of_bytes b = Error.attempt (fun () -> of_bencode (Bencode.of_bytes b))
-end
-
-(* A relation carries its identity (name + schema) and the merkle root
-   of the prolly tree holding its tuples. The empty string means an
-   empty relation for now. The schema maps each attribute name to its
-   domain. Attribute order is not important, so it is kept as a map,
-   not as a list. *)
-module Relation = struct
-  type t = {name: string; schema: string BatMap.String.t; tree_pointer: string}
-
-  let to_bencode {name; schema; tree_pointer} : Bencode.t =
-    Bencode.Dict
-      [ ("type", String "relation");
-        ("name", String name);
-        ( "schema",
-          Dict (BatMap.String.bindings schema |> List.map (fun (a, d) -> (a, Bencode.String d))) );
-        ("tree_pointer", String tree_pointer) ]
-
-  let of_bencode (b : Bencode.t) : t =
-    (match Bencode.(field "type" b |> as_string) with
-    | "relation" -> ()
-    | actual -> Error.signal (Error.unexpected_object ~expected:"relation" ~actual));
-    let schema =
-      Bencode.(field "schema" b |> as_dict)
-      |> List.fold_left
-           (fun acc (a, d) -> BatMap.String.add a (Bencode.as_string d) acc)
-           BatMap.String.empty
-    in
-    { name= Bencode.(field "name" b |> as_string);
-      schema;
-      tree_pointer= Bencode.(field "tree_pointer" b |> as_string) }
-
-  let to_bytes t = Bencode.to_bytes (to_bencode t)
-  let of_bytes b = Error.attempt (fun () -> of_bencode (Bencode.of_bytes b))
 end
