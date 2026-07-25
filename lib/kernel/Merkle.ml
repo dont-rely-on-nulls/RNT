@@ -52,7 +52,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     | Leaf { keys; _ } -> keys
     | Trunk { keys; _ } -> keys
 
-  let find conn node = failwith "TODO"
+  let find conn node = failwith "TODO" [@@warning "-27"]
 
   let rec lookup conn node key =
     let open Utilities.Result in
@@ -64,7 +64,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
        let* child = BatFingerTree.get children (if found then i+1 else i) |> find conn in
        lookup conn child key
 
-  let persist conn node = failwith "TODO"
+  let persist conn node = failwith "TODO" [@@warning "-27"]
 
   type 'a op = Update of address * 'a node | Split of address * 'a key * address
 
@@ -156,5 +156,5 @@ module Make (S : Abstract.Storage.STORAGE) = struct
        let* _ = persist conn new_root in
        Ok new_root
 
-  let remove conn node key = failwith "TODO"
+  let remove conn node key = failwith "TODO" [@@warning "-27"]
 end
