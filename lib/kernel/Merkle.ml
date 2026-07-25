@@ -9,13 +9,13 @@ module type TREE = functor (S : Abstract.Storage.STORAGE) -> sig
 
   type 'a node
 
-  val find : S.connection -> address -> 'a node
+  val find : S.transaction -> address -> 'a node
 
   val hash_of : 'a node -> address
 
-  val insert : S.connection -> 'a node -> 'a key -> address -> ('a node, Concepts.Condition.condition) result
-  val remove : S.connection -> 'a node -> 'a key -> ('a node, Concepts.Condition.condition) result
-  val lookup : S.connection -> 'a node -> 'a key -> (address option, Concepts.Condition.condition) result
+  val insert : S.transaction -> 'a node -> 'a key -> address -> ('a node, Concepts.Condition.condition) result
+  val remove : S.transaction -> 'a node -> 'a key -> ('a node, Concepts.Condition.condition) result
+  val lookup : S.transaction -> 'a node -> 'a key -> (address option, Concepts.Condition.condition) result
 end
 
 module Make (S : Abstract.Storage.STORAGE) = struct
@@ -50,19 +50,19 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     | Leaf { keys; _ } -> keys
     | Trunk { keys; _ } -> keys
 
-  let find conn node = failwith "TODO" [@@warning "-27"]
+  let find tx node = failwith "TODO" [@@warning "-27"]
 
-  let rec lookup conn node key =
+  let rec lookup tx node key =
     let open Utilities.Result in
     let i, found = lookup1 (keys_of node) key in
     match node with
     | Leaf { values; _ } ->
        if found then Ok (Some (BatFingerTree.get values i)) else Ok None
     | Trunk { children; _ } ->
-       let* child = BatFingerTree.get children (if found then i+1 else i) |> find conn in
-       lookup conn child key
+       let* child = BatFingerTree.get children (if found then i+1 else i) |> find tx in
+       lookup tx child key
 
-  let persist conn node = failwith "TODO" [@@warning "-27"]
+  let persist tx node = failwith "TODO" [@@warning "-27"]
 
   type 'a op = Update of address * 'a node | Split of address * 'a key * address
 
@@ -143,41 +143,41 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     in
     loop BatFingerTree.empty keys
 
-  let commit_node conn node =
+  let commit_node tx node =
     let open Utilities.Result in
     match split_position (keys_of node) with
     | Some i ->
        let l, p, r = split_at i node in
-       let* l_addr = persist conn l in
-       let* r_addr = persist conn r in
+       let* l_addr = persist tx l in
+       let* r_addr = persist tx r in
        Ok (Split (l_addr, p, r_addr))
     | None ->
-       let* addr = persist conn node in
+       let* addr = persist tx node in
        Ok (Update (addr, node))
 
-  let rec insert' conn node key value =
+  let rec insert' tx node key value =
     let open Utilities.Result in
     match node with
     | Leaf _ ->
        insert1 node key value
-       |> commit_node conn
+       |> commit_node tx
     | Trunk { keys; children } ->
        let i, found = lookup1 keys key in
        let i = if found then i+1 else i in
-       let* child = BatFingerTree.get children i |> find conn in
-       let* r = insert' conn child key value in
+       let* child = BatFingerTree.get children i |> find tx in
+       let* r = insert' tx child key value in
        match r with
        | Update (addr, _) ->
           Trunk { keys; children = BatFingerTree.set children i addr }
-          |> commit_node conn
+          |> commit_node tx
        | Split (l, p, r) ->
           Trunk { keys = emplace i p keys;
                   children = BatFingerTree.set children i l |> emplace (i + 1) r }
-          |> commit_node conn
+          |> commit_node tx
 
-  let insert conn node key value =
+  let insert tx node key value =
     let open Utilities.Result in
-    let* op = insert' conn node key value in
+    let* op = insert' tx node key value in
     match op with
     | Update (_, node) -> Ok node
     | Split (l, p, r) ->
@@ -186,8 +186,8 @@ module Make (S : Abstract.Storage.STORAGE) = struct
                  children = BatFingerTree.empty
                             |> (Fun.flip BatFingerTree.snoc) l
                             |> (Fun.flip BatFingerTree.snoc) r } in
-       let* _ = persist conn new_root in
+       let* _ = persist tx new_root in
        Ok new_root
 
-  let remove conn node key = failwith "TODO" [@@warning "-27"]
+  let remove tx node key = failwith "TODO" [@@warning "-27"]
 end
