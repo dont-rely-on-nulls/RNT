@@ -13,6 +13,8 @@ module type TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> sig
 
   val find : S.transaction -> address -> ('a node option, Concepts.Condition.condition) result
 
+  val empty : 'a node
+
   val hash_of : 'a node -> address
 
   val insert : S.transaction -> 'a node -> K.t -> address -> ('a node, Concepts.Condition.condition) result
@@ -36,6 +38,8 @@ module Make : TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> struct
   | Trunk of
       { keys : K.t BatFingerTree.t;
         children : address BatFingerTree.t }
+
+  let empty = Leaf { keys = BatFingerTree.empty; values = BatFingerTree.empty }
 
   let rec lookup1' keys key bottom top =
     let open Concepts.Ordering in
@@ -139,10 +143,18 @@ module Make : TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> struct
   type 'a op = Update of address * 'a node | Split of address * K.t * address
 
   let emplace i v ft =
-    let fl, fr = BatFingerTree.split_at ft i in
-    BatFingerTree.singleton v
-    |> BatFingerTree.append fl
-    |> (Fun.flip BatFingerTree.append) fr
+    let size = BatFingerTree.size ft in
+    if i < 0 || i > size then
+      invalid_arg "Merkle.emplace: index out of bounds"
+    else if size = 0 then
+      BatFingerTree.singleton v
+    else if i = size then
+      BatFingerTree.snoc ft v
+    else
+      let fl, fr = BatFingerTree.split_at ft i in
+      BatFingerTree.singleton v
+      |> BatFingerTree.append fl
+      |> (Fun.flip BatFingerTree.append) fr
 
   let insert1 node key value =
     let i, present = lookup1 (keys_of node) key in
