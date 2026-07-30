@@ -13,6 +13,12 @@ val hash_of_bytes : bytes -> hash
 (** given a blob, compute it's hash *)
 val hash_of_blob : Representation.blob -> hash
 
+(** given a hash, return a representation of it as a string (/not/ the usual hex representation!) *)
+val to_raw_string : hash -> string
+
+(** given a string containing a representation of a hash (as per `to_raw_string`), return the corresponding hash *)
+val of_raw_string : string -> hash
+
 (** compare two hashes lexicographically *)
 val compare : hash -> hash -> Ordering.ordering
 

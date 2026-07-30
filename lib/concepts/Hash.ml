@@ -14,6 +14,10 @@ let hash_of_bytes bytes = Digestif.SHA256.digest_bytes bytes
 
 let hash_of_blob blob = Representation.bytes_of_blob blob |> Digestif.SHA256.digest_bytes
 
+let to_raw_string hash = Digestif.SHA256.to_raw_string hash
+
+let of_raw_string str = Digestif.SHA256.of_raw_string str
+
 let hash_equals = Digestif.SHA256.equal
 let bytes_of_hash (h : hash) = Bytes.of_string (Digestif.SHA256.to_raw_string h)
 

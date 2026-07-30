@@ -1,13 +1,6 @@
  module Error = struct
   open Condition
 
-  exception Condition of condition
-
-  let signal (c : condition) : 'a = raise (Condition c)
-
-  let attempt (f : unit -> 'a) : ('a, condition) result =
-    try Ok (f ()) with Condition c -> Error c
-
   let unexpected_end =
     condition "codec-unexpected-end" "Unexpected end of input while decoding" empty
 
@@ -89,72 +82,88 @@ module Bencode = struct
     encode buf value;
     Buffer.to_bytes buf
 
-  let of_bytes (bytes : bytes) : t =
+  let as_string = function String s -> Ok s | _ -> Error (Error.type_mismatch ~expected:"string")
+  let as_int = function Int n -> Ok n | _ -> Error (Error.type_mismatch ~expected:"integer")
+  let as_list = function List l -> Ok l | _ -> Error (Error.type_mismatch ~expected:"list")
+  let as_dict = function Dict d -> Ok d | _ -> Error (Error.type_mismatch ~expected:"dict")
+
+  let of_bytes (bytes : bytes) : (t, Condition.condition) result =
+    let open Utilities.Result in
     let s = Bytes.to_string bytes in
     let n = String.length s in
     let pos = ref 0 in
-    let peek () = if !pos >= n then Error.signal Error.unexpected_end else s.[!pos] in
+    let peek () = if !pos >= n then Error (Error.unexpected_end) else Ok (s.[!pos]) in
     let advance () = incr pos in
     (* Read the decimal run up to (and consuming) [term]. *)
     let read_int term =
       let start = !pos in
-      while peek () <> term do
+      while peek () <> Ok term do
         advance ()
       done;
       let digits = String.sub s start (!pos - start) in
       advance ();
       match int_of_string_opt digits with
-      | Some i -> i
-      | None -> Error.signal (Error.malformed_integer digits)
+      | Some i -> Ok i
+      | None -> Error (Error.malformed_integer digits)
     in
     let read_char () = let c = peek () in advance (); c in
     let rec parse () =
-      match peek () with
-      | 't' -> advance (); Tagged (read_char (), parse ())
-      | 'i' -> advance (); Int (read_int 'e')
-      | 'l' -> advance (); parse_list []
-      | 'd' -> advance (); parse_dict []
+      let* c = peek () in
+      advance ();
+      match c with
+      | 't' ->
+         let* tag = read_char () in
+         let* data = parse () in
+         Ok (Tagged (tag, data))
+      | 'i' ->
+         let* n = read_int 'e' in
+         Ok (Int n)
+      | 'l' -> parse_list []
+      | 'd' -> parse_dict []
       | c when c >= '0' && c <= '9' -> parse_string ()
-      | c -> Error.signal (Error.unexpected_byte c)
+      | c -> Error (Error.unexpected_byte c)
     and parse_string () =
-      let len = read_int ':' in
-      if len < 0 || !pos + len > n then Error.signal (Error.string_out_of_bounds len);
-      let str = String.sub s !pos len in
-      pos := !pos + len;
-      String str
-    and parse_list acc =
-      if peek () = 'e' then (advance (); List (List.rev acc)) else parse_list (parse () :: acc)
-    and parse_dict acc =
-      if peek () = 'e' then (advance (); Dict (List.rev acc))
+      let* len = read_int ':' in
+      if len < 0 || !pos + len > n then
+        Error (Error.string_out_of_bounds len)
       else
-        let key = match parse_string () with String k -> k | _ -> assert false in
-        let value = parse () in
+        let str = String.sub s !pos len in
+        pos := !pos + len;
+        Ok (String str)
+    and parse_list acc =
+      let* c = peek () in
+      if c = 'e' then (advance (); Ok (List (List.rev acc)))
+      else
+        let* result = parse () in
+        parse_list (result :: acc)
+    and parse_dict acc =
+      let* c = peek () in
+      if c = 'e' then (advance (); Ok (Dict (List.rev acc)))
+      else
+        let* key = parse_string () in
+        let* key = as_string key in
+        let* value = parse () in
         parse_dict ((key, value) :: acc)
     in
-    let value = parse () in
-    if !pos <> n then Error.signal Error.trailing_bytes;
-    value
+    let* value = parse () in
+    if !pos <> n then Error Error.trailing_bytes else
+      Ok value
 
   let to_blob x = to_bytes x |> Representation.blob_of_bytes
   let of_blob b = Representation.bytes_of_blob b |> of_bytes
 
-  let as_string = function String s -> s | _ -> Error.signal (Error.type_mismatch ~expected:"string")
-  let as_int = function Int n -> n | _ -> Error.signal (Error.type_mismatch ~expected:"integer")
-  let as_list = function List l -> l | _ -> Error.signal (Error.type_mismatch ~expected:"list")
-  let as_dict = function Dict d -> d | _ -> Error.signal (Error.type_mismatch ~expected:"dict")
-
   let with_tag t = function
     | Tagged (t', v) ->
        if t = t' then
-         v
+         Ok v
        else
-         Error.signal (Error.tag_mismatch ~expected:t ~actual:t')
-    | _ -> Error.signal (Error.type_mismatch ~expected:"tagged")
+         Error (Error.tag_mismatch ~expected:t ~actual:t')
+    | _ -> Error (Error.type_mismatch ~expected:"tagged")
 
   let field key = function
     | Dict kvs -> (
       match List.assoc_opt key kvs with
-      | Some v -> v
-      | None -> Error.signal (Error.missing_field key) )
-    | _ -> Error.signal (Error.type_mismatch ~expected:"dict")
+      | Some v -> Ok v
+      | None -> Error (Error.missing_field key) )
+    | _ -> Error (Error.type_mismatch ~expected:"dict")
 end

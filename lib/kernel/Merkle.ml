@@ -1,32 +1,40 @@
-class type ['a] key = object
-  method value : 'a
-  method encode : Concepts.Representation.blob
-  method compare : 'a key -> Concepts.Ordering.ordering
+module type KEY = sig
+  type t
+
+  val encode : t -> Concepts.Representation.blob
+  val compare : t -> t -> Concepts.Ordering.ordering
+  val decode : Concepts.Representation.blob -> (t, Concepts.Condition.condition) result
 end
 
-module type TREE = functor (S : Abstract.Storage.STORAGE) -> sig
+module type TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> sig
   type address = Concepts.Hash.hash
 
   type 'a node
 
-  val find : S.transaction -> address -> 'a node
+  val find : S.transaction -> address -> ('a node option, Concepts.Condition.condition) result
 
   val hash_of : 'a node -> address
 
-  val insert : S.transaction -> 'a node -> 'a key -> address -> ('a node, Concepts.Condition.condition) result
-  val remove : S.transaction -> 'a node -> 'a key -> ('a node, Concepts.Condition.condition) result
-  val lookup : S.transaction -> 'a node -> 'a key -> (address option, Concepts.Condition.condition) result
+  val insert : S.transaction -> 'a node -> K.t -> address -> ('a node, Concepts.Condition.condition) result
+  val remove : S.transaction -> 'a node -> K.t -> ('a node, Concepts.Condition.condition) result
+  val lookup : S.transaction -> 'a node -> K.t -> (address option, Concepts.Condition.condition) result
 end
 
-module Make (S : Abstract.Storage.STORAGE) = struct
+module Make : TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> struct
   type address = Concepts.Hash.hash
+
+  module Error = struct
+    open Concepts.Condition
+
+    let malformed_node () = condition "malformed-node" "A node representation did not conform to what was expected" empty
+  end
 
   type 'a node =
     Leaf of
-      { keys : 'a key BatFingerTree.t;
+      { keys : K.t BatFingerTree.t;
         values : address BatFingerTree.t }
   | Trunk of
-      { keys : 'a key BatFingerTree.t;
+      { keys : K.t BatFingerTree.t;
         children : address BatFingerTree.t }
 
   let rec lookup1' keys key bottom top =
@@ -35,27 +43,53 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     else
       let mid = bottom + (top - bottom) / 2 in
       let node = BatFingerTree.get keys mid in
-      match node#compare key with
+      match K.compare node key with
       | Equal -> (mid, true)
       | Greater -> lookup1' keys key bottom mid
       | Smaller -> lookup1' keys key (mid + 1) top
 
   let lookup1 keys key = lookup1' keys key 0 (BatFingerTree.size keys)
 
-  let is_leaf = function
-    | Leaf _ -> true
-    | Trunk _ -> false
-
   let keys_of = function
     | Leaf { keys; _ } -> keys
     | Trunk { keys; _ } -> keys
 
-  let from_blob blob = failwith "TODO"
+  let of_bencode =
+    let open Concepts.Codec.Bencode in
+    let open Utilities.Result in
+    (* This is terrible *)
+    let decode_key t = as_string t
+                       |> Result.map String.to_bytes
+                       |> Result.map Concepts.Representation.blob_of_bytes
+                       |> fmap K.decode in
+    let decode_value t = as_string t |> Result.map Concepts.Hash.of_raw_string in
+    let decode_list f data = data
+                             |> fmap as_list
+                             |> Result.map (List.map f)
+                             |> fmap sequence
+                             |> Result.map BatFingerTree.of_list in
+    function
+    | Tagged ('!', (Dict _ as data)) ->
+       let* keys = field "keys" data |> decode_list decode_key in
+       let* values = field "values" data |> decode_list decode_value in
+       Ok (Leaf { keys; values })
+    | Tagged ('#', (Dict _ as data)) ->
+       let* keys = field "keys" data |> decode_list decode_key in
+       let* children = field "children" data |> decode_list decode_value in
+       Ok (Trunk { keys; children })
+    | _ -> Error (Error.malformed_node ())
+
+  let from_blob blob = Concepts.Codec.Bencode.of_blob blob
+                       |> Utilities.Result.fmap of_bencode
 
   let to_bencode =
     let open Concepts.Codec.Bencode in
-    let bencode_key k = failwith "TODO" in
-    let bencode_hash h = failwith "TODO" in
+    (* Ditto. *)
+    let bencode_key k = K.encode k
+                        |> Concepts.Representation.bytes_of_blob
+                        |> String.of_bytes
+                        |> (fun s -> String s) in
+    let bencode_hash h = String (Concepts.Hash.to_raw_string h) in
     function
     | Leaf { keys; values } ->
        Tagged ('!', Dict [("keys", List (BatFingerTree.to_list keys |> List.map bencode_key));
@@ -64,9 +98,26 @@ module Make (S : Abstract.Storage.STORAGE) = struct
        Tagged ('#', Dict [("keys", List (BatFingerTree.to_list keys |> List.map bencode_key));
                           ("children", List (BatFingerTree.to_list children |> List.map bencode_hash))])
 
-  let to_blob node = failwith "TODO"
+  let to_blob node = to_bencode node |> Concepts.Codec.Bencode.to_blob
 
-  let find tx node = S.get tx node |> from_blob
+  (* FIXME *)
+  let hash_of node = to_blob node |> Concepts.Hash.hash_of_blob
+
+  let find tx node =
+    let open Utilities.Result in
+    let* data = S.get tx node in
+    match data with
+    | None -> Ok None
+    | Some data ->
+       let* node = from_blob data in
+       Ok (Some node)
+
+  let find' tx node =
+    let open Utilities.Result in
+    let* child = find tx node in
+    match child with
+    | Some child -> Ok child
+    | None -> failwith "A child node was not found on the underlying storage. Either your database is corrupted, or this is a bug on RNT!"
 
   let rec lookup tx node key =
     let open Utilities.Result in
@@ -75,7 +126,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     | Leaf { values; _ } ->
        if found then Ok (Some (BatFingerTree.get values i)) else Ok None
     | Trunk { children; _ } ->
-       let* child = BatFingerTree.get children (if found then i+1 else i) |> find tx in
+       let* child = BatFingerTree.get children (if found then i+1 else i) |> find' tx in
        lookup tx child key
 
   let persist tx node =
@@ -85,7 +136,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     let* () = S.put tx addr data in
     Ok addr
 
-  type 'a op = Update of address * 'a node | Split of address * 'a key * address
+  type 'a op = Update of address * 'a node | Split of address * K.t * address
 
   let emplace i v ft =
     let fl, fr = BatFingerTree.split_at ft i in
@@ -103,8 +154,6 @@ module Make (S : Abstract.Storage.STORAGE) = struct
          Leaf { keys = emplace i key keys; values = emplace i value values }
     (* When in danger or in doubt: run in circles, scream and shout. *)
     | Trunk _ -> failwith "Cannot insert a value on a trunk node. This is a bug in RNT!"
-
-  let ceil a b = (a + b - 1) / b
 
   let pivot_at ft i =
     let l, r' = BatFingerTree.split_at ft i in
@@ -143,7 +192,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     let buffer = Buffer.create 1024 in
     BatFingerTree.iter
       (fun k ->
-        k#encode
+        K.encode k
         |> Concepts.Representation.bytes_of_blob
         |> Buffer.add_bytes buffer)
       ks;
@@ -185,7 +234,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     | Trunk { keys; children } ->
        let i, found = lookup1 keys key in
        let i = if found then i+1 else i in
-       let* child = BatFingerTree.get children i |> find tx in
+       let* child = BatFingerTree.get children i |> find' tx in
        let* r = insert' tx child key value in
        match r with
        | Update (addr, _) ->
@@ -212,3 +261,8 @@ module Make (S : Abstract.Storage.STORAGE) = struct
 
   let remove tx node key = failwith "TODO" [@@warning "-27"]
 end
+
+(* module type UTILS = functor (T : TREE) (V : VALUE) -> sig *)
+(*   val insert : S.transaction -> 'a node -> 'a key -> V.t -> ('a node, Concepts.Condition.condition) result *)
+(*   val lookup : S.transaction -> 'a node -> 'a key -> (V.t option, Concepts.Condition.condition) result *)
+(* end *)
