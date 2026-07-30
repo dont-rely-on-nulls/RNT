@@ -95,18 +95,29 @@ module Bencode = struct
     let peek () = if !pos >= n then Error (Error.unexpected_end) else Ok (s.[!pos]) in
     let advance () = incr pos in
     (* Read the decimal run up to (and consuming) [term]. *)
-    let read_int term =
-      let start = !pos in
-      while peek () <> Ok term do
-        advance ()
-      done;
-      let digits = String.sub s start (!pos - start) in
-      advance ();
-      match int_of_string_opt digits with
-      | Some i -> Ok i
-      | None -> Error (Error.malformed_integer digits)
+    let read_int_from start term =
+      let rec scan () =
+        let* c = peek () in
+        if c = term then begin
+          let digits = String.sub s start (!pos - start) in
+          advance ();
+          match int_of_string_opt digits with
+          | Some i -> Ok i
+          | None -> Error (Error.malformed_integer digits)
+        end
+        else begin
+          advance ();
+          scan ()
+        end
+      in
+      scan ()
     in
-    let read_char () = let c = peek () in advance (); c in
+    let read_int term = read_int_from !pos term in
+    let read_char () =
+      let* c = peek () in
+      advance ();
+      Ok c
+    in
     let rec parse () =
       let* c = peek () in
       advance ();
@@ -120,10 +131,12 @@ module Bencode = struct
          Ok (Int n)
       | 'l' -> parse_list []
       | 'd' -> parse_dict []
-      | c when c >= '0' && c <= '9' -> parse_string ()
+      | c when c >= '0' && c <= '9' -> parse_string_from (!pos - 1)
       | c -> Error (Error.unexpected_byte c)
     and parse_string () =
-      let* len = read_int ':' in
+      parse_string_from !pos
+    and parse_string_from start =
+      let* len = read_int_from start ':' in
       if len < 0 || !pos + len > n then
         Error (Error.string_out_of_bounds len)
       else
