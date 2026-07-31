@@ -22,6 +22,8 @@ module type TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> sig
 
   val hash_of : node -> address
 
+  val persist : S.transaction -> node -> (address, Concepts.Condition.condition) result
+
   val insert : S.transaction -> K.t -> address -> node -> (node, Concepts.Condition.condition) result
   val remove : S.transaction -> K.t -> node -> (node, Concepts.Condition.condition) result
   val lookup : S.transaction -> K.t -> node -> (address option, Concepts.Condition.condition) result
