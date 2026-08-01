@@ -1,25 +1,30 @@
-module type KEY = sig
+module type VALUE = sig
   type t
 
   val encode : t -> Concepts.Representation.blob
-  val compare : t -> t -> Concepts.Ordering.ordering
   val decode : Concepts.Representation.blob -> (t, Concepts.Condition.condition) result
+end
+
+module type KEY = sig
+  include VALUE
+
+  val compare : t -> t -> Concepts.Ordering.ordering
 end
 
 module type TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> sig
   type address = Concepts.Hash.hash
 
-  type 'a node
+  type node
 
-  val find : S.transaction -> address -> ('a node option, Concepts.Condition.condition) result
+  val find : S.transaction -> address -> (node option, Concepts.Condition.condition) result
 
-  val empty : 'a node
+  val empty : node
 
-  val hash_of : 'a node -> address
+  val hash_of : node -> address
 
-  val insert : S.transaction -> 'a node -> K.t -> address -> ('a node, Concepts.Condition.condition) result
-  val remove : S.transaction -> 'a node -> K.t -> ('a node, Concepts.Condition.condition) result
-  val lookup : S.transaction -> 'a node -> K.t -> (address option, Concepts.Condition.condition) result
+  val insert : S.transaction -> K.t -> address -> node -> (node, Concepts.Condition.condition) result
+  val remove : S.transaction -> K.t -> node -> (node, Concepts.Condition.condition) result
+  val lookup : S.transaction -> K.t -> node -> (address option, Concepts.Condition.condition) result
 end
 
 module Make : TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> struct
@@ -31,7 +36,7 @@ module Make : TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> struct
     let malformed_node () = condition "malformed-node" "A node representation did not conform to what was expected" empty
   end
 
-  type 'a node =
+  type node =
     Leaf of
       { keys : K.t BatFingerTree.t;
         values : address BatFingerTree.t }
@@ -104,7 +109,10 @@ module Make : TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> struct
 
   let to_blob node = to_bencode node |> Concepts.Codec.Bencode.to_blob
 
-  (* FIXME *)
+  (* TODO: we should probably cache this inside the node itself rather
+     than recalculating it every time. We could also allow the user to
+     create "uninterned" nodes that are not storage-backed, that could
+     be used for intermediates and the like. *)
   let hash_of node = to_blob node |> Concepts.Hash.hash_of_blob
 
   let find tx node =
@@ -123,7 +131,7 @@ module Make : TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> struct
     | Some child -> Ok child
     | None -> failwith "A child node was not found on the underlying storage. Either your database is corrupted, or this is a bug on RNT!"
 
-  let rec lookup tx node key =
+  let rec lookup tx key node =
     let open Utilities.Result in
     let i, found = lookup1 (keys_of node) key in
     match node with
@@ -131,7 +139,7 @@ module Make : TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> struct
        if found then Ok (Some (BatFingerTree.get values i)) else Ok None
     | Trunk { children; _ } ->
        let* child = BatFingerTree.get children (if found then i+1 else i) |> find' tx in
-       lookup tx child key
+       lookup tx key child
 
   let persist tx node =
     let open Utilities.Result in
@@ -140,7 +148,7 @@ module Make : TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> struct
     let* () = S.put tx addr data in
     Ok addr
 
-  type 'a op = Update of address * 'a node | Split of address * K.t * address
+  type op = Update of address * node | Split of address * K.t * address
 
   let emplace i v ft =
     let size = BatFingerTree.size ft in
@@ -156,7 +164,7 @@ module Make : TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> struct
       |> BatFingerTree.append fl
       |> (Fun.flip BatFingerTree.append) fr
 
-  let insert1 node key value =
+  let insert1 key value node =
     let i, present = lookup1 (keys_of node) key in
     match node with
     | Leaf ({ keys; values } as leaf) ->
@@ -237,17 +245,17 @@ module Make : TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> struct
        let* addr = persist tx node in
        Ok (Update (addr, node))
 
-  let rec insert' tx node key value =
+  let rec insert' tx key value node =
     let open Utilities.Result in
     match node with
     | Leaf _ ->
-       insert1 node key value
+       insert1 key value node
        |> commit_node tx
     | Trunk { keys; children } ->
        let i, found = lookup1 keys key in
        let i = if found then i+1 else i in
        let* child = BatFingerTree.get children i |> find' tx in
-       let* r = insert' tx child key value in
+       let* r = insert' tx key value child in
        match r with
        | Update (addr, _) ->
           Trunk { keys; children = BatFingerTree.set children i addr }
@@ -257,9 +265,9 @@ module Make : TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> struct
                   children = BatFingerTree.set children i l |> emplace (i + 1) r }
           |> commit_node tx
 
-  let insert tx node key value =
+  let insert tx key value node =
     let open Utilities.Result in
-    let* op = insert' tx node key value in
+    let* op = insert' tx key value node in
     match op with
     | Update (_, node) -> Ok node
     | Split (l, p, r) ->
@@ -271,10 +279,60 @@ module Make : TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> struct
        let* _ = persist tx new_root in
        Ok new_root
 
-  let remove tx node key = failwith "TODO" [@@warning "-27"]
+  let remove tx key node = failwith "TODO" [@@warning "-27"]
 end
 
-(* module type UTILS = functor (T : TREE) (V : VALUE) -> sig *)
-(*   val insert : S.transaction -> 'a node -> 'a key -> V.t -> ('a node, Concepts.Condition.condition) result *)
-(*   val lookup : S.transaction -> 'a node -> 'a key -> (V.t option, Concepts.Condition.condition) result *)
-(* end *)
+module type INTERFACE = functor (S : Abstract.Storage.STORAGE) (K : KEY) (V : VALUE) -> sig
+  type address
+  type node
+
+  val find : S.transaction -> address -> (node option, Concepts.Condition.condition) result
+
+  val empty : node
+
+  val hash_of : node -> address
+
+  val insert : S.transaction -> K.t -> V.t -> node -> (node, Concepts.Condition.condition) result
+  val remove : S.transaction -> K.t -> node -> (node, Concepts.Condition.condition) result
+  val lookup : S.transaction -> K.t -> node -> (V.t option, Concepts.Condition.condition) result
+end
+
+module Interface : INTERFACE = functor (S : Abstract.Storage.STORAGE) (K : KEY) (V : VALUE) -> struct
+  module T = Make (S) (K)
+
+  type address = T.address
+  type node = T.node
+
+  open Utilities.Result
+
+  let intern tx v =
+    let data = V.encode v in
+    let addr = Concepts.Hash.hash_of_blob data in
+    let* () = S.put tx addr data in
+    Ok addr
+
+  let retrieve tx addr =
+    let* data = S.get tx addr in
+    match data with
+    | None -> Ok None
+    | Some data ->
+       let* v = V.decode data in
+       Ok (Some v)
+
+  let find = T.find
+  let empty = T.empty
+  let hash_of = T.hash_of
+
+  let insert tx k v node =
+    let* addr = intern tx v in
+    T.insert tx k addr node
+
+  let remove = T.remove
+
+  let lookup tx k node =
+    let* addr = T.lookup tx k node in
+    match addr with
+    | None -> Ok None
+    | Some addr -> retrieve tx addr
+
+end
