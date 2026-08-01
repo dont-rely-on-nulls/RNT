@@ -3,6 +3,7 @@ type branch_index_root = address
 
 let fixed_label = "rnt.initialization"
 let fixed_label_address = Concepts.Hash.hash_of_bytes (Bytes.of_string fixed_label)
+let default_branch = "master"
 
 module Error = struct
   open Concepts.Condition
@@ -69,10 +70,41 @@ module Make (Store : Abstract.Storage.STORAGE) = struct
         | None -> Error (Error.missing_branch_index root)
         end
 
+  let store_blob tx blob =
+    let open Utilities.Result in
+    let address = Concepts.Hash.hash_of_blob blob in
+    let* () = Store.put tx address blob in
+    Ok address
+
+  let store_fixed_root tx root = Store.put tx fixed_label_address (address_to_blob root)
+
+  let create_initial_branch_state tx =
+    let open Utilities.Result in
+    let* empty_root = Branch_index.persist tx Branch_index.empty in
+    Concepts.BranchState.make ~current:empty_root ~history:empty_root ~tip:None
+    |> Concepts.BranchState.to_blob
+    |> store_blob tx
+
+  let ensure_default_branch tx root branch_index =
+    let open Utilities.Result in
+    let* current = Branch_index.lookup tx default_branch branch_index in
+    match current with
+    | Some _ -> Ok root
+    | None ->
+        let* branch_state = create_initial_branch_state tx in
+        let* branch_index =
+          Branch_index.insert tx default_branch branch_state branch_index
+        in
+        Ok (Branch_index.hash_of branch_index)
+
   let create_in_transaction tx =
     let open Utilities.Result in
-    let* root = Branch_index.persist tx Branch_index.empty in
-    let* () = Store.put tx fixed_label_address (address_to_blob root) in
+    let* branch_state = create_initial_branch_state tx in
+    let* branch_index =
+      Branch_index.insert tx default_branch branch_state Branch_index.empty
+    in
+    let root = Branch_index.hash_of branch_index in
+    let* () = store_fixed_root tx root in
     Ok root
 
   let read connection = with_transaction connection read_in_transaction
@@ -81,5 +113,18 @@ module Make (Store : Abstract.Storage.STORAGE) = struct
     with_transaction connection (fun tx ->
         let open Utilities.Result in
         let* current = read_in_transaction tx in
-        match current with Some root -> Ok root | None -> create_in_transaction tx )
+        match current with
+        | None -> create_in_transaction tx
+        | Some root ->
+            let* branch_index = Branch_index.find tx root in
+            begin match branch_index with
+            | None -> Error (Error.missing_branch_index root)
+            | Some branch_index ->
+                let* root' = ensure_default_branch tx root branch_index in
+                let* () =
+                  if Concepts.Hash.hash_equals root root' then Ok ()
+                  else store_fixed_root tx root'
+                in
+                Ok root'
+            end )
 end
