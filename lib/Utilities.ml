@@ -1,14 +1,6 @@
 module Result = struct
   let ( let* ) = Result.bind
   let fmap f m = Result.bind m f
-
-  let sequence ms = List.fold_right
-                      (fun m acc ->
-                        let* acc = acc in
-                        let* m = m in
-                        Ok (m::acc))
-                      ms
-                      (Ok [])
 end
 
 module type SEQUENCE = sig
@@ -32,7 +24,7 @@ module Generic (S : SEQUENCE) = struct
 end
 
 module List = struct
-  module ListSequence : SEQUENCE = struct
+  module ListSequence : SEQUENCE with type 'a t = 'a list = struct
     type 'a t = 'a list
 
     let empty = []
@@ -44,7 +36,7 @@ module List = struct
 end
 
 module FingerTree = struct
-  module FingerTreeSequence : SEQUENCE = struct
+  module FingerTreeSequence : SEQUENCE with type 'a t = 'a BatFingerTree.t = struct
     type 'a t = 'a BatFingerTree.t
 
     let empty = BatFingerTree.empty
