@@ -1,9 +1,9 @@
 type address = Hash.hash
 
-type t =
-  { current: address;
-    history: address;
-    tip: address option }
+(* A branch state records durable branch data only. The runtime registry paths
+   mounted around it, such as /system/branches/master, are derived at
+   initialization and should not be persisted as part of [current]. *)
+type t = {current: address; history: address; tip: address option}
 
 module Field = struct
   let current = "current"
@@ -24,11 +24,9 @@ module Error = struct
 end
 
 let make ~current ~history ~tip = {current; history; tip}
-
 let current branch_state = branch_state.current
 let history branch_state = branch_state.history
 let tip branch_state = branch_state.tip
-
 let address_bencode address = Object.Field.address address
 
 let address_option_bencode = function
