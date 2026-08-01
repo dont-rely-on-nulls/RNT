@@ -109,7 +109,10 @@ module Make : TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> struct
 
   let to_blob node = to_bencode node |> Concepts.Codec.Bencode.to_blob
 
-  (* FIXME *)
+  (* TODO: we should probably cache this inside the node itself rather
+     than recalculating it every time. We could also allow the user to
+     create "uninterned" nodes that are not storage-backed, that could
+     be used for intermediates and the like. *)
   let hash_of node = to_blob node |> Concepts.Hash.hash_of_blob
 
   let find tx node =
