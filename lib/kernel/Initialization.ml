@@ -100,8 +100,6 @@ module Make (Store : Abstract.Storage.STORAGE) = struct
     let* () = store_fixed_root tx root in
     Ok root
 
-  let read connection = with_transaction connection read_in_transaction
-
   let initialize connection =
     with_transaction connection (fun tx ->
         let open Utilities.Result in
