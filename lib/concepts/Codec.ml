@@ -1,4 +1,4 @@
- module Error = struct
+module Error = struct
   open Condition
 
   let unexpected_end =
@@ -16,21 +16,19 @@
     condition "codec-string-out-of-bounds" "A string length runs past the end of input"
       ("length" |=| Value.Integer length)
 
-  let trailing_bytes =
-    condition "codec-trailing-bytes" "Bytes remain after a complete value" empty
+  let trailing_bytes = condition "codec-trailing-bytes" "Bytes remain after a complete value" empty
 
   let tag_mismatch ~expected ~actual =
     condition "codec-tag-mismatch" "A value with a different tag was expected"
-      ("expected" |=| Value.String (String.make 1 expected) &
-       "actual" |=| Value.String (String.make 1 actual))
+      ( "expected" |=| Value.String (String.make 1 expected)
+      & "actual" |=| Value.String (String.make 1 actual) )
 
   let type_mismatch ~expected =
     condition "codec-type-mismatch" "A Bencode value of a different shape was expected"
       ("expected" |=| Value.String expected)
 
   let missing_field key =
-    condition "codec-missing-field" "A required field is absent"
-      ("field" |=| Value.String key)
+    condition "codec-missing-field" "A required field is absent" ("field" |=| Value.String key)
 
   let unexpected_object ~expected ~actual =
     condition "codec-unexpected-object" "The decoded object is not of the expected kind"
@@ -49,38 +47,37 @@ end
    - List   "l" <element>* "e"
    - Dict   "d" (<String key> <value>)* "e" keys sorted on encode *)
 module Bencode = struct
-  type t = Tagged of char * t | Int of int | String of string | List of t list | Dict of (string * t) list
+  type t =
+    | Tagged of char * t
+    | Int of int
+    | String of string
+    | List of t list
+    | Dict of (string * t) list
 
   let rec encode buf = function
-    | Tagged (tag, value) ->
-       Buffer.add_char buf 't';
-       Buffer.add_char buf tag;
-       encode buf value
+    | Tagged (tag, value) -> Buffer.add_char buf 't'; Buffer.add_char buf tag; encode buf value
     | Int n ->
-       Buffer.add_char buf 'i';
-       Buffer.add_string buf (string_of_int n);
-       Buffer.add_char buf 'e'
+        Buffer.add_char buf 'i';
+        Buffer.add_string buf (string_of_int n);
+        Buffer.add_char buf 'e'
     | String s ->
-       Buffer.add_string buf (string_of_int (String.length s));
-       Buffer.add_char buf ':';
-       Buffer.add_string buf s
+        Buffer.add_string buf (string_of_int (String.length s));
+        Buffer.add_char buf ':';
+        Buffer.add_string buf s
     | List xs ->
-       Buffer.add_char buf 'l';
-       List.iter (encode buf) xs;
-       Buffer.add_char buf 'e'
+        Buffer.add_char buf 'l';
+        List.iter (encode buf) xs;
+        Buffer.add_char buf 'e'
     | Dict kvs ->
-       Buffer.add_char buf 'd';
-       List.iter
-         (fun (k, v) ->
-           encode buf (String k);
-           encode buf v )
-         (List.sort (fun (a, _) (b, _) -> String.compare a b) kvs);
-       Buffer.add_char buf 'e'
+        Buffer.add_char buf 'd';
+        List.iter
+          (fun (k, v) -> encode buf (String k); encode buf v)
+          (List.sort (fun (a, _) (b, _) -> String.compare a b) kvs);
+        Buffer.add_char buf 'e'
 
   let to_bytes (value : t) : bytes =
     let buf = Buffer.create 256 in
-    encode buf value;
-    Buffer.to_bytes buf
+    encode buf value; Buffer.to_bytes buf
 
   let as_string = function String s -> Ok s | _ -> Error (Error.type_mismatch ~expected:"string")
   let as_int = function Int n -> Ok n | _ -> Error (Error.type_mismatch ~expected:"integer")
@@ -92,7 +89,7 @@ module Bencode = struct
     let s = Bytes.to_string bytes in
     let n = String.length s in
     let pos = ref 0 in
-    let peek () = if !pos >= n then Error (Error.unexpected_end) else Ok (s.[!pos]) in
+    let peek () = if !pos >= n then Error Error.unexpected_end else Ok s.[!pos] in
     let advance () = incr pos in
     (* Read the decimal run up to (and consuming) [term]. *)
     let read_int_from start term =
@@ -106,8 +103,7 @@ module Bencode = struct
           | None -> Error (Error.malformed_integer digits)
         end
         else begin
-          advance ();
-          scan ()
+          advance (); scan ()
         end
       in
       scan ()
@@ -115,43 +111,44 @@ module Bencode = struct
     let read_int term = read_int_from !pos term in
     let read_char () =
       let* c = peek () in
-      advance ();
-      Ok c
+      advance (); Ok c
     in
     let rec parse () =
       let* c = peek () in
       advance ();
       match c with
       | 't' ->
-         let* tag = read_char () in
-         let* data = parse () in
-         Ok (Tagged (tag, data))
+          let* tag = read_char () in
+          let* data = parse () in
+          Ok (Tagged (tag, data))
       | 'i' ->
-         let* n = read_int 'e' in
-         Ok (Int n)
+          let* n = read_int 'e' in
+          Ok (Int n)
       | 'l' -> parse_list []
       | 'd' -> parse_dict []
       | c when c >= '0' && c <= '9' -> parse_string_from (!pos - 1)
       | c -> Error (Error.unexpected_byte c)
-    and parse_string () =
-      parse_string_from !pos
+    and parse_string () = parse_string_from !pos
     and parse_string_from start =
       let* len = read_int_from start ':' in
-      if len < 0 || !pos + len > n then
-        Error (Error.string_out_of_bounds len)
+      if len < 0 || !pos + len > n then Error (Error.string_out_of_bounds len)
       else
         let str = String.sub s !pos len in
         pos := !pos + len;
         Ok (String str)
     and parse_list acc =
       let* c = peek () in
-      if c = 'e' then (advance (); Ok (List (List.rev acc)))
+      if c = 'e' then (
+        advance ();
+        Ok (List (List.rev acc)) )
       else
         let* result = parse () in
         parse_list (result :: acc)
     and parse_dict acc =
       let* c = peek () in
-      if c = 'e' then (advance (); Ok (Dict (List.rev acc)))
+      if c = 'e' then (
+        advance ();
+        Ok (Dict (List.rev acc)) )
       else
         let* key = parse_string () in
         let* key = as_string key in
@@ -159,24 +156,17 @@ module Bencode = struct
         parse_dict ((key, value) :: acc)
     in
     let* value = parse () in
-    if !pos <> n then Error Error.trailing_bytes else
-      Ok value
+    if !pos <> n then Error Error.trailing_bytes else Ok value
 
   let to_blob x = to_bytes x |> Representation.blob_of_bytes
   let of_blob b = Representation.bytes_of_blob b |> of_bytes
 
   let with_tag t = function
-    | Tagged (t', v) ->
-       if t = t' then
-         Ok v
-       else
-         Error (Error.tag_mismatch ~expected:t ~actual:t')
+    | Tagged (t', v) -> if t = t' then Ok v else Error (Error.tag_mismatch ~expected:t ~actual:t')
     | _ -> Error (Error.type_mismatch ~expected:"tagged")
 
   let field key = function
     | Dict kvs -> (
-      match List.assoc_opt key kvs with
-      | Some v -> Ok v
-      | None -> Error (Error.missing_field key) )
+      match List.assoc_opt key kvs with Some v -> Ok v | None -> Error (Error.missing_field key) )
     | _ -> Error (Error.type_mismatch ~expected:"dict")
 end

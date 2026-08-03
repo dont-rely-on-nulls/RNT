@@ -2,7 +2,6 @@ open Rnt
 
 module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = struct
   open Alcotest
-
   module H = Helpers.Storage.Make (S) (C)
 
   let storage_and_retrieval conn =
@@ -26,7 +25,8 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
 
   let suite prefix =
     ( "storage/" ^ prefix,
-      [test_case "storage-and-retrieval" `Quick (H.with_connection storage_and_retrieval "storage-test")] )
+      [ test_case "storage-and-retrieval" `Quick
+          (H.with_connection storage_and_retrieval "storage-test") ] )
 end
 
 module LMDB = Make (Rnt.Backend.Storage.LMDB) (Helpers.Storage.LMDB_Configurator)
