@@ -1,6 +1,10 @@
 type address = Hash.hash
 type schema = string BatMap.String.t
-type t = {name: string; tuples: address; schema: schema}
+
+type t =
+  { name: string;
+    tuples: address;
+    schema: schema }
 
 module Field = struct
   let name = "name"
@@ -21,27 +25,31 @@ module Error = struct
 end
 
 let make ~name ~tuples ~schema = {name; tuples; schema}
+
 let name relation = relation.name
 let tuples relation = relation.tuples
 let schema relation = relation.schema
+
 let schema_empty = BatMap.String.empty
 
 let schema_of_list fields =
-  List.fold_left (fun acc (name, domain) -> BatMap.String.add name domain acc) schema_empty fields
+  List.fold_left (fun acc (name, domain) -> BatMap.String.add name domain acc) schema_empty
+    fields
 
 let schema_to_list schema = BatMap.String.bindings schema
 
 let schema_to_bencode schema =
   Codec.Bencode.Dict
-    (schema_to_list schema |> List.map (fun (name, domain) -> name, Codec.Bencode.String domain))
+    (schema_to_list schema
+    |> List.map (fun (name, domain) -> name, Codec.Bencode.String domain) )
 
 let schema_of_bencode value =
   let open Utilities.Result in
   let* fields = Codec.Bencode.as_dict value in
   fields
   |> List.map (fun (name, domain) ->
-      let* domain = Codec.Bencode.as_string domain in
-      Ok (name, domain) )
+         let* domain = Codec.Bencode.as_string domain in
+         Ok (name, domain) )
   |> sequence
   |> Result.map schema_of_list
 

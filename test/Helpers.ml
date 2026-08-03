@@ -33,12 +33,12 @@ module Storage = struct
   module Make (S : Abstract.Storage.STORAGE) (C : CONFIGURATOR) = struct
     let with_connection f dir () =
       with_temporary_directory dir begin fun dir ->
-          begin
-            let open Utilities.Result in
-            let* conn = S.connect (C.configure dir) in
-            Ok (f conn)
-          end
-          |> condition_as_failure
+        begin
+          let open Utilities.Result in
+          let* conn = S.connect (C.configure dir) in
+          Ok (f conn)
+        end
+        |> condition_as_failure
         end
   end
 end

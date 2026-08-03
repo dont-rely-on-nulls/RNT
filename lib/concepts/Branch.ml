@@ -1,5 +1,8 @@
 type address = Hash.hash
-type t = {name: string; target: address}
+
+type t =
+  { name: string;
+    target: address }
 
 module Field = struct
   let name = "name"
@@ -19,6 +22,7 @@ module Error = struct
 end
 
 let make ~name ~target = {name; target}
+
 let name branch = branch.name
 let target branch = branch.target
 
@@ -27,10 +31,13 @@ module Body = struct
 
   let tag = 'b'
   let malformed = Error.malformed_branch
-  let equal left right = left.name = right.name && Hash.hash_equals left.target right.target
+
+  let equal left right =
+    left.name = right.name && Hash.hash_equals left.target right.target
 
   let fields branch =
-    [Field.name, Object.Field.string branch.name; Field.target, Object.Field.address branch.target]
+    [ Field.name, Object.Field.string branch.name;
+      Field.target, Object.Field.address branch.target ]
 
   let of_fields data =
     let open Utilities.Result in
