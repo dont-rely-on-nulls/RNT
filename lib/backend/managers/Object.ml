@@ -54,6 +54,17 @@ type registry = {reference_count: int; handle_count: int; pinned: bool; entry: r
 
 type rnt_object_tree = {data: registry; subsequent: rnt_object_tree BatMap.String.t}
 
+module type RUNTIME_STRATEGY = sig
+  type 'a state
+
+  (* The exact snapshot observed on acquire *)
+  type 'a token
+
+  val create : 'a -> 'a state
+  val acquire : 'a state -> 'a * 'a token
+  val publish : 'a state -> 'a token -> 'a -> (unit, Concepts.Condition.condition) result
+end
+
 module Error = struct
   open Concepts.Condition
 
@@ -239,3 +250,94 @@ let unregister (path : Concepts.Path.t) (tree : rnt_object_tree) :
       end
   in
   Result.map (fun tree -> adjust_references (-1) edges tree) (remove path tree)
+
+module type MANAGER = sig
+  type t
+
+  val create : branch_index_root:Concepts.Hash.hash -> registry:rnt_object_tree -> t
+  val branch_index_root : t -> Concepts.Hash.hash
+  val find : t -> Concepts.Path.t -> registry option
+
+  val update :
+    t -> Concepts.Path.t -> (registry -> registry) -> (unit, Concepts.Condition.condition) result
+
+  val register : t -> Concepts.Path.t -> rnt_object -> (unit, Concepts.Condition.condition) result
+  val unregister : t -> Concepts.Path.t -> (unit, Concepts.Condition.condition) result
+
+  val with_namespace :
+    t ->
+    Concepts.Path.t ->
+    string ->
+    (rnt_object_kind -> bool) ->
+    string ->
+    rnt_object ->
+    (unit, Concepts.Condition.condition) result
+
+  val construct_multigroup :
+    t -> Concepts.Path.t -> string -> multigroup -> (unit, Concepts.Condition.condition) result
+
+  val construct_relation :
+    t -> Concepts.Path.t -> string -> relation -> (unit, Concepts.Condition.condition) result
+end
+
+(* Keep the immutable tree operations above as the implementation core, while
+   this functor owns publication of the current photograph. Runtime bootstraps
+   the first photograph and exposes this opaque manager to its consumers. *)
+module Make (Strategy : RUNTIME_STRATEGY) : MANAGER = struct
+  type photograph = {branch_index_root: Concepts.Hash.hash; registry: rnt_object_tree}
+  type t = {state: photograph Strategy.state}
+
+  let create ~branch_index_root ~registry = {state= Strategy.create {branch_index_root; registry}}
+
+  let branch_index_root manager =
+    let photograph, _ = Strategy.acquire manager.state in
+    photograph.branch_index_root
+
+  let find manager path =
+    let photograph, _ = Strategy.acquire manager.state in
+    find path photograph.registry
+
+  let modify manager transformation =
+    let open Utilities.Result in
+    let photograph, token = Strategy.acquire manager.state in
+    let* next, result = transformation photograph in
+    let* () = Strategy.publish manager.state token next in
+    Ok result
+
+  let update manager path f =
+    modify manager (fun photograph ->
+        let registry = update path f photograph.registry in
+        Ok ({photograph with registry}, ()) )
+
+  let register manager path object_ =
+    modify manager (fun photograph ->
+        let open Utilities.Result in
+        let* registry = register path object_ photograph.registry in
+        Ok ({photograph with registry}, ()) )
+
+  let unregister manager path =
+    modify manager (fun photograph ->
+        let open Utilities.Result in
+        let* registry = unregister path photograph.registry in
+        Ok ({photograph with registry}, ()) )
+
+  let with_namespace manager parent namespace_label predicate name object_ =
+    modify manager (fun photograph ->
+        let open Utilities.Result in
+        let* registry =
+          with_namespace parent namespace_label predicate name object_ photograph.registry
+        in
+        Ok ({photograph with registry}, ()) )
+
+  let construct_multigroup manager parent name multigroup =
+    modify manager (fun photograph ->
+        let open Utilities.Result in
+        let* registry = construct_multigroup parent name multigroup photograph.registry in
+        Ok ({photograph with registry}, ()) )
+
+  let construct_relation manager parent name relation =
+    modify manager (fun photograph ->
+        let open Utilities.Result in
+        let* registry = construct_relation parent name relation photograph.registry in
+        Ok ({photograph with registry}, ()) )
+end
