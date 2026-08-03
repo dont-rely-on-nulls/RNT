@@ -1,5 +1,8 @@
 type address = Hash.hash
-type t = {name: string; relations: address}
+
+type t =
+  { name: string;
+    relations: address }
 
 module Field = struct
   let name = "name"
@@ -19,6 +22,7 @@ module Error = struct
 end
 
 let make ~name ~relations = {name; relations}
+
 let name multigroup = multigroup.name
 let relations multigroup = multigroup.relations
 
@@ -27,7 +31,9 @@ module Body = struct
 
   let tag = 'm'
   let malformed = Error.malformed_multigroup
-  let equal left right = left.name = right.name && Hash.hash_equals left.relations right.relations
+
+  let equal left right =
+    left.name = right.name && Hash.hash_equals left.relations right.relations
 
   let fields multigroup =
     [ Field.name, Object.Field.string multigroup.name;
