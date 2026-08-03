@@ -10,7 +10,6 @@ end
 
 module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = struct
   open Alcotest
-
   module H = Helpers.Storage.Make (S) (C)
   module T = Rnt.Kernel.Merkle.Interface (S) (StringKey) (StringKey)
 
@@ -20,10 +19,11 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
       begin
         let open Utilities.Result in
         let* tx = S.start conn in
-        let* node = T.empty
-                    |> T.insert tx "k1" "v1"
-                    |> fmap (T.insert tx "k2" "v2")
-                    |> fmap (T.insert tx "k3" "v3")
+        let* node =
+          T.empty
+          |> T.insert tx "k1" "v1"
+          |> fmap (T.insert tx "k2" "v2")
+          |> fmap (T.insert tx "k3" "v3")
         in
         let* node' = T.insert tx "k3" "toodles" node in
         let* v1 = T.lookup tx "k1" node in
@@ -46,10 +46,11 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
       begin
         let open Utilities.Result in
         let* tx = S.start conn in
-        let* node = T.empty
-                    |> T.insert tx "k1" "v1"
-                    |> fmap (T.insert tx "k2" "v2")
-                    |> fmap (T.insert tx "k3" "v3")
+        let* node =
+          T.empty
+          |> T.insert tx "k1" "v1"
+          |> fmap (T.insert tx "k2" "v2")
+          |> fmap (T.insert tx "k3" "v3")
         in
         let* () = S.commit tx in
         Ok (T.hash_of node)
@@ -78,8 +79,8 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
 
   let suite prefix =
     ( "merkle/" ^ prefix,
-      [test_case "insert-and-lookup" `Quick (H.with_connection insert_and_lookup "merkle-test");
-       test_case "persistence" `Quick (H.with_connection persistence "merkle-test")])
+      [ test_case "insert-and-lookup" `Quick (H.with_connection insert_and_lookup "merkle-test");
+        test_case "persistence" `Quick (H.with_connection persistence "merkle-test") ] )
 end
 
 module LMDB = Make (Rnt.Backend.Storage.LMDB) (Helpers.Storage.LMDB_Configurator)

@@ -79,7 +79,8 @@ let rec cascade (tree : tree) (disposals : disposal BatFingerTree.t) (path : Con
           in
           Result.bind (Object.unregister path tree) (fun tree ->
               BatFingerTree.fold_left
-                (fun acc dep -> Result.bind acc (fun (tree, disposals) -> cascade tree disposals dep))
+                (fun acc dep ->
+                  Result.bind acc (fun (tree, disposals) -> cascade tree disposals dep) )
                 (Ok (tree, disposals))
                 edges )
       end

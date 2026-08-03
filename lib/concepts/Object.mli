@@ -4,13 +4,10 @@ module type S = sig
   type t
 
   val equal : t -> t -> bool
-
   val to_bencode : t -> bencode
   val of_bencode : bencode -> (t, Condition.condition) result
-
   val to_blob : t -> Representation.blob
   val of_blob : Representation.blob -> (t, Condition.condition) result
-
   val to_bytes : t -> bytes
   val of_bytes : bytes -> (t, Condition.condition) result
 end
@@ -20,7 +17,6 @@ module type OBJECT = S
 module Field : sig
   val string : string -> bencode
   val address : Hash.hash -> bencode
-
   val require_string : string -> bencode -> (string, Condition.condition) result
 
   val require_address :
