@@ -12,4 +12,6 @@ module FingerTree : sig
   val zip : 'a BatFingerTree.t -> 'b BatFingerTree.t -> ('a * 'b) BatFingerTree.t
 
   val sequence : ('a, 'b) result BatFingerTree.t -> ('a BatFingerTree.t, 'b) result
+
+  val join : string BatFingerTree.t -> string -> string
 end

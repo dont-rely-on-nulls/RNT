@@ -64,4 +64,8 @@ module FingerTree = struct
     frob xs ys BatFingerTree.empty
 
   let zip xs ys = map2 (fun x y -> x, y) xs ys
+
+  let join ss sep =
+    BatFingerTree.print ~first:"" ~last:"" ~sep:sep BatIO.nwrite
+    |> Fun.flip BatIO.to_string ss
 end
