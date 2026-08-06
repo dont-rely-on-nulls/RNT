@@ -316,6 +316,8 @@ module type INTERFACE = functor (S : Abstract.Storage.STORAGE) (K : KEY) (V : VA
   val lookup : S.transaction -> K.t -> node -> (V.t option, Concepts.Condition.condition) result
 
   val fold_left : S.transaction -> ('c -> K.t -> V.t -> 'c) -> 'c -> node -> ('c, Concepts.Condition.condition) result
+
+  val iter : S.transaction -> (K.t -> V.t -> 'a) -> node -> (unit, Concepts.Condition.condition) result
 end
 
 module Interface : INTERFACE = functor (S : Abstract.Storage.STORAGE) (K : KEY) (V : VALUE) -> struct
@@ -370,4 +372,9 @@ module Interface : INTERFACE = functor (S : Abstract.Storage.STORAGE) (K : KEY) 
         Ok (f acc k v))
       (Ok acc) node
     |> Result.join
+
+  let iter tx f node =
+    fold_left tx
+      (fun _ k v -> f k v |> ignore)
+      () node
 end
