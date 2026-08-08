@@ -83,8 +83,8 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
                     |> fmap (T.insert tx "k2" "v2")
                     |> fmap (T.insert tx "k3" "v3")
         in
-        let* keys = T.fold_left tx (fun acc k _ -> k :: acc) [] node in
-        let* values = T.fold_left tx (fun acc _ v -> v :: acc) [] node in
+        let* keys = T.fold_left tx (fun acc k _ -> k :: acc) [] node |> Result.map List.rev in
+        let* values = T.fold_left tx (fun acc _ v -> v :: acc) [] node |> Result.map List.rev in
         let* () = S.abort tx in
         Ok (keys, values)
       end
@@ -101,7 +101,7 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
     ( "merkle/" ^ prefix,
       [test_case "insert-and-lookup" `Quick (H.with_connection insert_and_lookup "merkle-test");
        test_case "persistence" `Quick (H.with_connection persistence "merkle-test");
-       test_case "iteration" `Quick (H.with_connection persistence "merkle-test")])
+       test_case "iteration" `Quick (H.with_connection iteration "merkle-test")])
 end
 
 module LMDB = Make (Rnt.Backend.Storage.LMDB) (Helpers.Storage.LMDB_Configurator)

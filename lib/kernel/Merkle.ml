@@ -290,14 +290,13 @@ module Make : TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> struct
        Utilities.FingerTree.zip keys values
        |> BatFingerTree.fold_left (fun acc (k, v) -> f acc k v) acc
        |> Result.ok
-    | Trunk { keys; children } ->
-       Utilities.FingerTree.zip keys children
-       |> BatFingerTree.fold_left
-            (fun acc (_, addr) ->
-              let* acc = acc in
-              let* node = find' tx addr in
-              fold_left tx f acc node)
-            (Ok acc)
+    | Trunk { children; _ } ->
+       BatFingerTree.fold_left
+         (fun acc addr ->
+           let* acc = acc in
+           let* node = find' tx addr in
+           fold_left tx f acc node)
+         (Ok acc) children
 
 end
 
