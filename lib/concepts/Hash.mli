@@ -19,6 +19,9 @@ val to_raw_string : hash -> string
 (** given a string containing a representation of a hash (as per `to_raw_string`), return the corresponding hash *)
 val of_raw_string : string -> hash
 
+(** given a hash, return a representation of it as a string suitable for being displayed to humans *)
+val to_hum_string : hash -> string
+
 (** compare two hashes lexicographically *)
 val compare : hash -> hash -> Ordering.ordering
 
