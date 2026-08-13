@@ -21,8 +21,8 @@ module Make (Store : Abstract.Storage.STORAGE) = struct
   type tree = Tree.node
 
   let empty = Tree.empty
+  let empty_under = Tree.empty_under
   let hash_of = Tree.hash_of
-  let persist = Tree.persist
   let find = Tree.find
   let find_branch = Tree.lookup
   let put_branch = Tree.insert
