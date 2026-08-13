@@ -30,20 +30,7 @@ let address_of_blob blob =
 
 module Make (Store : Abstract.Storage.STORAGE) = struct
   module Branch_index = BranchIndex.Make (Store)
-
-  let finish tx = function
-    | Ok value ->
-        let open Utilities.Result in
-        let* () = Store.commit tx in
-        Ok value
-    | Error condition ->
-        let _ = Store.abort tx in
-        Error condition
-
-  let with_transaction connection body =
-    let open Utilities.Result in
-    let* tx = Store.start connection in
-    body tx |> finish tx
+  module S = Storage.Make (Store)
 
   let read_in_transaction tx =
     let open Utilities.Result in
@@ -58,12 +45,6 @@ module Make (Store : Abstract.Storage.STORAGE) = struct
         | None -> Error (Error.missing_branch_index root)
         end
 
-  let store_blob tx blob =
-    let open Utilities.Result in
-    let address = Concepts.Hash.hash_of_blob blob in
-    let* () = Store.put tx address blob in
-    Ok address
-
   let store_fixed_root tx root = Store.put tx fixed_label_address (address_to_blob root)
 
   let create_initial_branch_state tx =
@@ -74,7 +55,7 @@ module Make (Store : Abstract.Storage.STORAGE) = struct
     let* empty_root = Branch_index.persist tx Branch_index.empty in
     Concepts.BranchState.make ~current:empty_root ~history:empty_root ~tip:None
     |> Concepts.BranchState.to_blob
-    |> store_blob tx
+    |> S.store_blob tx
 
   let ensure_default_branch tx root branch_index =
     let open Utilities.Result in
@@ -101,7 +82,7 @@ module Make (Store : Abstract.Storage.STORAGE) = struct
     Ok root
 
   let initialize connection =
-    with_transaction connection (fun tx ->
+    S.with_transaction connection (fun tx ->
         let open Utilities.Result in
         let* current = read_in_transaction tx in
         match current with
