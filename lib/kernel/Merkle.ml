@@ -339,3 +339,11 @@ module Interface : INTERFACE = functor (S : Abstract.Storage.STORAGE) (K : KEY) 
     | Some addr -> retrieve tx addr
 
 end
+
+module StringKey : KEY with type t = string = struct
+  type t = string
+
+  let encode s = String.to_bytes s |> Concepts.Representation.blob_of_bytes
+  let compare s1 s2 = String.compare s1 s2 |> Concepts.Ordering.of_int
+  let decode b = Concepts.Representation.bytes_of_blob b |> String.of_bytes |> Result.ok
+end
