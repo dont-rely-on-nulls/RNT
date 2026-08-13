@@ -52,7 +52,7 @@ module Make (Store : Abstract.Storage.STORAGE) = struct
     (* The first branch state has no synthetic "genesis" commit. Both [current]
        and [history] point at persisted empty trees; the runtime mounts /system
        around those roots after initialization. *)
-    let* empty_root = Branch_index.persist tx Branch_index.empty in
+    let* empty_root = Branch_index.empty_under tx in
     Concepts.BranchState.make ~current:empty_root ~history:empty_root ~tip:None
     |> Concepts.BranchState.to_blob
     |> S.store_blob tx

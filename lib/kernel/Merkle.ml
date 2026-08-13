@@ -19,10 +19,9 @@ module type TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> sig
   val find : S.transaction -> address -> (node option, Concepts.Condition.condition) result
 
   val empty : node
+  val empty_under : S.transaction -> (address, Concepts.Condition.condition) result
 
   val hash_of : node -> address
-
-  val persist : S.transaction -> node -> (address, Concepts.Condition.condition) result
 
   val insert : S.transaction -> K.t -> address -> node -> (node, Concepts.Condition.condition) result
   val remove : S.transaction -> K.t -> node -> (node, Concepts.Condition.condition) result
@@ -149,6 +148,8 @@ module Make : TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> struct
     let addr = Concepts.Hash.hash_of_blob data in
     let* () = S.put tx addr data in
     Ok addr
+
+  let empty_under tx = persist tx empty
 
   type op = Update of address * node | Split of address * K.t * address
 

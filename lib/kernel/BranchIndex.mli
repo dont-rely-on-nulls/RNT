@@ -9,8 +9,8 @@ module Make (Store : Abstract.Storage.STORAGE) : sig
   type tree
 
   val empty : tree
+  val empty_under : Store.transaction -> (address, Concepts.Condition.condition) result
   val hash_of : tree -> root
-  val persist : Store.transaction -> tree -> (root, Concepts.Condition.condition) result
   val find : Store.transaction -> root -> (tree option, Concepts.Condition.condition) result
 
   val find_branch :
