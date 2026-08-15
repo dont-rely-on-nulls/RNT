@@ -34,7 +34,7 @@ module Make (Store : Abstract.Storage.STORAGE) = struct
 
   let read_in_transaction tx =
     let open Utilities.Result in
-    let* fixed = Store.get tx fixed_label_address in
+    let* fixed = Store.get tx (Store.Hash fixed_label_address) in
     match fixed with
     | None -> Ok None
     | Some fixed ->
@@ -45,7 +45,7 @@ module Make (Store : Abstract.Storage.STORAGE) = struct
         | None -> Error (Error.missing_branch_index root)
         end
 
-  let store_fixed_root tx root = Store.put tx fixed_label_address (address_to_blob root)
+  let store_fixed_root tx root = Store.put tx (Store.Hash fixed_label_address) (address_to_blob root)
 
   let create_initial_branch_state tx =
     let open Utilities.Result in

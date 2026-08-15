@@ -7,6 +7,8 @@ module type STORAGE = sig
   type connection
   type transaction
 
+  type address = Label of string | Hash of Concepts.Hash.hash
+
   val connect : Concepts.Configuration.term -> (connection, Concepts.Condition.condition) result
 
   (** begin a transaction within `connection` *)
@@ -21,13 +23,13 @@ module type STORAGE = sig
   (** within a transaction, fetch a blob from disk *)
   val get :
     transaction ->
-    Concepts.Hash.hash ->
+    address ->
     (Concepts.Representation.blob option, Concepts.Condition.condition) result
 
   (** within a transaction, associate a hash with a blob on disk *)
   val put :
     transaction ->
-    Concepts.Hash.hash ->
+    address ->
     Concepts.Representation.blob ->
     (unit, Concepts.Condition.condition) result
 end

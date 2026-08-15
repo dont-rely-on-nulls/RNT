@@ -118,7 +118,7 @@ module Make : TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> struct
 
   let find tx node =
     let open Utilities.Result in
-    let* data = S.get tx node in
+    let* data = S.get tx (S.Hash node) in
     match data with
     | None -> Ok None
     | Some data ->
@@ -146,7 +146,7 @@ module Make : TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> struct
     let open Utilities.Result in
     let data = to_blob node in
     let addr = Concepts.Hash.hash_of_blob data in
-    let* () = S.put tx addr data in
+    let* () = S.put tx (S.Hash addr) data in
     Ok addr
 
   let empty_under tx = persist tx empty
@@ -286,7 +286,7 @@ module Make : TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> struct
 end
 
 module type INTERFACE = functor (S : Abstract.Storage.STORAGE) (K : KEY) (V : VALUE) -> sig
-  type address
+  type address = Concepts.Hash.hash
   type node
 
   val find : S.transaction -> address -> (node option, Concepts.Condition.condition) result
@@ -311,11 +311,11 @@ module Interface : INTERFACE = functor (S : Abstract.Storage.STORAGE) (K : KEY) 
   let intern tx v =
     let data = V.encode v in
     let addr = Concepts.Hash.hash_of_blob data in
-    let* () = S.put tx addr data in
+    let* () = S.put tx (S.Hash addr) data in
     Ok addr
 
   let retrieve tx addr =
-    let* data = S.get tx addr in
+    let* data = S.get tx (S.Hash addr) in
     match data with
     | None -> Ok None
     | Some data ->

@@ -13,9 +13,9 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
       begin
         let open Utilities.Result in
         let* tx = S.start conn in
-        let* v = S.get tx key in
-        let* () = S.put tx key blob in
-        let* v' = S.get tx key in
+        let* v = S.get tx (S.Hash key) in
+        let* () = S.put tx (S.Hash key) blob in
+        let* v' = S.get tx (S.Hash key) in
         Ok Concepts.Representation.(Option.map value_of_blob v, Option.map value_of_blob v')
       end
       |> Helpers.condition_as_failure
