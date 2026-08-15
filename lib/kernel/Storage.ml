@@ -16,7 +16,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
   let store_blob tx blob =
     let open Utilities.Result in
     let address = Concepts.Hash.hash_of_blob blob in
-    let* () = S.put tx address blob in
+    let* () = S.put tx (S.Hash address) blob in
     Ok address
 
 end

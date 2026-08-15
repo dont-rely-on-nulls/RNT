@@ -129,6 +129,8 @@ end
 type connection = {env: C.mdb_env_ptr; dbi: C.mdb_dbi}
 type transaction = {tx: C.mdb_txn_ptr; dbi: C.mdb_dbi}
 
+type address = Label of string | Hash of Concepts.Hash.hash
+
 let parse (c : Concepts.Configuration.term) =
   let open Concepts.Configuration in
   let open Utilities.Result in
@@ -170,16 +172,20 @@ let abort ({tx; _} : transaction) = C.mdb_txn_abort tx |> Result.map_error Error
  * opens the path for avoiding a copy on the FFI boundary later on
  *)
 
-let get ({tx; dbi} : transaction) (h : Concepts.Hash.hash) =
-  begin match C.mdb_get' tx dbi (Concepts.Hash.bytes_of_hash h) with
+let bytes_of_address = function
+  | Label s -> String.to_bytes s
+  | Hash h -> Concepts.Hash.bytes_of_hash h
+
+let get ({tx; dbi} : transaction) (addr : address) =
+  begin match C.mdb_get' tx dbi (bytes_of_address addr) with
   | Ok x -> Ok (Some (Concepts.Representation.blob_of_bytes x))
   | Error e when e = C.Errors.mdb_notfound -> Ok None
   | Error e -> Error e
   end
   |> Result.map_error Error.lmdb_error
 
-let put ({tx; dbi} : transaction) (h : Concepts.Hash.hash) (b : Concepts.Representation.blob) =
-  C.mdb_put' tx dbi (Concepts.Hash.bytes_of_hash h)
+let put ({tx; dbi} : transaction) (addr : address) (b : Concepts.Representation.blob) =
+  C.mdb_put' tx dbi (bytes_of_address addr)
     (Concepts.Representation.bytes_of_blob b)
     Unsigned.UInt.zero
   |> Result.map_error Error.lmdb_error
