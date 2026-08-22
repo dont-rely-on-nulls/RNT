@@ -1,3 +1,9 @@
+module Ordering : sig
+  type t = Equal | Smaller | Greater
+
+  val of_int : int -> t
+end
+
 module Result : sig
   val ( let* ) : ('a, 'e) result -> ('a -> ('b, 'e) result) -> ('b, 'e) result
   val fmap : ('a -> ('b, 'e) result) -> ('a, 'e) result -> ('b, 'e) result

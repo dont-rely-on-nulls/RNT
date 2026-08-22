@@ -1,3 +1,33 @@
+(* A blob is a one-byte constructor tag followed by its payload. The
+   tag makes the encoding self-describing so [value_of_blob] can
+   recover the constructor:
+   - String  ['\000'] ++ raw utf-8 bytes
+   - Integer ['\001'] ++ 8-byte big-endian int64 *)
+let tag_string = '\000'
+let tag_integer = '\001'
+
+let blob_of_value = function
+  | Value.String s ->
+      let b = Blob.create (1 + String.length s) in
+      Blob.set b 0 tag_string;
+      Blob.blit_string s 0 b 1 (String.length s);
+      b
+  | Value.Integer n ->
+      let b = Blob.create 9 in
+      Blob.set b 0 tag_integer;
+      Blob.set_int64_be b 1 (Int64.of_int n);
+      b
+
+let value_of_blob (b : Blob.t) =
+  let n = Blob.length b in
+  if n = 0 then invalid_arg "value_of_blob: empty blob";
+  match Blob.get b 0 with
+  | c when c = tag_string -> Value.String (Blob.sub_string b 1 (n - 1))
+  | c when c = tag_integer ->
+      if n <> 9 then invalid_arg "value_of_blob: malformed integer payload";
+      Value.Integer (Int64.to_int (Blob.get_int64_be b 1))
+  | c -> invalid_arg (Printf.sprintf "value_of_blob: unknown tag %C" c)
+
  module Error = struct
   open Condition
 
@@ -162,8 +192,8 @@ module Bencode = struct
     if !pos <> n then Error Error.trailing_bytes else
       Ok value
 
-  let to_blob x = to_bytes x |> Representation.blob_of_bytes
-  let of_blob b = Representation.bytes_of_blob b |> of_bytes
+  let to_blob x = to_bytes x |> Blob.blob_of_bytes
+  let of_blob b = Blob.bytes_of_blob b |> of_bytes
 
   let with_tag t = function
     | Tagged (t', v) ->
@@ -179,4 +209,63 @@ module Bencode = struct
       | Some v -> Ok v
       | None -> Error (Error.missing_field key) )
     | _ -> Error (Error.type_mismatch ~expected:"dict")
+end
+
+module Field = struct
+  let string value = Bencode.String value
+  let address address = Bencode.String (Hash.to_raw_string address)
+
+  let require_string key data =
+    Bencode.field key data |> Utilities.Result.fmap Bencode.as_string
+
+  let require_address ~malformed key data =
+    let open Utilities.Result in
+    let* raw = require_string key data in
+    if String.length raw = Hash.size then Ok (Hash.of_raw_string raw)
+    else Error (malformed (String.length raw))
+end
+
+module Record = struct
+  module type S = sig
+    type t
+
+    val equal : t -> t -> bool
+
+    val to_bencode : t -> Bencode.t
+    val of_bencode : Bencode.t -> (t, Condition.condition) result
+
+    val to_blob : t -> Blob.t
+    val of_blob : Blob.t -> (t, Condition.condition) result
+
+    val to_bytes : t -> bytes
+    val of_bytes : bytes -> (t, Condition.condition) result
+  end
+
+  module type BODY = sig
+    type t
+
+    val tag : char
+    val malformed : unit -> Condition.condition
+    val equal : t -> t -> bool
+    val fields : t -> (string * Bencode.t) list
+    val of_fields : Bencode.t -> (t, Condition.condition) result
+  end
+
+  module Make (B : BODY) = struct
+    type t = B.t
+
+    let equal = B.equal
+    let to_bencode object_ = Bencode.Tagged (B.tag, Bencode.Dict (B.fields object_))
+
+    let of_bencode = function
+      | Bencode.Tagged (tag, (Bencode.Dict _ as data)) when Char.equal tag B.tag ->
+         B.of_fields data
+      | _ -> Error (B.malformed ())
+
+    let to_blob object_ = to_bencode object_ |> Bencode.to_blob
+    let of_blob blob = Bencode.of_blob blob |> Utilities.Result.fmap of_bencode
+
+    let to_bytes object_ = to_blob object_ |> Blob.bytes_of_blob
+    let of_bytes bytes = Bencode.of_bytes bytes |> Utilities.Result.fmap of_bencode
+  end
 end

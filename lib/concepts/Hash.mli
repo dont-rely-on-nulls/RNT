@@ -4,14 +4,11 @@ type hash
 (** the size of a hash, in bytes *)
 val size : int
 
-(** given a value, compute it's hash *)
-val hash_of_value : Value.value -> hash
-
 (** given a bag of bytes, compute it's hash *)
 val hash_of_bytes : bytes -> hash
 
 (** given a blob, compute it's hash *)
-val hash_of_blob : Representation.blob -> hash
+val hash_of_blob : Blob.t -> hash
 
 (** given a hash, return a representation of it as a string (/not/ the usual hex representation!) *)
 val to_raw_string : hash -> string

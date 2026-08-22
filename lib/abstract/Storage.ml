@@ -24,12 +24,12 @@ module type STORAGE = sig
   val get :
     transaction ->
     address ->
-    (Concepts.Representation.blob option, Concepts.Condition.condition) result
+    (Concepts.Blob.t option, Concepts.Condition.condition) result
 
   (** within a transaction, associate a hash with a blob on disk *)
   val put :
     transaction ->
     address ->
-    Concepts.Representation.blob ->
+    Concepts.Blob.t ->
     (unit, Concepts.Condition.condition) result
 end

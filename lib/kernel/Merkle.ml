@@ -1,8 +1,8 @@
 module type VALUE = sig
   type t
 
-  val encode : t -> Concepts.Representation.blob
-  val decode : Concepts.Representation.blob -> (t, Concepts.Condition.condition) result
+  val encode : t -> Concepts.Blob.t
+  val decode : Concepts.Blob.t -> (t, Concepts.Condition.condition) result
 end
 
 module type KEY = sig
@@ -65,12 +65,12 @@ module Make : TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> struct
     | Trunk { keys; _ } -> keys
 
   let of_bencode =
-    let open Concepts.Codec.Bencode in
+    let open Concepts.Encoding.Bencode in
     let open Utilities.Result in
     (* This is terrible *)
     let decode_key t = as_string t
                        |> Result.map String.to_bytes
-                       |> Result.map Concepts.Representation.blob_of_bytes
+                       |> Result.map Concepts.Blob.blob_of_bytes
                        |> fmap K.decode in
     let decode_value t = as_string t |> Result.map Concepts.Hash.of_raw_string in
     let decode_list f data = data
@@ -89,14 +89,14 @@ module Make : TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> struct
        Ok (Trunk { keys; children })
     | _ -> Error (Error.malformed_node ())
 
-  let from_blob blob = Concepts.Codec.Bencode.of_blob blob
+  let from_blob blob = Concepts.Encoding.Bencode.of_blob blob
                        |> Utilities.Result.fmap of_bencode
 
   let to_bencode =
-    let open Concepts.Codec.Bencode in
+    let open Concepts.Encoding.Bencode in
     (* Ditto. *)
     let bencode_key k = K.encode k
-                        |> Concepts.Representation.bytes_of_blob
+                        |> Concepts.Blob.bytes_of_blob
                         |> String.of_bytes
                         |> (fun s -> String s) in
     let bencode_hash h = String (Concepts.Hash.to_raw_string h) in
@@ -108,7 +108,7 @@ module Make : TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> struct
        Tagged ('#', Dict [("keys", List (BatFingerTree.to_list keys |> List.map bencode_key));
                           ("children", List (BatFingerTree.to_list children |> List.map bencode_hash))])
 
-  let to_blob node = to_bencode node |> Concepts.Codec.Bencode.to_blob
+  let to_blob node = to_bencode node |> Concepts.Encoding.Bencode.to_blob
 
   (* TODO: we should probably cache this inside the node itself rather
      than recalculating it every time. We could also allow the user to
@@ -216,7 +216,7 @@ module Make : TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> struct
     BatFingerTree.iter
       (fun k ->
         K.encode k
-        |> Concepts.Representation.bytes_of_blob
+        |> Concepts.Blob.bytes_of_blob
         |> Buffer.add_bytes buffer)
       ks;
     Concepts.Hash.hash_of_bytes (Buffer.to_bytes buffer)
@@ -343,7 +343,7 @@ end
 module StringKey : KEY with type t = string = struct
   type t = string
 
-  let encode s = String.to_bytes s |> Concepts.Representation.blob_of_bytes
+  let encode s = String.to_bytes s |> Concepts.Blob.blob_of_bytes
   let compare s1 s2 = String.compare s1 s2 |> Concepts.Ordering.of_int
-  let decode b = Concepts.Representation.bytes_of_blob b |> String.of_bytes |> Result.ok
+  let decode b = Concepts.Blob.bytes_of_blob b |> String.of_bytes |> Result.ok
 end

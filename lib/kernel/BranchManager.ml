@@ -1,11 +1,13 @@
-type branch = string
-
 module Error = struct
   open Concepts.Condition
 
   let invalid_root head =
     condition "invalid-root" "The root hash for the database state is missing from the backend. Either your storage is corrupted, or this is a bug in RNT!"
       ("hash" |=| (Concepts.Value.String (Concepts.Hash.to_hum_string head)))
+
+  let no_such_branch branch_name =
+    condition "no-such-branch" "A branch with the specified name was not found"
+      ("branch"    |=| Concepts.Value.String branch_name)
 
   let comparison_failed branch_name reference head =
     condition "comparison-failed" "The HEAD of the branch did not match what was expected"
@@ -44,16 +46,18 @@ module Make (S : Abstract.Storage.STORAGE) = struct
         let head = Atomic.get head in
         M.lookup tx branch_name head)
 
-  let update ({ storage; head; label } as manager) branch_name reference new_branch =
+  let update { storage; head; label } branch_name reference new_branch =
     let open Utilities.Result in
     let* _ = SI.with_transaction storage (fun tx ->
                  Utilities.Atomic.mswap head (fun head ->
-                     let* branch = M.lookup tx branch_name head in
+                     let* branch = M.lookup tx branch_name head
+                                   |> Result.map (Option.to_result ~none:(Error.no_such_branch branch_name))
+                                   |> Result.join in
                      if branch = reference then
                        let* new_head = M.insert tx label new_branch head in
-                       new_head
+                       Ok new_head
                      else
-                       Error.comparison_failed branch_name reference branch)) in
+                       Error (Error.comparison_failed branch_name reference branch))) in
     Ok ()
 
 end

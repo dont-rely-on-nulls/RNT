@@ -7,12 +7,9 @@ let size = 256/8
 let compare h1 h2 = Digestif.SHA256.unsafe_compare h1 h2
                     |> Ordering.of_int
 
-let hash_of_value (v : Value.value) =
-  Representation.(blob_of_value v |> bytes_of_blob) |> Digestif.SHA256.digest_bytes
-
 let hash_of_bytes bytes = Digestif.SHA256.digest_bytes bytes
 
-let hash_of_blob blob = Representation.bytes_of_blob blob |> Digestif.SHA256.digest_bytes
+let hash_of_blob blob = Blob.bytes_of_blob blob |> Digestif.SHA256.digest_bytes
 
 let to_raw_string hash = Digestif.SHA256.to_raw_string hash
 

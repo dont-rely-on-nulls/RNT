@@ -178,14 +178,14 @@ let bytes_of_address = function
 
 let get ({tx; dbi} : transaction) (addr : address) =
   begin match C.mdb_get' tx dbi (bytes_of_address addr) with
-  | Ok x -> Ok (Some (Concepts.Representation.blob_of_bytes x))
+  | Ok x -> Ok (Some (Concepts.Blob.blob_of_bytes x))
   | Error e when e = C.Errors.mdb_notfound -> Ok None
   | Error e -> Error e
   end
   |> Result.map_error Error.lmdb_error
 
-let put ({tx; dbi} : transaction) (addr : address) (b : Concepts.Representation.blob) =
+let put ({tx; dbi} : transaction) (addr : address) (b : Concepts.Blob.t) =
   C.mdb_put' tx dbi (bytes_of_address addr)
-    (Concepts.Representation.bytes_of_blob b)
+    (Concepts.Blob.bytes_of_blob b)
     Unsigned.UInt.zero
   |> Result.map_error Error.lmdb_error
