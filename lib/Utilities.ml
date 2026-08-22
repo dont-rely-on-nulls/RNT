@@ -17,6 +17,11 @@ module Result = struct
                       (Ok [])
 end
 
+module Option = struct
+  let ( let* ) = Option.bind
+  let fmap f m = Option.bind m f
+end
+
 module Atomic = struct
   let rec swap atom f =
     let v = Atomic.get atom in

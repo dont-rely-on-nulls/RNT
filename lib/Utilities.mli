@@ -10,6 +10,11 @@ module Result : sig
   val sequence : ('a, 'b) result list -> ('a list, 'b) result
 end
 
+module Option : sig
+  val ( let* ) : 'a option -> ('a -> 'b option) -> 'b option
+  val fmap : ('a -> 'b option) -> 'a option -> 'b option
+end
+
 module Atomic : sig
   val swap : 'a Atomic.t -> ('a -> 'a) -> 'a Atomic.t
   (* This is silly *)
