@@ -1,0 +1,149 @@
+* Goals
+The object manager:
+- works as a uniform interface to the resources exposed by the system;
+- provides a consistent way of tracking usage and managing access to parts of the system.
+
+* The Object System
+An object is something that exists as a part of the RNT system. An object has a "type", which denotes what it represents, and "protocols", which denote what it can do. Programs do not interact with objects directly, but do so through a handle. An object keeps track of how many handles to it are currently open, this is its reference count.
+
+A "protocol"[fn:1] represents the ability of an object to perform a given set of operations. For instance, an object that has a directory protocol can be seen as one that exposes an operation, =list=, that enumerates its children, and another operator, =open=, that, given a key, returns a handle to a specific child. Just like objects, programs do not interact with protocols directly, but do so through an interface. A handle is itself an interface, that, among other things, exposes an operation to retrieve interfaces to additional protocols of the object it represents.
+
+As a convention, we can denote a protocol as an ML structure as follows:
+#+begin_src ocaml
+  module Directory : sig
+    type t
+
+    val from : Handle.t -> t option
+
+    val list : t -> string list
+    val open : t -> string -> Handle.t option
+  end
+#+end_src
+In the example above, =Directory= is a protocol, and =Directory.t= is an interface. =list= is an operation that, given a =Directory= interface, enumerates the contents of the corresponding object. =open= is an operation that, given a =Directory= interface and a key, returns a =Handle= interface to the object associated with the given key, if it exists.
+
+=from= is not an operation of =Directory= per se. Rather, it can be seen as a polymorphic operation belonging to =Handle= that, given a handle and a protocol, returns an interface to that protocol iff it is supported by the corresponding object.
+
+It is convenient to refer to interfaces using the name of the protocol they belong to, so a "=Directory= interface" is simply a directory, and a "=Handle= interface" is simply a handle.
+
+What, more concretely, is a =Handle=? A =Handle= is the following protocol:
+#+begin_src ocaml
+  module Handle : sig
+    type t
+
+    val into : t -> (protocol -> 'a option) -> 'a option
+
+    val copy : t -> t option
+    val release : t -> unit
+  end
+#+end_src
+
+=copy= duplicates the handle, if it supports being duplicated. =release= releases the handle, decrementing the reference count of the object. No further operations may be called on a released handle.
+
+# Should this be inside `Handle`?
+=into= deserves some explanation. First, =protocol=, the type, is defined as an extensible variant:
+#+begin_src ocaml
+  type protocol = ..
+#+end_src
+
+Suppose we are to implement the =Directory= module outlined above. We can add a variant to this record, and use =into= to implement =from= in the following manner:
+
+#+begin_src ocaml
+  module Directory = struct
+    type t = < list : string list; open : string -> Handle.t option >
+
+    type protocol += Directory of t
+
+    let from h = Handle.into h (function Directory o -> Some o | _ -> None)
+
+    let list o = o#list
+    let open o k = o#open k
+  end
+#+end_src
+
+This gives us a way of implementing interfaces out of a corresponding OCaml object[fn:2]. We are, however, still missing a way of implementing objects themselves. For this, we first need to define what an object is, concretely:
+
+#+begin_src ocaml
+  module Object = struct
+    type t = < reference : unit; release : unit; protocols : protocols list >
+  end
+#+end_src
+
+How do we construct a =protocol=? Going back to our =Directory= structure, we may modify it slightly:
+
+#+begin_src ocaml
+  module Directory : sig
+    type t
+
+    val from : Handle.t -> t option
+
+    val list : t -> string list
+    val open : t -> string -> Handle.t option
+
+    module Provider : sig
+      type provider = < list : string list; open : string -> Handle.t option >
+
+      val make : provider -> protocol
+    end
+  end
+#+end_src
+
+=Directory.Provider.make= provides a way of constructing a =Directory= interface out of an OCaml object. =Directory.Provider.provider= has the same structure as the concrete definition of =Directory.t= above, although the similarities should be treated as merely incidental. A handle can be instantiated out of an =Object.t= in the same way:
+
+#+begin_src ocaml
+  module Handle : sig
+    type t
+
+    val into : t -> (protocol -> 'a option) -> 'a option
+
+    val copy : t -> t option
+    val release : t -> unit
+
+    module Provider : sig
+      val make : Object.t -> t
+    end
+  end
+#+end_src
+
+We can then implement an object exposing a =Directory= protocol as follows:
+#+begin_src ocaml
+  class empty_directory = object (self)
+    method reference = ()
+    method release = ()
+
+    method protocols = [Directory.Provider.make self]
+
+    method list = []
+    method open _ = None
+  end
+#+end_src
+
+[fn:1]: This was originally called a "capability", but represented something different than the term "capability" in "capability-based security". In the latter, an object in our sense could be considered a capability.
+[fn:2]: This could just as well have been a record of functions - there is nothing specific to the OCaml object system here.
+
+* The Object Tree
+RNT exposes its resources as a hierarchy of objects. The root of this tree is an object that implements, at least, the =Directory= and =Registry= protocols. A handle to the root of this tree can be obtained by calling =Kernel.ObjectManager.root=. =Registry= is declared as follows:
+#+begin_src ocaml
+  module Registry : sig
+    type t
+
+    val from : Handle.t -> t option
+
+    val register : key -> Handle.t -> (unit, Concepts.Condition.condition) result
+    val unregister : key -> (unit, Concepts.Condition.condition) result
+  end
+#+end_src
+=register= and =unregister=, as implemented by the root of the hierarchy, allows components to register resources that can be retrieved by users of the system through the corresponding =Directory= interface. The handle passed as an argument to =register= must support being "copy"ed.
+
+As a convenience, a =path= represents a pattern of traversal the object tree. The path ="branch" @/ "master" @/ "multigroup" @/ "universe" @/ this= represents the object that can be retrieved by, from a given reference point, "open"ing the child denoted by ="branch"= on the given reference point, then "open"ing the child denoted ="master"= on the retrieved object, and so on. Every traversal assumes that the object in question has a =Directory= protocol. The ability to construct and manipulate paths is implemented by the =Path= module:
+#+begin_src ocaml
+  module Path : sig
+    type path
+
+    val this : path
+    val (@/) : string -> path -> path
+
+    val lookup : Handle.t -> path -> Handle.t option
+  end
+#+end_src
+
+=ObjectManager.lookup= is a convenience function that applies =Path.lookup= to the root of the object tree.
