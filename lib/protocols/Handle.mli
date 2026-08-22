@@ -10,7 +10,7 @@ class type obj = object
   method protocols : protocol list
 end
 
-val make : obj -> t
+val make : #obj -> t
 
 val into : t -> (protocol -> 'a option) -> 'a interface option
 

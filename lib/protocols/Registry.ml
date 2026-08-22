@@ -7,7 +7,7 @@ type Handle.protocol += Registry of implementation
 
 type t = implementation
 
-let make impl = Registry impl
+let make impl = Registry (impl :> implementation)
 
 let from handle = Handle.into handle (function Registry impl -> Some impl | _ -> None)
 

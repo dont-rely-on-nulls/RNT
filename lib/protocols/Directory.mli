@@ -5,7 +5,7 @@ class type implementation = object
   method find : string -> Handle.t option
 end
 
-val make : implementation -> Handle.protocol
+val make : #implementation -> Handle.protocol
 
 val from : Handle.t -> t Handle.interface option
 

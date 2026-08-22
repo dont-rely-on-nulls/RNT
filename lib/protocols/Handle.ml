@@ -18,7 +18,7 @@ let object_of { valid; refers_to } =
 
 let interface_of handle interface = { handle; interface }
 
-let make o = { valid = ref true; refers_to = o }
+let make o = { valid = ref true; refers_to = (o :> obj) }
 
 let into handle f =
   List.find_map f (object_of handle)#protocols

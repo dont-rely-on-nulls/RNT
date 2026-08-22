@@ -7,7 +7,7 @@ type Handle.protocol += Directory of implementation
 
 type t = implementation
 
-let make impl = Directory impl
+let make impl = Directory (impl :> implementation)
 
 let from handle = Handle.into handle (function Directory impl -> Some impl | _ -> None)
 
