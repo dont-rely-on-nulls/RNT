@@ -27,6 +27,8 @@ module type TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> sig
   val insert : S.transaction -> K.t -> address -> node -> (node, Concepts.Condition.condition) result
   val remove : S.transaction -> K.t -> node -> (node, Concepts.Condition.condition) result
   val lookup : S.transaction -> K.t -> node -> (address option, Concepts.Condition.condition) result
+
+  val fold_left : S.transaction -> ('c -> K.t -> address -> 'c) -> 'c -> node -> ('c, Concepts.Condition.condition) result
 end
 
 module Make : TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> struct
@@ -77,7 +79,7 @@ module Make : TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> struct
     let decode_list f data = data
                              |> fmap as_list
                              |> Result.map (List.map f)
-                             |> fmap sequence
+                             |> fmap Utilities.List.sequence
                              |> Result.map BatFingerTree.of_list in
     function
     | Tagged ('!', (Dict _ as data)) ->
@@ -117,18 +119,18 @@ module Make : TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> struct
      be used for intermediates and the like. *)
   let hash_of node = to_blob node |> Concepts.Hash.hash_of_blob
 
-  let find tx node =
+  let find tx addr =
     let open Utilities.Result in
-    let* data = S.get tx node in
+    let* data = S.get tx addr in
     match data with
     | None -> Ok None
     | Some data ->
        let* node = from_blob data in
        Ok (Some node)
 
-  let find' tx node =
+  let find' tx addr =
     let open Utilities.Result in
-    let* child = find tx node in
+    let* child = find tx addr in
     match child with
     | Some child -> Ok child
     | None -> failwith "A child node was not found on the underlying storage. Either your database is corrupted, or this is a bug on RNT!"
@@ -282,6 +284,22 @@ module Make : TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> struct
        Ok new_root
 
   let remove tx key node = failwith "TODO" [@@warning "-27"]
+
+  let rec fold_left tx f acc =
+    let open Utilities.Result in
+    function
+    | Leaf { keys; values } ->
+       Utilities.FingerTree.zip keys values
+       |> BatFingerTree.fold_left (fun acc (k, v) -> f acc k v) acc
+       |> Result.ok
+    | Trunk { children; _ } ->
+       BatFingerTree.fold_left
+         (fun acc addr ->
+           let* acc = acc in
+           let* node = find' tx addr in
+           fold_left tx f acc node)
+         (Ok acc) children
+
 end
 
 module type INTERFACE = functor (S : Abstract.Storage.STORAGE) (K : KEY) (V : VALUE) -> sig
@@ -297,6 +315,10 @@ module type INTERFACE = functor (S : Abstract.Storage.STORAGE) (K : KEY) (V : VA
   val insert : S.transaction -> K.t -> V.t -> node -> (node, Concepts.Condition.condition) result
   val remove : S.transaction -> K.t -> node -> (node, Concepts.Condition.condition) result
   val lookup : S.transaction -> K.t -> node -> (V.t option, Concepts.Condition.condition) result
+
+  val fold_left : S.transaction -> ('c -> K.t -> V.t -> 'c) -> 'c -> node -> ('c, Concepts.Condition.condition) result
+
+  val iter : S.transaction -> (K.t -> V.t -> 'a) -> node -> (unit, Concepts.Condition.condition) result
 end
 
 module Interface : INTERFACE = functor (S : Abstract.Storage.STORAGE) (K : KEY) (V : VALUE) -> struct
@@ -321,6 +343,12 @@ module Interface : INTERFACE = functor (S : Abstract.Storage.STORAGE) (K : KEY) 
        let* v = V.decode data in
        Ok (Some v)
 
+  let retrieve' tx addr =
+    let* v = retrieve tx addr in
+    match v with
+    | Some v -> Ok v
+    | None -> failwith "A value was not found on the underlying storage. Either your database is corrupted, or this is a bug on RNT!"
+
   let find = T.find
   let empty = T.empty
   let hash_of = T.hash_of
@@ -337,4 +365,17 @@ module Interface : INTERFACE = functor (S : Abstract.Storage.STORAGE) (K : KEY) 
     | None -> Ok None
     | Some addr -> retrieve tx addr
 
+  let fold_left tx f acc node =
+    T.fold_left tx
+      (fun acc k addr ->
+        let* acc = acc in
+        let* v = retrieve' tx addr in
+        Ok (f acc k v))
+      (Ok acc) node
+    |> Result.join
+
+  let iter tx f node =
+    fold_left tx
+      (fun _ k v -> f k v |> ignore)
+      () node
 end

@@ -50,7 +50,7 @@ let schema_of_bencode value =
   |> List.map (fun (name, domain) ->
          let* domain = Codec.Bencode.as_string domain in
          Ok (name, domain) )
-  |> sequence
+  |> Utilities.List.sequence
   |> Result.map schema_of_list
 
 module Body = struct
