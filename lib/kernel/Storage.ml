@@ -1,4 +1,16 @@
 module Make (S : Abstract.Storage.STORAGE) = struct
+  module Pointer = struct
+    type 'a t = {
+      addr : S.address;
+      loader : S.transaction -> S.address -> ('a, Concepts.Condition.condition) result
+    }
+
+    let make addr loader = { addr; loader }
+    let address_of { addr; _ } = addr
+    let swap { loader; _ } addr = make addr loader
+    let deref tx { addr; loader } = loader tx addr
+  end
+
   let finish tx = function
     | Ok value ->
        let open Utilities.Result in
