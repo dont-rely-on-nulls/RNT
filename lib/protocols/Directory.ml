@@ -1,6 +1,6 @@
 class type implementation = object
-  method list : string list
-  method find : string -> Handle.t option
+  method list : (string BatFingerTree.t, Concepts.Condition.condition) result
+  method find : string -> (Handle.t option, Concepts.Condition.condition) result
 end
 
 type Handle.protocol += Directory of implementation

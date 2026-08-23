@@ -38,12 +38,14 @@ class namespace = object (self)
   method list =
     Atomic.get entries
     |> BatMap.keys
-    |> BatList.of_enum
+    |> BatFingerTree.of_enum
+    |> Result.ok
 
   method find key =
     Atomic.get entries
     |> BatMap.find_opt key
     |> Utilities.Option.fmap Protocols.Handle.copy
+    |> Result.ok
 end
 
-let make () = new namespace
+let make () = Protocols.Handle.make (new namespace)

@@ -4,4 +4,4 @@ class namespace : object
   inherit Protocols.Registry.implementation
 end
 
-val make : unit -> namespace
+val make : unit -> Protocols.Handle.t
