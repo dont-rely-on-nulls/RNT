@@ -30,6 +30,7 @@ module type TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> sig
   val lookup : S.transaction -> K.t -> node -> (address option, Concepts.Condition.condition) result
 
   val fold_left : S.transaction -> ('c -> K.t -> address -> 'c) -> 'c -> node -> ('c, Concepts.Condition.condition) result
+  val keys : S.transaction -> node -> (K.t BatFingerTree.t, Concepts.Condition.condition) result
 end
 
 module Make : TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> struct
@@ -120,7 +121,7 @@ module Make : TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> struct
      be used for intermediates and the like. *)
   let hash_of node = to_blob node |> Concepts.Hash.hash_of_blob
 
-  let find tx addr =
+  let find tx node =
     let open Utilities.Result in
     let* data = S.get tx (S.Hash node) in
     match data with
@@ -303,6 +304,7 @@ module Make : TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> struct
            fold_left tx f acc node)
          (Ok acc) children
 
+  let keys tx node = fold_left tx (fun acc k _ -> BatFingerTree.snoc acc k) BatFingerTree.empty node
 end
 
 module type INTERFACE = functor (S : Abstract.Storage.STORAGE) (K : KEY) (V : VALUE) -> sig
