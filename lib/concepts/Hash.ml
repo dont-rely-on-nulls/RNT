@@ -11,6 +11,10 @@ let hash_of_bytes bytes = Digestif.SHA256.digest_bytes bytes
 
 let hash_of_blob blob = Blob.bytes_of_blob blob |> Digestif.SHA256.digest_bytes
 
+let bytes_of_hash (h : hash) = Bytes.of_string (Digestif.SHA256.to_raw_string h)
+
+let blob_of_hash h = bytes_of_hash h |> Blob.blob_of_bytes
+
 let to_raw_string hash = Digestif.SHA256.to_raw_string hash
 
 let of_raw_string str = Digestif.SHA256.of_raw_string str
@@ -18,7 +22,6 @@ let of_raw_string str = Digestif.SHA256.of_raw_string str
 let to_hum_string hash = Digestif.SHA256.to_hex hash
 
 let hash_equals = Digestif.SHA256.equal
-let bytes_of_hash (h : hash) = Bytes.of_string (Digestif.SHA256.to_raw_string h)
 
 let power_of_two p =
   let b = Bytes.make 32 '\x00' in

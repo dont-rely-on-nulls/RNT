@@ -28,5 +28,8 @@ val hash_equals : hash -> hash -> bool
 (** given a hash, return a `bytes` representation of it *)
 val bytes_of_hash : hash -> bytes
 
+(** given a hash, return a `blob` representation of it *)
+val blob_of_hash : hash -> Blob.t
+
 (** pick one every 1/2^n hashes *)
 val pick : int -> hash -> bool

@@ -26,6 +26,10 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     let label = Option.map Concepts.Hash.hash_of_blob label in
     Ok label
 
+  let persist_root tx label addr =
+    let data = Concepts.Hash.blob_of_hash addr in
+    S.put tx (S.Label label) data
+
   class manager storage label head = object (self)
     inherit Lifecycle.null
 
@@ -46,6 +50,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
                             |> fmap (Option.to_result ~none:(Error.no_such_branch branch_name)) in
               if branch = reference then
                 let* new_head = M.insert tx label new_branch head in
+                let* _ = persist_root tx label (M.hash_of new_head) in
                 Ok new_head
               else
                 Error (Error.branch_head_mismatch branch_name reference branch)))
@@ -63,7 +68,8 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     SI.with_transaction storage (fun tx ->
         let* addr = root_for tx label in
         match addr with
-        | None -> failwith "TODO"
+        | None ->
+           Ok (new manager storage label M.empty |> Protocols.Handle.make)
         | Some addr ->
            let* head = M.find tx addr in
            let* head = Option.to_result ~none:(Error.invalid_root addr) head in
