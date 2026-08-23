@@ -8,7 +8,7 @@ end
 module type KEY = sig
   include VALUE
 
-  val compare : t -> t -> Concepts.Ordering.ordering
+  val compare : t -> t -> Utilities.Ordering.t
 end
 
 module type TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> sig
@@ -53,7 +53,7 @@ module Make : TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> struct
   let empty = Leaf { keys = BatFingerTree.empty; values = BatFingerTree.empty }
 
   let rec lookup1' keys key bottom top =
-    let open Concepts.Ordering in
+    let open Utilities.Ordering in
     if bottom >= top then (bottom, false)
     else
       let mid = bottom + (top - bottom) / 2 in
@@ -389,6 +389,6 @@ module StringKey : KEY with type t = string = struct
   type t = string
 
   let encode s = String.to_bytes s |> Concepts.Blob.blob_of_bytes
-  let compare s1 s2 = String.compare s1 s2 |> Concepts.Ordering.of_int
+  let compare s1 s2 = String.compare s1 s2 |> Utilities.Ordering.of_int
   let decode b = Concepts.Blob.bytes_of_blob b |> String.of_bytes |> Result.ok
 end

@@ -5,7 +5,7 @@ type hash = Digestif.SHA256.t
 let size = 256/8
 
 let compare h1 h2 = Digestif.SHA256.unsafe_compare h1 h2
-                    |> Ordering.of_int
+                    |> Utilities.Ordering.of_int
 
 let hash_of_bytes bytes = Digestif.SHA256.digest_bytes bytes
 
@@ -31,4 +31,4 @@ let power_of_two p =
 
 let pick n hash =
   let threshold = Digestif.SHA256.of_raw_string (power_of_two (256 - n)) in
-  compare hash threshold = Ordering.Smaller
+  compare hash threshold = Utilities.Ordering.Smaller

@@ -20,7 +20,7 @@ val of_raw_string : string -> hash
 val to_hum_string : hash -> string
 
 (** compare two hashes lexicographically *)
-val compare : hash -> hash -> Ordering.ordering
+val compare : hash -> hash -> Utilities.Ordering.t
 
 (** given two hashes, are they the same? *)
 val hash_equals : hash -> hash -> bool
