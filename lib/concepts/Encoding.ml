@@ -62,9 +62,9 @@ let value_of_blob (b : Blob.t) =
     condition "codec-missing-field" "A required field is absent"
       ("field" |=| Value.String key)
 
-  let unexpected_object ~expected ~actual =
+  let unexpected_object ~expected =
     condition "codec-unexpected-object" "The decoded object is not of the expected kind"
-      ("expected" |=| Value.String expected & "actual" |=| Value.String actual)
+      ("expected" |=| Value.String expected)
 end
 
 (* A self-describing serialization used as the uniform wire format for
@@ -211,6 +211,27 @@ module Bencode = struct
     | _ -> Error (Error.type_mismatch ~expected:"dict")
 end
 
+module Value = struct
+  let bencode_of_hash hash = Bencode.Tagged ('h', Bencode.String (Hash.to_raw_string hash))
+  let hash_of_bencode value =
+    let open Utilities.Result in
+    Bencode.with_tag 'h' value
+    |> fmap Bencode.as_string
+    |> Result.map Hash.of_raw_string
+
+  let bencode_of_option f option = Bencode.Tagged ('?', Option.map f option
+                                                        |> Option.to_list
+                                                        |> (fun x -> Bencode.List x))
+  let option_of_bencode f value =
+    let open Utilities.Result in
+    Bencode.with_tag '?' value
+    |> fmap Bencode.as_list
+    |> Result.map Utilities.List.hd_opt
+    |> fmap (function
+             | None -> Ok None
+             | Some v -> f v |> Result.map Option.some)
+end
+
 module Field = struct
   let string value = Bencode.String value
   let address address = Bencode.String (Hash.to_raw_string address)
@@ -229,8 +250,6 @@ module Record = struct
   module type S = sig
     type t
 
-    val equal : t -> t -> bool
-
     val to_bencode : t -> Bencode.t
     val of_bencode : Bencode.t -> (t, Condition.condition) result
 
@@ -246,15 +265,13 @@ module Record = struct
 
     val tag : char
     val malformed : unit -> Condition.condition
-    val equal : t -> t -> bool
     val fields : t -> (string * Bencode.t) list
     val of_fields : Bencode.t -> (t, Condition.condition) result
   end
 
-  module Make (B : BODY) = struct
+  module Make (B : BODY) : S with type t = B.t = struct
     type t = B.t
 
-    let equal = B.equal
     let to_bencode object_ = Bencode.Tagged (B.tag, Bencode.Dict (B.fields object_))
 
     let of_bencode = function

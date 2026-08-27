@@ -11,6 +11,7 @@ end
 
 module List : sig
   val sequence : ('a, 'b) result list -> ('a list, 'b) result
+  val hd_opt : 'a list -> 'a option
 end
 
 module Option : sig

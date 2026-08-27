@@ -19,6 +19,7 @@ end
 module Make (S : Abstract.Storage.STORAGE) = struct
   module M = Merkle.Make (S) (Merkle.StringKey)
   module SI = Storage.Make (S)
+  module B = Branch.Make (S)
 
   let root_for tx label =
     let open Utilities.Result in
@@ -60,7 +61,13 @@ module Make (S : Abstract.Storage.STORAGE) = struct
 
     method list = SI.with_transaction storage (fun tx -> Atomic.get head |> M.keys tx)
 
-    method find _ = failwith "TODO"
+    method find key =
+      let open Utilities.Result in
+      SI.with_transaction storage (fun tx ->
+          let* head = Atomic.get head |> M.lookup tx key in
+          match head with
+          | None -> Ok None
+          | Some head -> B.load tx storage key head |> Result.map Option.some)
   end
 
   let make storage label =

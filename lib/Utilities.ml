@@ -39,6 +39,10 @@ module List = struct
   end
 
   include Generic (ListSequence)
+
+  let hd_opt = function
+    | x::_ -> Some x
+    | [] -> None
 end
 
 module FingerTree = struct
