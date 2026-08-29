@@ -33,6 +33,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
 
   class manager storage label head = object (self)
     inherit Lifecycle.null
+    inherit Identity.of_id
 
     val storage : S.connection = storage
     val label : string = label
