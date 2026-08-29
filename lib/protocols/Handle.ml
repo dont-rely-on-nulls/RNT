@@ -3,6 +3,7 @@ type protocol = ..
 class type obj = object
   method reference : bool
   method release : unit
+  method hash : Concepts.Hash.hash
   method protocols : protocol list
 end
 
@@ -34,6 +35,9 @@ let copy handle =
     Some (make o)
   else
     None
+
+let equal h1 h2 =
+  Concepts.Hash.hash_equals (object_of h1)#hash (object_of h2)#hash
 
 let release ({ valid; _ } as handle) =
   let o = object_of handle in
