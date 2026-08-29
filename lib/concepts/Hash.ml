@@ -11,6 +11,11 @@ let hash_of_bytes bytes = Digestif.SHA256.digest_bytes bytes
 
 let hash_of_blob blob = Blob.bytes_of_blob blob |> Digestif.SHA256.digest_bytes
 
+let hash_of_int i =
+  let b = Blob.create 8 in
+  Blob.set_int64_be b 0 (Int64.of_int i);
+  hash_of_blob b
+
 let bytes_of_hash (h : hash) = Bytes.of_string (Digestif.SHA256.to_raw_string h)
 
 let blob_of_hash h = bytes_of_hash h |> Blob.blob_of_bytes
