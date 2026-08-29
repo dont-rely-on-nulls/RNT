@@ -1,0 +1,37 @@
+* Branch
+A branch is an isolated representation of changes performed on
+multigroups. It holds all of the multigroup references this view of
+the world can see, at a specific point in time.
+
+The representation of time is made through an invariance of
+constraints on the membership criteria a group. Since sets are
+immutable and the idea of change is not understood by mutation, we
+understand it by a change in the intension of a set. Since intension
+refers to how a relation is denoted under a conceptual model with a
+logical model, we are free to treat it as if we have all values
+present by admission of tuples. In a practical example, imagine an
+employee relation that represents all the employees working at a
+company. If a new employee is hired, the extension of the set should
+be incremented with the tuple now representing this employee. However,
+we cannot admit a direct mutation on the definition, as the set
+describes no notion of time in it. The time comes from an evolution of
+the sets currently available in order to express the new employee, by
+altering the membership criteria as to admit a new tuple. Of course,
+this is irrelevant for the implementation.
+* Schematics
+The catalog description of the properties in context of a relation,
+alongside its dependencies to other relations as constraints.
+
+Since constraints are relations themselves, every relation is
+described in terms of its attributes (properties in context) and
+* Namespace
+* Transaction
+* Domain
+* Group
+** Substantial Relation
+** Ephemeral Relation
+** Procedural Relation
+* Multigroup
+* Session
+* Clock
+
