@@ -1,37 +1,226 @@
 * Branch
-A branch is an isolated representation of changes performed on
-multigroups. It holds all of the multigroup references this view of
-the world can see, at a specific point in time.
+A branch represents a coherent state of one or more multigroups at a
+particular point in their history. It holds the references to the
+multigroups visible from that state and provides an isolated context
+in which subsequent changes may be expressed.
 
-The representation of time is made through an invariance of
-constraints on the membership criteria a group. Since sets are
-immutable and the idea of change is not understood by mutation, we
-understand it by a change in the intension of a set. Since intension
-refers to how a relation is denoted under a conceptual model with a
-logical model, we are free to treat it as if we have all values
-present by admission of tuples. In a practical example, imagine an
-employee relation that represents all the employees working at a
-company. If a new employee is hired, the extension of the set should
-be incremented with the tuple now representing this employee. However,
-we cannot admit a direct mutation on the definition, as the set
-describes no notion of time in it. The time comes from an evolution of
-the sets currently available in order to express the new employee, by
-altering the membership criteria as to admit a new tuple. Of course,
-this is irrelevant for the implementation.
+Relations are sets and are therefore not mutated in the set-theoretic
+sense. Change in the represented world is instead understood as a
+succession of relation values. The relation predicate establishes the
+membership criteria of a relation, while its extension consists of the
+tuples currently asserted to satisfy those criteria. Ordinary changes
+in facts therefore alter the extension without necessarily altering
+the intension.
+
+Consider an EMPLOYEES relation representing the employees of a
+company. Hiring a new employee does not ordinarily change what it
+means to be an employee. Rather, a tuple representing the newly hired
+employee becomes an asserted member of EMPLOYEES in a later database
+state. The predicate and constraints defining admissible membership
+may remain invariant while the extension differs between the earlier
+and later states.
+
+A branch identifies one such coherent state and provides the basis
+from which another may be produced. It therefore gives RNT a
+representation of change without requiring mutation to be part of the
+relational semantics. How successive states are physically
+represented, shared, or persisted is an implementation concern.
+
 * Schematics
-The catalog description of the properties in context of a relation,
-alongside its dependencies to other relations as constraints.
+Schematics describes the logical constitution of objects known to
+RNT. For a relation, it describes its attributes, the domains on which
+those attributes are defined, its predicate and constraints, and its
+dependencies on other relations.
 
-Since constraints are relations themselves, every relation is
-described in terms of its attributes (properties in context) and
+An attribute represents a property in the context of a particular
+group. Its domain establishes the kind of values the attribute may
+assume, while constraints establish the conditions under which tuples
+constitute admissible members of the relation. Constraints involving
+multiple relations place an individual relation within the wider
+semantics of its multigroup.
+
+Schematics therefore describes more than the shape of a relation. It
+records the information necessary to understand the logical conditions
+under which a relation value is a semantically consistent
+representation of its intended group.
+
 * Namespace
-* Transaction
-* Domain
-* Group
-** Substantial Relation
-** Ephemeral Relation
-** Procedural Relation
-* Multigroup
-* Session
-* Clock
+A namespace is a component of RNT's hierarchical object/name space. It
+provides a scope in which names are associated with runtime objects
+and through which those objects may be located.
 
+Namespaces form a tree, allowing objects to be organized under paths
+such as =/system=. This hierarchy is an administrative property of the
+kernel rather than a relational property of the objects contained
+within it. The fact that one object appears beneath another namespace
+does not, by itself, assert a relationship between the things
+represented by those objects.
+
+Namespaces therefore provide naming, organization, lookup, and scoping
+without imposing additional semantics on relations or multigroups.
+
+* Transaction
+A transaction is a bounded context in which tentative changes are
+performed against a branch. It begins from a particular database state
+and accumulates changes without making those changes part of the
+committed state until the transaction successfully commits.
+
+A transaction provides a protocol through which operations may be
+committed or rolled back. Committing produces an accepted successor
+state from the accumulated changes, subject to the fitting
+constraints. Rolling back discards those changes and leaves the
+originating state unaffected.
+
+Transactions participate in the kernel lifecycle. Disposing of a
+transaction that still contains uncommitted changes causes those
+changes to be rolled back. Thus tentative state cannot accidentally
+become durable merely because the runtime object representing a
+transaction ceases to be referenced.
+
+* Domain
+A domain is the logical representation of a property and establishes
+the values and operations appropriate to that property. Attributes
+appearing in relations are defined on domains.
+
+A domain is not merely a physical data type. Its purpose is to give
+values their logical interpretation and to establish the operations
+and constraints suited to them. Different attributes may be defined on
+the same domain when they represent the same kind of property in
+different group contexts.
+
+Domains therefore form part of the semantic foundation on which
+relation predicates and constraints are expressed.
+
+* Group
+A group is represented in RNT by a relation. The relation has an
+intension, expressed through its predicate and constraints, and an
+extension consisting of the tuples asserted as its members in a
+particular database state.
+
+RNT distinguishes relations according to how their membership is
+established and the role they play in computation.
+
+** Substantial Relation
+A substantial relation belongs to the factual basis of a
+multigroup. Its asserted tuples represent facts supplied directly
+about the world being represented rather than facts obtained solely by
+relational derivation.
+
+For example, EMPLOYEE may be substantial because assertions and
+retractions of employee tuples represent substantive changes in the
+state of the company. Hiring an employee adds a fact to the
+represented state; an employee leaving causes the corresponding fact
+no longer to be asserted in a subsequent state.
+
+"Substantial" does not mean physically stored. Whether a substantial
+relation is materialized, reconstructed, cached, or represented by
+some other storage technique is a physical implementation matter. What
+makes it substantial is its logical role as part of the factual basis
+from which other facts may be derived.
+
+** Ephemeral Relation
+An ephemeral relation is produced through relational operations over
+other relations. Selection, projection, join, and the other relational
+operations yield relations in their own right, and these results may
+exist as runtime objects without becoming part of the substantial
+factual basis of a multigroup.
+
+For example, selecting employees whose salary is greater than 1000 and
+projecting particular attributes produces an ephemeral relation
+derived from EMPLOYEE. Its tuples are consequences of the facts
+asserted in EMPLOYEE together with the conditions introduced by the
+relational expression, which are part of its intension.
+
+Ephemeral relations retain provenance and lineage. Provenance
+identifies the origins of their attributes and other semantic
+components, while lineage records the derivation through which the
+relation was produced. This permits RNT to preserve and infer
+applicable constraints rather than treating an algebraic result as an
+anonymous collection of tuples.
+
+Ephemerality concerns the runtime existence of such a derived value. A
+derived relation may subsequently be named, cached, persisted, or
+otherwise given a longer lifecycle without changing the relational
+fact that it was obtained by derivation.
+
+** Procedural Relation
+A procedural relation exposes a procedure through a relational
+interface. Rather than obtaining its extension from a set of asserted
+base facts or solely from relational algebra over existing relations,
+membership is established through computation.
+
+For example, PLUS[A, B, C] may represent the relation for which C is
+the sum of A and B, while GREATER_THAN_NATURAL[X, Y] may represent
+ordered pairs of natural numbers for which X is greater than Y. Such
+relations can participate in relational expressions in the same manner
+as other relational operands where their evaluation properties permit
+it.
+
+A procedural relation need not have a finitely enumerable
+extension. Some may be countably infinite, making it impossible to
+materialize their complete extension as an ordinary runtime relation
+value. RNT must therefore distinguish the ability to decide
+membership, enumerate members, establish the cardinality of a
+particular invocation, and guarantee termination of an expression
+consuming the relation.
+
+Sol, as RNT's total relational language, admits procedural relations
+only where the required evaluation properties can be established. An
+unrestricted procedure must not silently introduce partiality or
+nontermination into an otherwise total relational expression.
+
+* Multigroup
+A multigroup represents a collection of related groups and is
+represented logically by a database of relations considered together
+under common constraints.
+
+Relations within a multigroup are not independent merely because each
+has its own predicate. Constraints may involve multiple relations and
+thereby express conditions that must hold of the database as a
+whole. The multigroup provides the context in which these
+interrelation constraints acquire their meaning.
+
+A multigroup is consequently the principal unit of coherent relational
+state exposed through a branch. A branch may reference multiple
+multigroups and determine the particular state of each that is visible
+from that view of the world.
+
+* Session
+A session contains state specific to an interaction between a client
+environment and the RNT kernel. It establishes the execution context
+within which requests are interpreted and kernel objects are accessed.
+
+Session state may include such things as the active identity,
+namespace, branch, transaction, open handles, capabilities, and
+frontend-specific context. This information governs how a client
+interacts with the kernel but does not alter the logical meaning of
+the relations being accessed.
+
+A session therefore provides continuity across operations while
+maintaining the separation between frontend concerns and relational
+semantics. Different frontends may establish different kinds of
+sessions while ultimately operating on the same relational kernel.
+
+* Clock
+A clock is a kernel coordination object responsible for ordering and
+dispatching events. It provides infrastructure for work that must
+occur in response to time, state transitions, or other observable
+kernel events.
+
+A clock may schedule periodic or deferred services, coordinate event
+delivery, and provide interception points for workflows. It may also
+participate in mechanisms commonly associated with triggers, where an
+event causes additional work to be dispatched.
+
+Such procedural reactions must remain distinct from relational
+constraints. A constraint determines whether a database state is
+semantically admissible; an event handler determines what computation
+should occur in response to an event. A constraint must therefore not
+depend for its truth on whether a scheduled or triggered procedure
+happened to execute.
+
+Clock time is likewise distinct from relational time. The clock
+coordinates execution in the running system, whereas branches and
+successive database states represent change in the information managed
+by RNT. A correspondence between the two exists only when that
+correspondence is explicitly established.
