@@ -45,17 +45,22 @@ addressed, and that is obviously not the execution interface. The
 public relation operation is essentially indeed a cursor, not a list
 of tuple blobs.
 
-* Transaction
-A read-only execution opens a storage transaction (mainly because of
-LMDB, but it shouldn't need to given our good isolation) for the
-duration of the Sol solve. Every tuple cursor used by that solve reads
-through the same transaction. When the solve finishes, or when the VM
-abandons a branch, the cursor is closed and the transaction is
-aborted.
+* Storage Reads
+Execution does not own a storage transaction. The pinned branch and
+everything reachable from it are content-addressed immutable values,
+so their identities provide the consistency required by the solve.
+Different reads do not need to share a storage snapshot.
 
-It's important to highlight that aborting here does not mean failure,
-but only the normal close operation for a read-only transaction, as to
-assure no state is committed by execution.
+A backend may still require a transaction to perform a read. For
+example, the LMDB adapter opens a short-lived read-only transaction for
+an individual lookup, copies the value into memory, and closes the
+transaction before returning. This is an implementation detail of the
+storage adapter and is not exposed to Sol, relations, or cursors.
+
+A cursor therefore retains logical traversal state, such as node
+addresses and positions, but no backend transaction, page reference,
+or storage cursor. When the VM exhausts or abandons a search branch,
+the relational cursor is closed and releases only that logical state.
 
 * Failure
 A cursor may fail while scanning, and that should be dealt differently
