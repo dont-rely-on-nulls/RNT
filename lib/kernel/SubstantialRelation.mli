@@ -41,7 +41,4 @@ module Make (S : Abstract.Storage.STORAGE) : sig
 
   val contains_tuple :
     S.transaction -> t -> Concepts.Blob.t -> (bool, Concepts.Condition.condition) result
-
-  val tuple_blobs :
-    S.transaction -> t -> (Concepts.Blob.t list, Concepts.Condition.condition) result
 end

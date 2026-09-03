@@ -104,19 +104,6 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     let* present = TupleSet.lookup tx tuple node in
     Ok (Option.is_some present)
 
-  let tuple_blobs tx relation =
-    let open Utilities.Result in
-    let* node = tuple_node tx relation in
-    let* blobs =
-      TupleSet.fold_left tx
-        (fun acc _tuple_key tuple_addr ->
-          let* acc = acc in
-          let* tuple = SI.get_req tx (S.Hash tuple_addr) in
-          Ok (tuple :: acc) )
-        (Ok []) node
-    in
-    Result.map List.rev blobs
-
   class relation storage value =
     object (self)
       inherit Lifecycle.null
