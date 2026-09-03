@@ -16,9 +16,14 @@ residuation and totality.
 * World
 Sol runs against a world. That is not to say it is combative with it,
 but that we need a closed world of predicates so it can perform
-queries. In RNT the world is the current kernel view of a branch: the
-names visible in that view resolve to relation objects, and each
-relation provides its schema and a way to enumerate candidate tuples.
+queries. In RNT a world is a kernel view pinned to one branch value.
+The branch name is resolved once, before execution starts. Advancing
+that name afterwards does not change the world observed by the solve.
+
+Names visible from the pinned branch resolve to relation objects, and
+each relation provides its schema and a way to enumerate candidate
+tuples. All paths followed during the solve remain anchored to that
+branch value; execution must not resolve the moving branch name again.
 
 The important boundary is that Sol does not know how relations are
 stored. It asks the world for a relation by name and receives a
