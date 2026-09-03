@@ -20,3 +20,5 @@ val invoke : 'a interface -> ('a -> 'b) -> 'b
 val copy : t -> t option
 val equal : t -> t -> bool
 val release : t -> unit
+
+val hash : t -> Concepts.Hash.hash

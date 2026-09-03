@@ -4,16 +4,6 @@ module Error = struct
   let invalid_root head =
     condition "invalid-root" "The root hash for the database state is missing from the backend. Either your storage is corrupted, or this is a bug in RNT!"
       ("hash" |=| (Concepts.Value.String (Concepts.Hash.to_hum_string head)))
-
-  let no_such_branch branch_name =
-    condition "no-such-branch" "A branch with the specified name was not found"
-      ("branch"    |=| Concepts.Value.String branch_name)
-
-  let branch_head_mismatch branch_name reference head =
-    condition "branch-head-mismatch" "The HEAD of the branch did not match what was expected"
-      ("branch"    |=| Concepts.Value.String branch_name &
-       "reference" |=| Concepts.Value.String (Concepts.Hash.to_hum_string reference) &
-       "head"      |=| Concepts.Value.String (Concepts.Hash.to_hum_string head))
 end
 
 module Make (S : Abstract.Storage.STORAGE) = struct
@@ -44,21 +34,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
           let head = Atomic.get head in
           M.lookup tx branch_name head)
 
-    method update branch_name reference new_branch =
-      let open Utilities.Result in
-      SI.with_transaction storage (fun tx ->
-          Utilities.Atomic.mswap head (fun head ->
-              let* branch = M.lookup tx branch_name head
-                            |> fmap (Option.to_result ~none:(Error.no_such_branch branch_name)) in
-              if branch = reference then
-                let* new_head = M.insert tx label new_branch head in
-                let* _ = persist_root tx label (M.hash_of new_head) in
-                Ok new_head
-              else
-                Error (Error.branch_head_mismatch branch_name reference branch)))
-      |> Result.map ignore
-
-    method protocols = Protocols.[Directory.make self]
+    method protocols = Protocols.[Directory.make self; Registry.make self]
 
     method list = SI.with_transaction storage (fun tx -> Atomic.get head |> M.keys tx)
 
@@ -68,7 +44,34 @@ module Make (S : Abstract.Storage.STORAGE) = struct
           let* head = Atomic.get head |> M.lookup tx key in
           match head with
           | None -> Ok None
-          | Some head -> B.load tx storage key head |> Result.map Option.some)
+          | Some head -> B.load tx storage head |> Result.map Option.some)
+
+    method update key reference value =
+      let open Utilities.Result in
+      SI.with_transaction storage (fun tx ->
+          match
+            Utilities.Atomic.mswap head (fun head ->
+                let* branch = M.lookup tx key head |> Result.map_error (fun e -> Some e) in
+                (* FIXME: we should have an addressable protocol rather than assuming the hash is the content store address *)
+                let reference = Option.map Protocols.Handle.hash reference in
+                let value = Option.map Protocols.Handle.hash value in
+                if branch = reference then
+                  begin
+                    let* new_head = match value with
+                      | Some value -> M.insert tx key value head
+                      | None -> M.remove tx key head
+                    in
+                    let* _ = persist_root tx label (M.hash_of new_head) in
+                    Ok new_head
+                  end
+                  |> Result.map_error (fun e -> Some e)
+                else
+                  Error None)
+          with
+          | Ok _ -> Ok true
+          | Error None -> Ok false
+          | Error (Some e) -> Error e)
+
   end
 
   let make storage label =

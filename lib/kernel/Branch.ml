@@ -52,9 +52,27 @@ module Make (S : Abstract.Storage.STORAGE) = struct
       Ok { multigroups; previous }
   end
 
-  class branch = object
-    (* TODO *)
+  class branch storage value = object
+    inherit Lifecycle.null
+
+    val storage : S.connection = storage
+    val branch : t = value
+
+    method protocols : Protocols.Handle.protocol list = []
+
+    method hash =
+      Representation.to_blob branch
+      |> Concepts.Hash.hash_of_blob
   end
 
-  let load _tx _conn _name _addr = failwith "TODO"
+  let load tx conn addr =
+    let open Utilities.Result in
+    let* data = SI.get_req tx (S.Hash addr) in
+    let* branch = Representation.of_blob data in
+    Ok (new branch conn branch |> Protocols.Handle.make)
+
+  let make conn =
+    let open Utilities.Result in
+    let* empty = SI.with_transaction conn MultigroupM.empty_under in
+    Ok (new branch conn { multigroups = empty; previous = None } |> Protocols.Handle.make)
 end

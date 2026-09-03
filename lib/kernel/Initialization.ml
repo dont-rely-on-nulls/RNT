@@ -6,7 +6,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     let open Protocols in
     let root = Namespace.make () in
     let registry = Registry.from root |> Option.get in
-    let* branch = BM.make conn "rnt-head" in
-    let* _ = Registry.update registry "branch" None (Some branch) in
+    let* branch_manager = BM.make conn "rnt-head" in
+    let* _ = Registry.update registry "branch" None (Some branch_manager) in
     Ok root
 end

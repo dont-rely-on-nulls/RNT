@@ -314,6 +314,7 @@ module type INTERFACE = functor (S : Abstract.Storage.STORAGE) (K : KEY) (V : VA
   val find : S.transaction -> address -> (node option, Concepts.Condition.condition) result
 
   val empty : node
+  val empty_under : S.transaction -> (address, Concepts.Condition.condition) result
 
   val hash_of : node -> address
 
@@ -356,6 +357,7 @@ module Interface : INTERFACE = functor (S : Abstract.Storage.STORAGE) (K : KEY) 
 
   let find = T.find
   let empty = T.empty
+  let empty_under = T.empty_under
   let hash_of = T.hash_of
 
   let insert tx k v node =
