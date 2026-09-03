@@ -14,8 +14,11 @@ module Make (S : Abstract.Storage.STORAGE) = struct
   let root_for tx label =
     let open Utilities.Result in
     let* label = S.get tx (S.Label label) in
-    let label = Option.map Concepts.Hash.hash_of_blob label in
-    Ok label
+    let data = Option.map (fun blob -> Concepts.Blob.bytes_of_blob blob
+                                       |> Bytes.to_string
+                                       |> Concepts.Hash.of_raw_string)
+                 label in
+    Ok data
 
   let persist_root tx label addr =
     let data = Concepts.Hash.blob_of_hash addr in

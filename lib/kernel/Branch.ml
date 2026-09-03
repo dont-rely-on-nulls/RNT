@@ -73,6 +73,9 @@ module Make (S : Abstract.Storage.STORAGE) = struct
 
   let make conn =
     let open Utilities.Result in
-    let* empty = SI.with_transaction conn MultigroupM.empty_under in
-    Ok (new branch conn { multigroups = empty; previous = None } |> Protocols.Handle.make)
+    SI.with_transaction conn (fun tx ->
+        let* empty = MultigroupM.empty_under tx in
+        let branch = { multigroups = empty; previous = None } in
+        let* _ = SI.store_blob tx (Representation.to_blob branch) in
+        Ok (new branch conn branch |> Protocols.Handle.make))
 end
