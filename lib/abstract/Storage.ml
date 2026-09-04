@@ -11,7 +11,13 @@ module type STORAGE = sig
 
   val connect : Concepts.Configuration.term -> (connection, Concepts.Condition.condition) result
 
-  (** begin a transaction within `connection` *)
+  (** fetch a blob without exposing any backend read context *)
+  val read :
+    connection ->
+    address ->
+    (Concepts.Blob.t option, Concepts.Condition.condition) result
+
+  (** begin a read-write transaction within `connection` *)
   val start : connection -> (transaction, Concepts.Condition.condition) result
 
   (** `commit` the current transaction *)
