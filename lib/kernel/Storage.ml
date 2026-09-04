@@ -51,4 +51,8 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     S.get tx addr
     |> Utilities.Result.fmap (Option.to_result ~none:(Error.missing_data addr))
 
+  let read_req connection addr =
+    S.read connection addr
+    |> Utilities.Result.fmap (Option.to_result ~none:(Error.missing_data addr))
+
 end

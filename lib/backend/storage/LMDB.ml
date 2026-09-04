@@ -66,7 +66,7 @@ module C = struct
     with_output_pointer (ptr mdb_txn) (from_voidp mdb_txn null) (mdb_txn_begin env parent flags)
 
   let mdb_txn_commit = foreign "mdb_txn_commit" (ptr mdb_txn @-> returning mdb_result)
-  let mdb_txn_abort = foreign "mdb_txn_abort" (ptr mdb_txn @-> returning mdb_result)
+  let mdb_txn_abort = foreign "mdb_txn_abort" (ptr mdb_txn @-> returning void)
 
   (* TODO: make it so that we do not need to copy bytes to a separate array *)
   let carray_of_bytes (b : bytes) =
@@ -113,6 +113,7 @@ module C = struct
   type mdb_txn_ptr = mdb_txn structure ptr
 
   let null_txn = from_voidp mdb_txn null
+  let read_only = Unsigned.UInt.of_int 0x20000
 
   module Errors = struct
     let mdb_notfound = -30798
@@ -163,7 +164,10 @@ let start ({env; dbi} : connection) =
   |> Result.map_error Error.lmdb_error
 
 let commit ({tx; _} : transaction) = C.mdb_txn_commit tx |> Result.map_error Error.lmdb_error
-let abort ({tx; _} : transaction) = C.mdb_txn_abort tx |> Result.map_error Error.lmdb_error
+
+let abort ({tx; _} : transaction) =
+  C.mdb_txn_abort tx;
+  Ok ()
 
 (*
  * FIXME: `blob_of_bytes` and `bytes_of_blob` should not exist.
@@ -183,6 +187,17 @@ let get ({tx; dbi} : transaction) (addr : address) =
   | Error e -> Error e
   end
   |> Result.map_error Error.lmdb_error
+
+let read ({env; dbi} : connection) addr =
+  let open Utilities.Result in
+  let* tx =
+    C.mdb_txn_begin' env C.null_txn C.read_only
+    |> Result.map_error Error.lmdb_error
+  in
+  (* [get] copies the LMDB-owned value before this transaction ends. *)
+  Fun.protect
+    ~finally:(fun () -> C.mdb_txn_abort tx)
+    (fun () -> get {tx; dbi} addr)
 
 let put ({tx; dbi} : transaction) (addr : address) (b : Concepts.Blob.t) =
   C.mdb_put' tx dbi (bytes_of_address addr)

@@ -14,4 +14,5 @@ module Make : functor (S : Abstract.Storage.STORAGE) -> sig
   val with_transaction : S.connection -> (S.transaction -> ('a, Concepts.Condition.condition) result) -> ('a, Concepts.Condition.condition) result
   val store_blob : S.transaction -> Concepts.Blob.t -> (Concepts.Hash.hash, Concepts.Condition.condition) result
   val get_req: S.transaction -> S.address -> (Concepts.Blob.t, Concepts.Condition.condition) result
+  val read_req: S.connection -> S.address -> (Concepts.Blob.t, Concepts.Condition.condition) result
 end
