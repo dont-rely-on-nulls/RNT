@@ -104,6 +104,19 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     let* present = TupleSet.lookup tx tuple node in
     Ok (Option.is_some present)
 
+  let tuple_cursor storage relation =
+    let entries = TupleSet.Cursor.make relation.tuples in
+    Protocols.Relation.Cursor.make
+      ~next:(fun () ->
+        let open Utilities.Result in
+        let* entry = TupleSet.Cursor.next storage entries in
+        match entry with
+        | None -> Ok None
+        | Some (_, tuple) ->
+            let* tuple = SI.read_req storage (S.Hash tuple) in
+            Ok (Some tuple))
+      ~close:(fun () -> TupleSet.Cursor.close entries)
+
   class relation storage value =
     object (self)
       inherit Lifecycle.null
@@ -116,6 +129,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
 
       method contains tuple =
         SI.with_transaction storage (fun tx -> contains_tuple tx relation tuple)
+      method enumerate = tuple_cursor storage relation
 
       method protocols : Protocols.Handle.protocol list = Protocols.[Relation.make self]
       method hash = hash relation

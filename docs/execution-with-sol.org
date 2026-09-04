@@ -1,0 +1,81 @@
+#+TITLE: Execution
+* Purpose
+RNT ought to interact with the outside world, and for that we need to
+be able to provide inference and other administrative tasks. Some
+notable examples include issuing questions to relations (query), and
+representing new facts from substantial change in the world. The
+language to perform such tasks is Sol, a non-partial (total)
+relational language. This document will explain how Sol interfaces
+with the RNT, and how it serves for execution.
+
+While the kernel remains responsible for storage, object identity,
+branch state and relation membership. Sol remains responsible for the
+relational expression: unification, builtins, negation, quantifiers,
+residuation and totality.
+
+* World
+Sol runs against a world. That is not to say it is combative with it,
+but that we need a closed world of predicates so it can perform
+queries. In RNT a world is a kernel view pinned to one branch value.
+The branch name is resolved once, before execution starts. Advancing
+that name afterwards does not change the world observed by the solve.
+
+Names visible from the pinned branch resolve to relation objects, and
+each relation provides its schema and a way to enumerate candidate
+tuples. All paths followed during the solve remain anchored to that
+branch value; execution must not resolve the moving branch name again.
+
+The important boundary is that Sol does not know how relations are
+stored. It asks the world for a relation by name and receives a
+relational source. For a substantial relation that source is a cursor
+over the relation's asserted tuples.
+
+* Cursors
+A relation scan must not read the whole relation from disk before the
+VM can start and the VM pulls one candidate tuple at a time, unifies
+it with the current goal, and continues only as the search demands.
+
+This is the role of the Merkle tuple tree, to give a stable stored
+extension, while the cursor gives a bounded traversal over that
+extension. At any point the executor needs only the traversal stack,
+the current tree node and the current tuple payload.
+
+The tuple payload is still stored as a blob because storage is content
+addressed, and that is obviously not the execution interface. The
+public relation operation is essentially indeed a cursor, not a list
+of tuple blobs.
+
+* Storage Reads
+Execution does not own a storage transaction. The pinned branch and
+everything reachable from it are content-addressed immutable values,
+so their identities provide the consistency required by the solve.
+Different reads do not need to share a storage snapshot.
+
+A backend may still require a transaction to perform a read. For
+example, the LMDB adapter opens a short-lived read-only transaction for
+an individual lookup, copies the value into memory, and closes the
+transaction before returning. This is an implementation detail of the
+storage adapter and is not exposed to Sol, relations, or cursors.
+
+A cursor therefore retains logical traversal state, such as node
+addresses and positions, but no backend transaction, page reference,
+or storage cursor. When the VM exhausts or abandons a search branch,
+the relational cursor is closed and releases only that logical state.
+
+* Failure
+A cursor may fail while scanning, and that should be dealt differently
+from reaching the end of a relation. End Of Scan (EOS) means there are
+no more answers from that source. A failure means the world could not
+answer correctly, so the query has no result. The executor therefore
+propagates storage failures through Sol's host error channel instead
+of shortening the scan. Returning fewer tuples would make an incorrect
+answer look valid.
+
+* Reads & Writes
+Evaluating a Sol query against substantial relations in read-only
+mode, and streaming their asserted tuples from storage is simple.
+
+Writes are a separate beast, as they require a transaction model for
+successor states, constraint checking across multigroups, conflict
+handling and a clear object API for committing the result. Until that
+exists, execution observes a branch state but does not produce one.
