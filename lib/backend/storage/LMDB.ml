@@ -79,12 +79,14 @@ module C = struct
     CArray.iteri (Bytes.set buffer) arr;
     buffer
 
-  let mdb_val_ptr_of_bytes (b : bytes) =
+  let with_mdb_val_ptr_of_bytes (b : bytes) body =
     let buf = carray_of_bytes b in
     let s = make mdb_val in
     setf s mv_size (Unsigned.Size_t.of_int (Bytes.length b));
     setf s mv_data (to_voidp (CArray.start buf));
-    addr s
+    let result = body (addr s) in
+    Sys.opaque_identity buf |> ignore;
+    result
 
   let bytes_of_mdb_val (s : mdb_val structure) =
     let buf =
@@ -97,7 +99,8 @@ module C = struct
       (ptr mdb_txn @-> mdb_dbi @-> ptr mdb_val @-> ptr mdb_val @-> returning mdb_result)
 
   let mdb_get' txn dbi key =
-    with_output_pointer mdb_val (make mdb_val) (mdb_get txn dbi (mdb_val_ptr_of_bytes key))
+    with_mdb_val_ptr_of_bytes key (fun key ->
+        with_output_pointer mdb_val (make mdb_val) (mdb_get txn dbi key))
     |> Result.map bytes_of_mdb_val
 
   let mdb_put =
@@ -105,7 +108,9 @@ module C = struct
       (ptr mdb_txn @-> mdb_dbi @-> ptr mdb_val @-> ptr mdb_val @-> uint @-> returning mdb_result)
 
   let mdb_put' txn dbi key data flags =
-    mdb_put txn dbi (mdb_val_ptr_of_bytes key) (mdb_val_ptr_of_bytes data) flags
+    with_mdb_val_ptr_of_bytes key (fun key ->
+        with_mdb_val_ptr_of_bytes data (fun data ->
+            mdb_put txn dbi key data flags))
 
   let mdb_strerror = foreign "mdb_strerror" (int @-> returning string)
 
@@ -113,7 +118,7 @@ module C = struct
   type mdb_txn_ptr = mdb_txn structure ptr
 
   let null_txn = from_voidp mdb_txn null
-  (** 0x20000 is MDB_RDONLY: https://github.com/LMDB/lmdb/blob/69087ced3cb6082f7dcfb4fc2dcaa3b68a7e2e8c/libraries/liblmdb/lmdb.h#L291 *)
+  (* 0x20000 is MDB_RDONLY: https://github.com/LMDB/lmdb/blob/69087ced3cb6082f7dcfb4fc2dcaa3b68a7e2e8c/libraries/liblmdb/lmdb.h#L291 *)
   let read_only = Unsigned.UInt.of_int 0x20000
 
   module Errors = struct
