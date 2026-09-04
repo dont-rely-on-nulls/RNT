@@ -113,6 +113,7 @@ module C = struct
   type mdb_txn_ptr = mdb_txn structure ptr
 
   let null_txn = from_voidp mdb_txn null
+  (** 0x20000 is MDB_RDONLY: https://github.com/LMDB/lmdb/blob/69087ced3cb6082f7dcfb4fc2dcaa3b68a7e2e8c/libraries/liblmdb/lmdb.h#L291 *)
   let read_only = Unsigned.UInt.of_int 0x20000
 
   module Errors = struct
