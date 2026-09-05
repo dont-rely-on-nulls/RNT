@@ -11,6 +11,14 @@ module Make (S : Abstract.Storage.STORAGE) = struct
   module SI = Storage.Make (S)
 
   module MultigroupM = Merkle.Interface (S) (Merkle.StringKey) (Multigroup)
+  module MMDirectory = Prototype.Directory.OfTree (S) (Merkle.StringKey) (Multigroup)
+
+  module Error = struct
+    open Concepts.Condition
+
+    let incomplete_branch addr = condition "incomplete-branch" "A stored branch is missing part of it's expected structure. Is your storage corrupted?"
+                                   ("address" |=| Concepts.Value.String (Concepts.Hash.to_hum_string addr))
+  end
 
   type t = {
     multigroups : MultigroupM.address;
@@ -52,13 +60,19 @@ module Make (S : Abstract.Storage.STORAGE) = struct
       Ok { multigroups; previous }
   end
 
-  class branch storage value = object
+  class branch storage value node = object
     inherit Lifecycle.null
 
     val storage : S.connection = storage
     val branch : t = value
+    val node : MultigroupM.node = node (* FIXME: can we not place this inside `t`? *)
 
-    method protocols : Protocols.Handle.protocol list = []
+    method protocols : Protocols.Handle.protocol list =
+      [ Prototype.Directory.of_properties
+          [ "multigroups", Prototype.mixture
+                            [ MMDirectory.make
+                                ~storage ~node
+                                ~constructor:(fun _e -> failwith "TODO") ] ] ]
 
     method hash =
       Representation.to_blob branch
@@ -69,7 +83,8 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     let open Utilities.Result in
     let* data = SI.get_req tx (S.Hash addr) in
     let* branch = Representation.of_blob data in
-    Ok (new branch conn branch |> Protocols.Handle.make)
+    let* node = MultigroupM.find tx branch.multigroups |> fmap (Option.to_result ~none:(Error.incomplete_branch addr)) in
+    Ok (new branch conn branch node |> Protocols.Handle.make)
 
   let make conn =
     let open Utilities.Result in
@@ -77,5 +92,5 @@ module Make (S : Abstract.Storage.STORAGE) = struct
         let* empty = MultigroupM.empty_under tx in
         let branch = { multigroups = empty; previous = None } in
         let* _ = SI.store_blob tx (Representation.to_blob branch) in
-        Ok (new branch conn branch |> Protocols.Handle.make))
+        Ok (new branch conn branch MultigroupM.empty |> Protocols.Handle.make))
 end
