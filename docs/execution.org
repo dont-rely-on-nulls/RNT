@@ -1,0 +1,105 @@
+#+TITLE: Execution
+
+* Purpose
+RNT hosts evaluators through a common execution interface. The RDBMS
+built on RNT owns its syntax, sublanguages, and their translation into
+programs. RNT provides object access, storage, transactions, and
+execution lifecycle.
+
+This document proposes that boundary. Volcano supplies the execution
+model for the relational algebra evaluator. Other evaluators choose
+their own execution models.
+
+* Evaluators and Programs
+An evaluator is a runtime object that admits and executes programs in
+a representation it understands. Clients register evaluators through
+RNT's object protocols and select them explicitly. The kernel has no
+fixed enumeration of sublanguages.
+
+An evaluator may serve several sublanguages. Sol, for example, may
+evaluate procedural relations and programs expressing DDL or DML.
+Conversely, different evaluators may support the same kind of
+operation.
+
+A program identifies its evaluator, entry points, and dependencies.
+Its internal representation belongs to the evaluator. Admission
+validates the program and establishes the requirements and guarantees
+of its entry points. Requirements dependent on the selected database
+state are checked at invocation.
+
+Programs are reusable; each invocation has independent execution
+state. A persisted program also identifies its representation version
+and requires a compatible evaluator to decode and admit it.
+
+* Invocation
+An invocation supplies a program, an entry point, input bindings, and
+an execution context. Its contract specifies the required bindings,
+permitted operations, and result protocols. Membership checking,
+finite enumeration, and producing a successor state are examples of
+contracts, not a closed list of execution kinds.
+
+The context supplies the selected database state, transaction access,
+authorized handles, cancellation, and resource accounting. Evaluators
+access kernel resources through these interfaces.
+
+Results are exposed through handles and protocols. A cursor supports
+incremental consumption; other results may expose a state or command
+completion. Unsupported invocations and execution failures produce
+conditions. Failure must remain distinguishable from an empty result
+or false membership.
+
+Execution retains the resources needed by outstanding results.
+Completion, failure, cancellation, or early closure releases owned
+resources. Cleanup is idempotent. A borrowed transaction remains the
+caller's responsibility. Successful evaluation and cursor exhaustion
+do not implicitly commit changes.
+
+* Composition
+Evaluators compose through invocation and result protocols. A DML
+program may invoke a relational program, consume its cursor, and use
+the tuples to construct a successor state. A relational program may
+invoke a procedural relation implemented by another evaluator.
+
+Nested invocations share the applicable state and transaction context,
+cancellation, and resource budget. A child may receive less authority
+than its caller. Reads keep the selected state unless another state is
+explicitly supplied; nesting does not resolve the branch tip again.
+
+The caller must establish that the callee's contract meets its needs.
+In particular, a total computation requires termination guarantees
+covering its nested calls. Merely exposing a cursor establishes neither
+finite enumeration nor termination. Optimizations across evaluator
+boundaries likewise require established semantic properties.
+
+* Relational Algebra
+The relational evaluator executes operator trees using Volcano's
+=open=, =next=, and =close= contract. A cursor owns one running tree.
+This operator contract is internal to relational execution.
+
+A procedural relation associates its heading with program entry
+points. An operator invokes those entry points through the relation's
+protocols. For =PLUS[A, B, C]=, bound =A= and =B= may permit finite
+enumeration of =C= even though unrestricted enumeration is unavailable.
+Ordinary relation evaluation receives no authority to commit changes.
+
+* Sol Integration
+An integration package depending on RNT and Sol supplies an
+=Rnt_world= adapter and instantiates =Sol.Vm.Make=. RNT's core does
+not depend on Sol's program representation.
+
+The adapter maps world lookups to RNT relations at the selected state.
+It maps transition requests to kernel operations constructing
+successor states. The same Sol evaluator can therefore supply
+procedural relations, DML transitions over extensions, and DDL
+transitions over catalog state. Commit remains an explicit host
+operation.
+
+Sol already accepts host cursors, but its solver currently returns a
+complete solution list. An initial adapter may materialize that result;
+streaming answers requires a resumable solver interface. Tuple results
+must contain concrete bindings without residual constraints. Symbolic
+answers require a different result protocol.
+
+DDL support and storage-error reporting for transitions require further
+work in Sol's host interface. They do not require additional evaluator
+categories in RNT.
