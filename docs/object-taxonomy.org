@@ -42,12 +42,24 @@ semantics of its multigroup.
 Schematics therefore describes more than the shape of a relation,
 recording the information necessary to understand the logical
 conditions under which a relation value is a semantically consistent
-representation of its intended group. Its schema component is exposed
-through =Protocols.Schematics.Make(Schema)=, instantiated by the host
-with a logical schema implementation satisfying
-=Abstract.Schematics.SCHEMA=. Providers and consumers use the shared
-protocol module to obtain a schema and list its attributes through an
-object handle.
+representation of its intended group.
+
+Schematics being a protocol forces an object to know its own type
+through =describe=, which yields a description of a multigroup, of a
+relation, or of a tuple (for now only these). There is no separate
+notion of a heading: the type of a relation is the schematics object
+it points to, and a tuple drawn from that relation is described
+against the very same type. A tuple description then, carries both the
+description of the relation it belongs to and the domains its own
+attributes exhibit, and therefore comparing the two is the admission
+test (membership criteria).
+
+#+begin_src ocaml
+type description =
+  | Multigroup of multigroup_description
+  | Relation of relation_description
+  | Tuple of tuple_description
+#+end_src
 
 For now, types are only opaque tags carried by attributes, and schema
 operations preserve this metadata without trying to resolve these
@@ -176,10 +188,54 @@ membership, enumerate members, establish the cardinality of a
 particular invocation, and guarantee termination of an expression
 consuming the relation.
 
+The line that matters (operationally) is not countable vs uncountable
+sets, but whether the extension can be enumerated to exhaustion. A
+relation whose extension is uncountable cannot be enumerated at all,
+so it is excluded by construction rather than by a check: such a
+relation is given intensionally, by its membership criteria, and
+offers membership testing without carrying enumeration. A countably
+infinite relation may be enumerated, but never exhausted, so an
+expression that must materialize it is the thing to reject. Membership
+is in any case always intensional! One does not ask whether a value is
+extensionally among the naturals (for that is very wasteful and
+naïve), only whether it satisfies the criteria for being one, and the
+extensional lookup a substantial relation can afford is an
+optimization that is valid only because admission already enforced
+those criteria (which will obviously include constraints).
+
 Sol, as RNT's total relational language, admits procedural relations
 only where the required evaluation properties can be established. An
 unrestricted procedure must not silently introduce partiality or
 nontermination into an otherwise total relational expression.
+
+* Tuple
+A tuple is a value of a relation rather than an object of the
+administrative tree. It is not registered with the object manager and
+holds no name of its own, since it is reached through the relation
+that asserts it. It remains an object at runtime, carrying Schematics
+so that it can describe the type it claims.
+
+A tuple is a type label together with its attributes. The label names
+the relation whose criteria the tuple claims to satisfy, which is what
+allows a tuple to be handed to a multigroup and routed to the relation
+representing its type, instead of being inserted into a relation
+chosen by the caller. Admission is then a matter of typing and
+constraints: the multigroup resolves the label, compares the tuple
+against the relation's schematics, and applies its predicate and local
+constraints before the tuple becomes asserted.
+
+The label is redundant while a tuple sits inside a relation, since the
+relation already names the type. It earns its keep for a tuple in
+flight, which is the admission case.
+
+Two representations exist for the same value. The evaluator and the
+protocols carry tuples as plain values, which is what a cursor yields
+and what a program receives as bindings. Storage keeps the attributes
+as their own content addressed subtree, so that two tuples asserting
+the same thing share one representation, and identical attributes
+yield an identical address regardless of the order in which they were
+written. Ephemeral tuples, which are never interned, are values that
+simply never reach storage.
 
 * Multigroup
 A multigroup represents a collection of related groups and is

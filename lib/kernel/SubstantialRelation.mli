@@ -6,7 +6,7 @@ module Make (S : Abstract.Storage.STORAGE) : sig
 
   val empty :
     S.transaction ->
-    heading:Concepts.Hash.hash ->
+    schematics:Concepts.Hash.hash ->
     ?predicate:Concepts.Hash.hash ->
     ?local_constraints:Concepts.Hash.hash ->
     ?indexes:Concepts.Hash.hash ->
@@ -17,7 +17,7 @@ module Make (S : Abstract.Storage.STORAGE) : sig
 
   val make :
     S.connection ->
-    heading:Concepts.Hash.hash ->
+    schematics:Concepts.Hash.hash ->
     ?predicate:Concepts.Hash.hash ->
     ?local_constraints:Concepts.Hash.hash ->
     ?indexes:Concepts.Hash.hash ->
@@ -34,7 +34,7 @@ module Make (S : Abstract.Storage.STORAGE) : sig
     Concepts.Hash.hash ->
     (Protocols.Handle.t, Concepts.Condition.condition) result
 
-  val heading : t -> Concepts.Hash.hash
+  val schematics : t -> Concepts.Hash.hash
   val predicate : t -> Concepts.Hash.hash option
   val local_constraints : t -> Concepts.Hash.hash option
   val tuples : t -> Concepts.Hash.hash
@@ -46,4 +46,19 @@ module Make (S : Abstract.Storage.STORAGE) : sig
 
   val contains_tuple :
     S.transaction -> t -> Concepts.Blob.t -> (bool, Concepts.Condition.condition) result
+
+  (** decodes the schematics at [schematics relation] -- the body of
+      [Protocols.Schematics.describe] for this kind of relation. *)
+  val schema_of :
+    S.transaction ->
+    t ->
+    (Protocols.Schematics.relation_description, Concepts.Condition.condition) result
+
+  (** a handle carrying [Protocols.Cursor] over every tuple currently
+      asserted, decoded via [Concepts.Tuple.Representation.of_blob] --
+      the body of [Protocols.Relation.enumerate] for this kind of
+      relation. Opens its own storage transaction, held for the
+      cursor's whole lifetime rather than just this call -- see
+      [Kernel.Generator] and docs/design/evaluator.md, "Shape". *)
+  val enumerate : S.connection -> t -> (Protocols.Handle.t, Concepts.Condition.condition) result
 end

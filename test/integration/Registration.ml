@@ -18,7 +18,7 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
     let open Protocols in
     let registration =
       begin
-        let* root = I.initialize conn in
+        let* root = I.initialize ~evaluators:["fol", Evaluators.FOL.make ()] conn in
         let* bm = Kernel.Path.(lookup root ("branch" @/ this))
                   |> fmap (Option.to_result ~none:(Error.not_found ())) in
         let* bm = Registry.from bm |> Option.to_result ~none:(Error.not_found ()) in
@@ -35,8 +35,15 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
         Directory.find bm "master" |> Result.map Option.is_some
       end
       |> Helpers.condition_as_failure in
+    let evaluator =
+      begin
+        let* root = I.initialize ~evaluators:["fol", Evaluators.FOL.make ()] conn in
+        Kernel.Path.(lookup root ("evaluator" @/ "fol" @/ this)) |> Result.map Option.is_some
+      end
+      |> Helpers.condition_as_failure in
     check bool "" true registration;
-    check bool "" true presence
+    check bool "" true presence;
+    check bool "the fol evaluator is registered" true evaluator
 
   let suite prefix =
     ( "registration/" ^ prefix,

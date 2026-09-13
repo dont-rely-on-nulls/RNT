@@ -24,55 +24,83 @@ indexes them so a client can ask which evaluators declare =dml= and
 get back B and C.
 
 * Protocols
-Three object components, following the existing =implementation= /
-=make= / =from= pattern.
-
-=Protocols.Evaluator= admits programs in string format. Admission
-validates a program in the evaluator's own representation (as in:
-parses, type checks and does all it requires to validate it) and
-yields a handle.
+An evaluator is an object like any other, that can be used to execute
+program with a context, exactly as an interpreter takes an expression
+and an environment. The plan tree should already bear every value the
+program needs, so there is nothing left to bind. Each invocation
+carries independent state based atop of a database view of the world
+(being therefore hash dependent and isolated).
 
 #+begin_src ocaml
+module Make (P : PROGRAM) : sig
   class type implementation = object
-    method capabilities : string BatSet.t
-    method admit : string -> (Handle.t, condition) result
+    method invoke :
+      program:P.t -> Context.t -> (Handle.t, condition) result
   end
-#+end_src
-
-=Protocols.Program= exposes entry points and an invocation, making a
-program reusable, since each invocation carries independent state
-based atop of a database view of the world (hash dependent and
-isolated).
-
-#+begin_src ocaml
-class type implementation = object
-  method entry_points : string list
-  method invoke :
-    entry:string -> bindings:Concepts.Tuple.t -> Runtime.Context.t ->
-    (Handle.t, condition) result
 end
 #+end_src
 
+The protocol is parameterized by the evaluator's own plan type, so a
+plan is never encoded into values only to be decoded again. Each
+application of the functor yields its own protocol constructor, which
+is what keeps one evaluator from answering another's programs: a
+client obtains the interface through the module of the evaluator it
+intends to speak to. The FOL evaluator, which lives under
+=lib/evaluators= alongside the evaluators shipped with RNT, currently
+understands a single node:
+
+#+begin_src ocaml
+type plan = Base of string
+#+end_src
+
+=Base= names a relation, which is resolved through the context and
+enumerated to exhaustion. The name is resolved rather than an address
+being followed, which keeps the evaluator free of storage and makes
+every resolution happen under one snapshot.
+
 The returned handle carries a result protocol with =Protocols.Cursor=,
-giving it incremental consumption. A successor state and a command
-completion are further result protocols, added for DML and DDL
-later. It's important to notice that the kernel enumerates result
-protocols; it thererfore does not enumerate sublanguages. That is not
-to say however that we cannot have a builtin catalog relation
-installed and configured by the client that enumerates them (that's a
-concern for the future).
+giving it incremental consumption. Since executing a plan node yields
+a cursor, operators stack as cursors over cursors, in the manner of a
+volcano iterator, and no intermediate result is materialized. A
+successor state and a command completion are further result protocols,
+added for DML and DDL later. It's important to notice that the kernel
+enumerates result protocols; it thererfore does not enumerate
+sublanguages. That is not to say however that we cannot have a builtin
+catalog relation installed and configured by the client that
+enumerates them (that's a concern for the future).
 
 * Context
-=Runtime.Context.t= supplies the selected database state, handles
-(which assume authorization, since we are a capability based system),
-cancellation, and resource usage. Evaluators reach kernel resources
-*only* through it.
+=Protocols.Context.t= supplies the selected database state, the root
+handle through which names are resolved (which assumes authorization,
+since we are a capability based system), and the status of the
+evaluation. Evaluators reach kernel resources *only* through it.
 
-A nested invocation shares state, transaction, cancellation, and
-budget, and may be given less authority than its caller. Reads keep
-the selected state so that nesting does not need to resolve a branch
-tip again, and a successful evaluation and cursor exhaustion never
-commit. Commit should be an explicit host operation.
+#+begin_src ocaml
+type t =
+  { snapshot : Concepts.Hash.hash
+  ; root : Handle.t
+  ; status : unit -> [`Live | `Cancelled | `Exhausted] }
+#+end_src
+
+The snapshot is the hash of a commit. Since every object is content
+addressed and prolly trees do not depend on insertion order, equal
+state yields an equal hash, so a commit hash is a frozen world rather
+than a pointer into a changing one. A cursor therefore pins a hash
+instead of an open transaction, and every node of a plan reads the
+same state, which gives repeatable reads across a whole plan for free
+and makes concurrent commits simply invisible to a running
+evaluation.
+
+=status= collapses cancellation and resource exhaustion into the
+single question an operator asks between tuples, namely whether it may
+produce another tuple. The runtime owns how =Exhausted= is decided. A
+nested invocation shares the snapshot, so nesting does not need to
+resolve a branch tip again, and a successful evaluation and cursor
+exhaustion never commit. Commit should be an explicit host operation.
+
+Budgets, authority narrowing, and resource accounting are not
+implemented, and adding a fourth status case would break exhaustive
+matches in consumers, which is the price of keeping this closed.
 
 * Composition
 Evaluators compose through invocation and result protocols alone. A
