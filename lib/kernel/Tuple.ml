@@ -19,6 +19,8 @@ module Make (S : Abstract.Storage.STORAGE) = struct
   module Attribute = struct
     type t = Concepts.Value.value
 
+    let malformed_value = Error.malformed_value
+
     let encode value =
       let open Concepts.Encoding in
       Bencode.to_blob
@@ -33,7 +35,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
       match data with
       | Bencode.Tagged ('s', Bencode.String s) -> Ok (Concepts.Value.String s)
       | Bencode.Tagged ('i', Bencode.Int n) -> Ok (Concepts.Value.Integer n)
-      | _ -> Error (Error.malformed_value ())
+      | _ -> Error (malformed_value ())
 
     let domain = function
       | Concepts.Value.String _ -> "string"
@@ -90,11 +92,12 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     let open Utilities.Result in
     let* node =
       AttributeM.with_batch tx (fun () ->
-          BatMap.String.foldi
-            (fun name value node ->
-              let* node = node in
-              AttributeM.insert tx name value node)
-            attributes (Ok AttributeM.empty))
+          BatMap.String.enum attributes
+          |> BatEnum.fold
+               (fun node (name, value) ->
+                 let* node = node in
+                 AttributeM.insert tx name value node)
+               (Ok AttributeM.empty))
     in
     Ok { type_; attributes = AttributeM.hash_of node }
 

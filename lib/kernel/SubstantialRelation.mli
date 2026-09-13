@@ -1,7 +1,4 @@
-module Make (S : Abstract.Storage.STORAGE) (Schematics : sig
-  include Protocols.Schematics.S
-  val of_blob : Concepts.Blob.t -> (Schema.t, Concepts.Condition.condition) result
-end) : sig
+module Make (S : Abstract.Storage.STORAGE) : sig
   type t
 
   val encode : t -> Concepts.Blob.t
@@ -9,7 +6,7 @@ end) : sig
 
   val empty :
     S.transaction ->
-    heading:Concepts.Hash.hash ->
+    schematics:Concepts.Hash.hash ->
     ?predicate:Concepts.Hash.hash ->
     ?local_constraints:Concepts.Hash.hash ->
     ?indexes:Concepts.Hash.hash ->
@@ -20,7 +17,7 @@ end) : sig
 
   val make :
     S.connection ->
-    heading:Concepts.Hash.hash ->
+    schematics:Concepts.Hash.hash ->
     ?predicate:Concepts.Hash.hash ->
     ?local_constraints:Concepts.Hash.hash ->
     ?indexes:Concepts.Hash.hash ->
@@ -37,7 +34,7 @@ end) : sig
     Concepts.Hash.hash ->
     (Protocols.Handle.t, Concepts.Condition.condition) result
 
-  val heading : t -> Concepts.Hash.hash
+  val schematics : t -> Concepts.Hash.hash
   val predicate : t -> Concepts.Hash.hash option
   val local_constraints : t -> Concepts.Hash.hash option
   val tuples : t -> Concepts.Hash.hash
@@ -50,9 +47,12 @@ end) : sig
   val contains_tuple :
     S.transaction -> t -> Concepts.Blob.t -> (bool, Concepts.Condition.condition) result
 
-  (** decodes the heading at [heading relation] -- the body of
-      [Schematics.schema] for this kind of relation. *)
-  val heading_value : S.transaction -> t -> (Schematics.Schema.t, Concepts.Condition.condition) result
+  (** decodes the schematics at [schematics relation] -- the body of
+      [Protocols.Schematics.describe] for this kind of relation. *)
+  val schema_of :
+    S.transaction ->
+    t ->
+    (Protocols.Schematics.relation_description, Concepts.Condition.condition) result
 
   (** a handle carrying [Protocols.Cursor] over every tuple currently
       asserted, decoded via [Concepts.Tuple.Representation.of_blob] --

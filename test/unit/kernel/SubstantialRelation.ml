@@ -15,7 +15,7 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
       begin
         let open Utilities.Result in
         let* tx = S.start conn in
-        let* original = SR.empty tx ~heading:(hash "heading") () in
+        let* original = SR.empty tx ~schematics:(hash "schema") () in
         let* original_contains = SR.contains_tuple tx original tuple in
         let* updated = SR.assert_tuple tx original tuple in
         let* updated_contains = SR.contains_tuple tx updated tuple in
