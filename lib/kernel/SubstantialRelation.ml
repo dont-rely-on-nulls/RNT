@@ -126,33 +126,25 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     let open Utilities.Result in
     let* tx = S.start storage in
     let* node = tuple_node tx relation in
-    (* TODO: `TupleSet.keys` walks the whole Merkle structure eagerly,
-       before the first tuple is yielded. Fine for this sketch; a real
-       implementation should walk it lazily instead (its own small
-       generator, or an explicit stack over Merkle.node) so that
-       stacking e.g. `restrict` on a huge relation does not pay for the
-       entire scan before the first `next`. *)
-    let* keys = TupleSet.keys tx node in
-    let remaining = ref keys in
     let closed = ref false in
     let close () = if not !closed then begin closed := true; ignore (S.abort tx) end in
+    (* The fold is suspended by [yield], so the tree is walked one node
+       and one tuple at a time rather than materialized before the
+       first tuple is produced. *)
     let produce ~yield =
-      let rec loop () =
-        match BatFingerTree.front !remaining with
-        | None ->
-           close ();
-           Ok ()
-        | Some (rest, addr) ->
-           remaining := rest;
-           match SI.get_req tx (S.Hash addr) |> fmap Concepts.Tuple.Representation.of_blob with
-           | Error _ as e ->
-              close ();
-              e
-           | Ok tuple ->
-              yield tuple;
-              loop ()
+      let* walked =
+        TupleSet.fold_left tx
+          (fun acc _ addr ->
+            let* () = acc in
+            let* tuple =
+              SI.get_req tx (S.Hash addr) |> fmap Concepts.Tuple.Representation.of_blob
+            in
+            yield tuple;
+            Ok ())
+          (Ok ()) node
       in
-      loop ()
+      close ();
+      walked
     in
     Ok (Generator.cursor_of ~on_release:close produce)
 
