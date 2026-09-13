@@ -42,6 +42,10 @@ module Make (S : Abstract.Storage.STORAGE) = struct
 
   module AttributeM = Merkle.Interface (S) (Merkle.StringKey) (Attribute)
 
+  (* TODO: ephemeral tuples are served by instantiating this functor
+     over an in-memory storage. Consider later splitting [t] into
+     resident (an address) and ephemeral (an in-memory attribute map)
+     forms instead. *)
   type t = { type_ : string; attributes : AttributeM.address }
 
   module rec Representation : (Concepts.Encoding.Record.S with type t = t) =

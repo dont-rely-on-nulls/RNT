@@ -1,21 +1,17 @@
-type t = string BatFingerTree.t
+type t = string list
 
-let this = BatFingerTree.empty
+let this = []
+let (@/) x y = x::y
 
-let of_string s =
-  String.split_on_char '/' s |> List.filter (fun s -> s <> "") |> BatFingerTree.of_list
-
-let (@/) segment path = BatFingerTree.cons path segment
-
-let rec lookup handle path =
-  let open Utilities.Result in
-  match BatFingerTree.front path with
-  | None -> Ok (Some handle)
-  | Some (rest, segment) -> (
+let rec lookup handle = function
+  | [] -> Ok (Some handle)
+  | x::xs ->
+     let open Utilities.Result in
+     let open Protocols in
      match Protocols.Directory.from handle with
      | None -> Ok None
-     | Some dir -> (
-        let* found = Protocols.Directory.find dir segment in
-        match found with
+     | Some dir ->
+        let* elem = Directory.find dir x in
+        match elem with
         | None -> Ok None
-        | Some handle' -> lookup handle' rest))
+        | Some elem -> lookup elem xs
