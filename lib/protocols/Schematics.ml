@@ -1,30 +1,24 @@
-module type S = sig
-  module Schema : Abstract.Schematics.SCHEMA
-  type t
+type multigroup_description = string BatMap.String.t
+type relation_description = string BatMap.String.t
+type tuple_description = {relation: relation_description; attributes: string BatMap.String.t}
 
-  class type implementation = object
-    method schema : (Schema.t, Concepts.Condition.condition) result
-  end
+(* TODO: For now the description is completely detached from actual
+   types and domains. Later figure out a way to represent the links
+   without strings. *)
+type description =
+  | Multigroup of multigroup_description
+  | Relation of relation_description
+  | Tuple of tuple_description
 
-  val make : #implementation -> Handle.protocol
-  val from : Handle.t -> t Handle.interface option
-  val schema : t Handle.interface -> (Schema.t, Concepts.Condition.condition) result
-  val attributes :
-    t Handle.interface ->
-    ((string * Schema.attribute) BatFingerTree.t, Concepts.Condition.condition) result
+class type implementation = object
+  method describe : unit -> (description, Concepts.Condition.condition) result
 end
 
-module Make (Schema : Abstract.Schematics.SCHEMA) = struct
-  module Schema = Schema
-  class type implementation = object
-    method schema : (Schema.t, Concepts.Condition.condition) result
-  end
+type Handle.protocol += Schematics of implementation
 
-  type Handle.protocol += Schematics of implementation
-  type t = implementation
+type t = implementation
 
-  let make impl = Schematics (impl :> implementation)
-  let from handle = Handle.into handle (function Schematics impl -> Some impl | _ -> None)
-  let schema i = Handle.invoke i (fun o -> o#schema)
-  let attributes i = Result.map Schema.attributes (schema i)
-end
+let make impl = Schematics (impl :> implementation)
+let from handle =
+  Handle.into handle (function Schematics impl -> Some impl | _ -> None)
+let describe impl = Handle.invoke impl (fun o -> o#describe ())

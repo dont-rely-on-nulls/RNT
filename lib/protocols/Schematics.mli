@@ -1,18 +1,21 @@
-(** Instantiate once and share the protocol with schema providers and evaluators. *)
-module type S = sig
-  module Schema : Abstract.Schematics.SCHEMA
-  type t
+type t
 
-  class type implementation = object
-    method schema : (Schema.t, Concepts.Condition.condition) result
-  end
+(* TODO: For now the description is completely detached from actual
+   types and domains. Later figure out a way to represent the links
+   without strings. *)
+type multigroup_description = string BatMap.String.t
+type relation_description = string BatMap.String.t
+type tuple_description = {relation: relation_description; attributes: string BatMap.String.t}
 
-  val make : #implementation -> Handle.protocol
-  val from : Handle.t -> t Handle.interface option
-  val schema : t Handle.interface -> (Schema.t, Concepts.Condition.condition) result
-  val attributes :
-    t Handle.interface ->
-    ((string * Schema.attribute) BatFingerTree.t, Concepts.Condition.condition) result
+type description =
+  | Multigroup of multigroup_description
+  | Relation of relation_description
+  | Tuple of tuple_description
+
+class type implementation = object
+  method describe : unit -> (description, Concepts.Condition.condition) result
 end
 
-module Make (Schema : Abstract.Schematics.SCHEMA) : S with module Schema = Schema
+val make : #implementation -> Handle.protocol
+val from : Handle.t -> t Handle.interface option
+val describe : t Handle.interface -> (description, Concepts.Condition.condition) result
