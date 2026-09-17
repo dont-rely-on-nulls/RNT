@@ -9,25 +9,23 @@ module Error = struct
     condition "evaluation-cancelled" "An evaluation was stopped before it produced its result" empty
 end
 
-type plan = Base of string
+type plan = Base of Protocols.Handle.t
+          | Project of plan * string BatFingerTree.t
 
 module Program = Protocols.Program.Make (struct
   type t = plan
 end)
 
-let execute context = function
-  | Base name ->
-     let open Utilities.Result in
-     match context.Protocols.Context.status () with
-     | `Cancelled | `Exhausted -> Error (Error.cancelled ())
-     | `Live ->
-        let* found = Runtime.Context.resolve context name in
-        let* handle = Option.to_result ~none:(Error.unknown_relation name) found in
-        Fun.protect
-          ~finally:(fun () -> Protocols.Handle.release handle)
-          (fun () ->
-            let* enumerable = Protocols.Enumerable.require handle in
-            Protocols.Enumerable.enumerate enumerable context)
+let execute context =
+  let open Utilities.Result in
+  function
+  | Base relation_handle ->
+     Fun.protect
+       ~finally:(fun () -> Protocols.Handle.release relation_handle)
+       (fun () ->
+         let* enumerable = Protocols.Enumerable.require relation_handle in
+         Protocols.Enumerable.enumerate enumerable context)
+  | Project (_plan, _attributes) -> failwith "TODO"
 
 class evaluator = object (self)
   inherit Kernel.Lifecycle.null
