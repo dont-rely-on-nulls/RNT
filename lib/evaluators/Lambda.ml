@@ -25,8 +25,10 @@ type term =
   | Abstract of string * term
   | Apply of term * term
 
+type program = Program of term * Protocols.Directory.t Protocols.Handle.interface
+
 module Program = Protocols.Program.Make (struct
-  type t = term
+  type t = program
 end)
 
 type value =
@@ -34,56 +36,67 @@ type value =
   | Closure of string * term * environment
 and environment = value BatMap.String.t
 
-let reduce context ~acquire term =
+(* let reduce context term = *)
+(*   let open Utilities.Result in *)
+(*   let rec eval environment term = *)
+(*     match context.Protocols.Context.status () with *)
+(*     | `Cancelled | `Exhausted -> Error (Error.cancelled ()) *)
+(*     | `Live -> *)
+(*        match term with *)
+(*        | Name name -> *)
+(*           begin match BatMap.String.find_opt name environment with *)
+(*            | Some value -> Ok value *)
+(*            | None -> *)
+(*               let* found = Runtime.Context.resolve context name in *)
+(*               let* handle = Option.to_result ~none:(Error.unknown_name name) found in *)
+(*               Ok (Relation handle) *)
+(*           end *)
+(*        | Abstract (binder, body) -> Ok (Closure (binder, body, environment)) *)
+(*        | Apply (operator, operand) -> *)
+(*           let* operator = eval environment operator in *)
+(*           match operator with *)
+(*           | Relation _ -> Error (Error.not_applicable ()) *)
+(*           | Closure (binder, body, closed) -> *)
+(*              let* argument = eval environment operand in *)
+(*              eval (BatMap.String.add binder argument closed) body *)
+(*   in *)
+(*   eval BatMap.String.empty term *)
+
+let reduce (Program (term, dir)) =
   let open Utilities.Result in
-  let rec eval environment term =
-    match context.Protocols.Context.status () with
-    | `Cancelled | `Exhausted -> Error (Error.cancelled ())
-    | `Live ->
-       match term with
-       | Name name ->
-          begin match BatMap.String.find_opt name environment with
-           | Some value -> Ok value
-           | None ->
-              let* found = Runtime.Context.resolve context name in
-              let* handle = Option.to_result ~none:(Error.unknown_name name) found in
-              Ok (Relation (acquire handle))
-          end
-       | Abstract (binder, body) -> Ok (Closure (binder, body, environment))
-       | Apply (operator, operand) ->
-          let* operator = eval environment operator in
-          match operator with
-          | Relation _ -> Error (Error.not_applicable ())
-          | Closure (binder, body, closed) ->
-             let* argument = eval environment operand in
-             eval (BatMap.String.add binder argument closed) body
+  let open Protocols in
+  let rec eval env term =
+    match term with
+    | Name name ->
+       begin
+         match BatMap.String.find_opt name env with
+         | Some value -> Ok value
+         | None ->
+            let* handle = Directory.find dir name |> fmap (Option.to_result ~none:(Error.unknown_name name)) in
+            Ok (Relation handle)
+       end
+    | Abstract (binder, body) -> Ok (Closure (binder, body, env))
+    | Apply (operator, operand) ->
+       let* operator = eval env operation in
+       match operator with
+       | Relation _ -> Error (Error.not_applicable ())
+       | _ -> failwith "TODO"
   in
   eval BatMap.String.empty term
 
-(* Every handle resolved during reduction is released once the result
-   has been enumerated and we keep a closure free to carry a relation
-   it did not resolve itself *)
-let execute context term =
+let execute term =
   let open Utilities.Result in
-  let acquired = ref [] in
-  let acquire handle =
-    acquired := handle :: !acquired;
-    handle
-  in
-  Fun.protect
-    ~finally:(fun () -> List.iter Protocols.Handle.release !acquired)
-    (fun () ->
-      let* value = reduce context ~acquire term in
-      match value with
-      | Closure _ -> Error (Error.unapplied_abstraction ())
-      | Relation handle ->
-         let* enumerable = Protocols.Enumerable.require handle in
-         Protocols.Enumerable.enumerate enumerable context)
+  let* value = reduce context term in
+  match value with
+  | Closure _ -> Error (Error.unapplied_abstraction ())
+  | Relation handle ->
+     let* enumerable = Protocols.Enumerable.require handle in
+     Protocols.Enumerable.enumerate enumerable
 
 class evaluator = object (self)
   inherit Kernel.Lifecycle.null
   inherit Kernel.Identity.of_id
-  method invoke ~program context = execute context program
+  method invoke program = execute program
   method protocols : Protocols.Handle.protocol list = [Program.make self]
 end
 

@@ -9,7 +9,7 @@ module Error = struct
 end
 
 class type implementation = object
-  method enumerate : Context.t -> (Handle.t, Concepts.Condition.condition) result
+  method enumerate : (Handle.t, Concepts.Condition.condition) result
 end
 
 type Handle.protocol += Enumerable of implementation
@@ -18,4 +18,4 @@ type t = implementation
 let make impl = Enumerable (impl :> implementation)
 let from handle = Handle.into handle (function Enumerable impl -> Some impl | _ -> None)
 let require handle = from handle |> Option.to_result ~none:(Error.not_enumerable ())
-let enumerate i context = Handle.invoke i (fun o -> o#enumerate context)
+let enumerate i = Handle.invoke i (fun o -> o#enumerate)

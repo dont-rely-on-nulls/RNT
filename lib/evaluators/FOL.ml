@@ -16,7 +16,7 @@ module Program = Protocols.Program.Make (struct
   type t = plan
 end)
 
-let execute context =
+let execute =
   let open Utilities.Result in
   function
   | Base relation_handle ->
@@ -24,14 +24,14 @@ let execute context =
        ~finally:(fun () -> Protocols.Handle.release relation_handle)
        (fun () ->
          let* enumerable = Protocols.Enumerable.require relation_handle in
-         Protocols.Enumerable.enumerate enumerable context)
+         Protocols.Enumerable.enumerate enumerable)
   | Project (_plan, _attributes) -> failwith "TODO"
 
 class evaluator = object (self)
   inherit Kernel.Lifecycle.null
   inherit Kernel.Identity.of_id
 
-  method invoke ~program context = execute context program
+  method invoke = execute
   method protocols : Protocols.Handle.protocol list = [Program.make self]
 end
 
