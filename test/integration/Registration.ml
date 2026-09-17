@@ -17,7 +17,7 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
     |> Helpers.condition_as_failure |> ignore;
     begin
       let* root = I.initialize conn in
-      Kernel.Path.(lookup' root ("branch" @/ "master" @/ "multigroup" @/ this))
+      Kernel.Path.(lookup root ("branch" @/ "master" @/ "multigroup" @/ this))
     end
     |> Helpers.condition_as_failure |> ignore
 

@@ -17,28 +17,30 @@ module Error = struct
                               ("path" |=| Concepts.Value.String (to_string path))
 
   let not_a_registry path = condition "not-a-registry" "The specified path did not point to a registry"
+                              ("path" |=| Concepts.Value.String (to_string path))
+
+  let not_a_directory path = condition "not-a-directory" "The specified path did not point to a directory"
                                ("path" |=| Concepts.Value.String (to_string path))
 end
 
-let rec lookup handle = function
-  | [] -> Ok (Some handle)
-  | x::xs ->
-     let open Utilities.Result in
-     let open Protocols in
-     match Protocols.Directory.from handle with
-     | None -> Ok None
-     | Some dir ->
-        let* elem = Directory.find dir x in
-        match elem with
-        | None -> Ok None
-        | Some elem -> lookup elem xs
-
-let lookup' handle path = lookup handle path
-                          |> Result.map (Option.to_result ~none:(Error.path_not_found path))
-                          |> Result.join
+let lookup handle path =
+  let rec walk handle = function
+    | [] -> Ok handle
+    | x::xs ->
+       let open Utilities.Result in
+       let open Protocols in
+       match Directory.from handle with
+       | None -> Error (Error.path_not_found path)
+       | Some dir ->
+          let* elem = Directory.find dir x in
+          match elem with
+          | None -> Error (Error.not_a_directory path)
+          | Some elem -> walk elem xs
+  in
+  walk handle path
 
 let update handle path key reference value =
   let open Utilities.Result in
-  let* handle = lookup' handle path in
+  let* handle = lookup handle path in
   let* registry = Protocols.Registry.from handle |> Option.to_result ~none:(Error.not_a_registry path) in
   Protocols.Registry.update registry key reference value
