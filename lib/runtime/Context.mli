@@ -1,6 +1,6 @@
 val resolve :
   Protocols.Context.t ->
-  string ->
+  Kernel.Path.t ->
   (Protocols.Handle.t option, Concepts.Condition.condition) result
 
 val over :
