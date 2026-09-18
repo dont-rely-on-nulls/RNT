@@ -34,7 +34,14 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     let compare = Concepts.Hash.compare
   end
 
-  module TupleSet = Merkle.Make (S) (TupleKey)
+  module TupleValue = struct
+    type t = Concepts.Tuple.t
+
+    let encode = Concepts.Tuple.Representation.to_blob
+    let decode = Concepts.Tuple.Representation.of_blob
+  end
+
+  module TupleSet = Merkle.Interface (S) (TupleKey) (TupleValue)
 
   type t =
     { schematics: Concepts.Hash.hash;
@@ -102,9 +109,8 @@ module Make (S : Abstract.Storage.STORAGE) = struct
 
   let contains_tuple tx relation tuple =
     let open Utilities.Result in
-    let tuple = Concepts.Hash.hash_of_blob tuple in
     let* node = tuple_node tx relation in
-    let* present = TupleSet.lookup tx tuple node in
+    let* present = TupleSet.lookup tx (Concepts.Tuple.hash tuple) node in
     Ok (Option.is_some present)
 
   let schema_of tx relation =
@@ -132,17 +138,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
        and one tuple at a time rather than materialized before the
        first tuple is produced. *)
     let produce ~yield =
-      let* walked =
-        TupleSet.fold_left tx
-          (fun acc _ addr ->
-            let* () = acc in
-            let* tuple =
-              SI.get_req tx (S.Hash addr) |> fmap Concepts.Tuple.Representation.of_blob
-            in
-            yield tuple;
-            Ok ())
-          (Ok ()) node
-      in
+      let walked = TupleSet.iter tx (fun _ tuple -> yield tuple) node in
       close ();
       walked
     in
@@ -159,8 +155,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
       (* The protocol takes a tuple, not bytes: encoding is this object's business, and a caller
          that had to produce the exact stored bytes would have to know this encoding to do it. *)
       method contains (tuple : Concepts.Tuple.t) =
-        SI.with_transaction storage (fun tx ->
-            contains_tuple tx relation (Concepts.Tuple.Representation.to_blob tuple) )
+        SI.with_transaction storage (fun tx -> contains_tuple tx relation tuple)
 
       method describe () =
         let open Utilities.Result in
@@ -201,8 +196,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
 
   let assert_tuple tx relation tuple =
     let open Utilities.Result in
-    let* tuple = SI.store_blob tx tuple in
     let* node = tuple_node tx relation in
-    let* node = TupleSet.insert tx tuple tuple node in
+    let* node = TupleSet.insert tx (Concepts.Tuple.hash tuple) tuple node in
     Ok {relation with tuples= TupleSet.hash_of node}
 end

@@ -42,10 +42,10 @@ module Make (S : Abstract.Storage.STORAGE) : sig
   val hash : t -> Concepts.Hash.hash
 
   val assert_tuple :
-    S.transaction -> t -> Concepts.Blob.t -> (t, Concepts.Condition.condition) result
+    S.transaction -> t -> Concepts.Tuple.t -> (t, Concepts.Condition.condition) result
 
   val contains_tuple :
-    S.transaction -> t -> Concepts.Blob.t -> (bool, Concepts.Condition.condition) result
+    S.transaction -> t -> Concepts.Tuple.t -> (bool, Concepts.Condition.condition) result
 
   (** decodes the schematics at [schematics relation] -- the body of
       [Protocols.Schematics.describe] for this kind of relation. *)

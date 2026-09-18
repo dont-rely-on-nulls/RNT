@@ -29,9 +29,7 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
         let open Utilities.Result in
         let* tx = S.start conn in
         let* relation = SR.empty tx ~schematics:(hash "schema") () in
-        let* relation =
-          SR.assert_tuple tx relation (Concepts.Tuple.Representation.to_blob alaric)
-        in
+        let* relation = SR.assert_tuple tx relation alaric in
         let* () = S.commit tx in
         let* employee = SR.wrap conn relation in
         let root =

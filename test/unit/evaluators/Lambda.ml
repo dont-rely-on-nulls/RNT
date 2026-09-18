@@ -38,7 +38,7 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
     let* tx = S.start conn in
     let singleton tuple =
       let* relation = SR.empty tx ~schematics:(hash "schema") () in
-      SR.assert_tuple tx relation (Concepts.Tuple.Representation.to_blob tuple)
+      SR.assert_tuple tx relation tuple
     in
     let* noun = singleton datum in
     let* verb = singleton reticulare in
