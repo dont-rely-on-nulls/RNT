@@ -15,6 +15,10 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
         BatMap.String.empty
         |> BatMap.String.add "name" (Concepts.Value.String "Alaric") }
 
+  let not_a_directory () =
+    Concepts.Condition.condition "not-a-directory"
+      "A handle was expected to carry the directory protocol and did not" Concepts.Condition.empty
+
   let not_a_program () =
     Concepts.Condition.condition "not-a-program"
       "A handle was expected to carry the program protocol and did not" Concepts.Condition.empty
@@ -35,16 +39,17 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
             [ Kernel.Prototype.Directory.of_properties
                 ["employee", employee; "fol", Rnt.Evaluators.FOL.make ()] ]
         in
-        let context = Runtime.Context.over ~snapshot:(hash "snapshot") ~root () in
-        let* found = Runtime.Context.resolve context "fol" in
+        let* directory =
+          Protocols.Directory.from root |> Option.to_result ~none:(not_a_directory ())
+        in
+        let* found = Protocols.Directory.find directory "fol" in
         let* evaluator = Option.to_result ~none:(not_a_program ()) found in
         let* interpreter =
           Rnt.Evaluators.FOL.Program.from evaluator
           |> Option.to_result ~none:(not_a_program ())
         in
         let* cursor =
-          Rnt.Evaluators.FOL.Program.invoke interpreter
-            ~program:(Rnt.Evaluators.FOL.Base "employee") context
+          Rnt.Evaluators.FOL.Program.invoke interpreter (Rnt.Evaluators.FOL.Base employee)
         in
         let* scan = Protocols.Cursor.require cursor in
         let* tuples = Protocols.Cursor.drain scan () in

@@ -172,7 +172,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
          discovers it cannot iterate one -- see [Protocols.Enumerable]. The context is accepted and
          unused here: this enumeration reads through its own cursor-lifetime transaction and needs
          no name resolution, but cancellation should eventually be checked between tuples. *)
-      method enumerate (_ : Protocols.Context.t) = enumerate storage relation
+      method enumerate = enumerate storage relation
 
       method protocols : Protocols.Handle.protocol list =
         [ Protocols.Relation.make self
