@@ -77,16 +77,18 @@ let reduce (Program (term, dir)) =
        end
     | Abstract (binder, body) -> Ok (Closure (binder, body, env))
     | Apply (operator, operand) ->
-       let* operator = eval env operation in
+       let* operator = eval env operator in
        match operator with
        | Relation _ -> Error (Error.not_applicable ())
-       | _ -> failwith "TODO"
+       | Closure (binder, body, closed) ->
+          let* argument = eval env operand in
+          eval (BatMap.String.add binder argument closed) body
   in
   eval BatMap.String.empty term
 
 let execute term =
   let open Utilities.Result in
-  let* value = reduce context term in
+  let* value = reduce term in
   match value with
   | Closure _ -> Error (Error.unapplied_abstraction ())
   | Relation handle ->

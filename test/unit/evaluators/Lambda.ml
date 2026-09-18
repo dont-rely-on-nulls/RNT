@@ -21,6 +21,10 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
         BatMap.String.empty
         |> BatMap.String.add "lemma" (Concepts.Value.String "rēticulāre") }
 
+  let not_a_directory () =
+    Concepts.Condition.condition "not-a-directory"
+      "A handle was expected to carry the directory protocol and did not" Concepts.Condition.empty
+
   let not_a_program () =
     Concepts.Condition.condition "not-a-program"
       "A handle was expected to carry the program protocol and did not" Concepts.Condition.empty
@@ -46,14 +50,18 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
         [ Kernel.Prototype.Directory.of_properties
             ["noun", noun; "verb", verb; "lambda", Rnt.Evaluators.Lambda.make ()] ]
     in
-    let context = Runtime.Context.over ~snapshot:(hash "snapshot") ~root () in
-    let* found = Runtime.Context.resolve context "lambda" in
+    let* directory =
+      Protocols.Directory.from root |> Option.to_result ~none:(not_a_directory ())
+    in
+    let* found = Protocols.Directory.find directory "lambda" in
     let* evaluator = Option.to_result ~none:(not_a_program ()) found in
     let* interpreter =
       Rnt.Evaluators.Lambda.Program.from evaluator
       |> Option.to_result ~none:(not_a_program ())
     in
-    let* cursor = Rnt.Evaluators.Lambda.Program.invoke interpreter ~program:term context in
+    let* cursor =
+      Rnt.Evaluators.Lambda.(Program.invoke interpreter (Program (term, directory)))
+    in
     let* scan = Protocols.Cursor.require cursor in
     let* tuples = Protocols.Cursor.drain scan () in
     Protocols.Handle.release cursor;
@@ -62,8 +70,8 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
   let is lemma tuple =
     Concepts.Hash.hash_equals (Concepts.Tuple.hash tuple) (Concepts.Tuple.hash lemma)
 
-  (* A bare name resolves through the context, so the relations under
-     the snapshot are the outer environment *)
+  (* A bare name resolves through the directory, so the relations it
+     holds are the outer environment *)
   let a_name_is_a_relation conn =
     let scanned =
       evaluate conn (Rnt.Evaluators.Lambda.Name "noun") |> Helpers.condition_as_failure
