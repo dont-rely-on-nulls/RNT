@@ -110,8 +110,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
   let contains_tuple tx relation tuple =
     let open Utilities.Result in
     let* node = tuple_node tx relation in
-    let* present = TupleSet.lookup tx (Concepts.Tuple.hash tuple) node in
-    Ok (Option.is_some present)
+    TupleSet.mem tx (Concepts.Tuple.hash tuple) node
 
   let schema_of tx relation =
     let open Utilities.Result in

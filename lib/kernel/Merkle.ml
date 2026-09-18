@@ -360,6 +360,7 @@ module type INTERFACE = functor (S : Abstract.Storage.STORAGE) (K : KEY) (V : VA
   val insert : S.transaction -> K.t -> V.t -> node -> (node, Concepts.Condition.condition) result
   val remove : S.transaction -> K.t -> node -> (node, Concepts.Condition.condition) result
   val lookup : S.transaction -> K.t -> node -> (V.t option, Concepts.Condition.condition) result
+  val mem : S.transaction -> K.t -> node -> (bool, Concepts.Condition.condition) result
 
   val fold_left : S.transaction -> ('c -> K.t -> V.t -> 'c) -> 'c -> node -> ('c, Concepts.Condition.condition) result
   val iter : S.transaction -> (K.t -> V.t -> 'a) -> node -> (unit, Concepts.Condition.condition) result
@@ -368,6 +369,7 @@ end
 
 module Interface : INTERFACE = functor (S : Abstract.Storage.STORAGE) (K : KEY) (V : VALUE) -> struct
   module T = Make (S) (K)
+  module SI = Storage.Make (S)
 
   type address = T.address
   type node = T.node
@@ -380,19 +382,7 @@ module Interface : INTERFACE = functor (S : Abstract.Storage.STORAGE) (K : KEY) 
     let* () = S.put tx (S.Hash addr) data in
     Ok addr
 
-  let retrieve tx addr =
-    let* data = S.get tx (S.Hash addr) in
-    match data with
-    | None -> Ok None
-    | Some data ->
-       let* v = V.decode data in
-       Ok (Some v)
-
-  let retrieve' tx addr =
-    let* v = retrieve tx addr in
-    match v with
-    | Some v -> Ok v
-    | None -> failwith "A value was not found on the underlying storage. Either your database is corrupted, or this is a bug on RNT!"
+  let retrieve tx addr = SI.get_req tx (S.Hash addr) |> fmap V.decode
 
   let find = T.find
   let empty = T.empty
@@ -410,13 +400,15 @@ module Interface : INTERFACE = functor (S : Abstract.Storage.STORAGE) (K : KEY) 
     let* addr = T.lookup tx k node in
     match addr with
     | None -> Ok None
-    | Some addr -> retrieve tx addr
+    | Some addr -> retrieve tx addr |> Result.map Option.some
+
+  let mem tx k node = T.lookup tx k node |> Result.map Option.is_some
 
   let fold_left tx f acc node =
     T.fold_left tx
       (fun acc k addr ->
         let* acc = acc in
-        let* v = retrieve' tx addr in
+        let* v = retrieve tx addr in
         Ok (f acc k v))
       (Ok acc) node
     |> Result.join
