@@ -1,7 +1,7 @@
 #+TITLE: Evaluators
 
 * Position
-RNT should supply objects, storage, transactions, and execution
+RNT should supply objects, storage, and execution
 lifecycle, but not directly a sublanguage. That duty is then on the
 clients to implement one and register it, using the kernel's
 capabilities.
@@ -25,17 +25,16 @@ get back B and C.
 
 * Protocols
 An evaluator is an object like any other, that can be used to execute
-program with a context, exactly as an interpreter takes an expression
-and an environment. The plan tree should already bear every value the
-program needs, so there is nothing left to bind. Each invocation
-carries independent state based atop of a database view of the world
+a program, exactly as an interpreter takes an expression and an
+environment. The plan tree should already bear every value and handle
+the program needs, so there is nothing left to bind. Each invocation
+carries independent state based atop of the handles it was given
 (being therefore hash dependent and isolated).
 
 #+begin_src ocaml
 module Make (P : PROGRAM) : sig
   class type implementation = object
-    method invoke :
-      program:P.t -> Context.t -> (Handle.t, condition) result
+    method invoke : P.t -> (Handle.t, condition) result
   end
 end
 #+end_src
@@ -50,13 +49,12 @@ intends to speak to. The FOL evaluator, which lives under
 understands a single node:
 
 #+begin_src ocaml
-type plan = Base of string
+type plan = Base of Handle.t
 #+end_src
 
-=Base= names a relation, which is resolved through the context and
-enumerated to exhaustion. The name is resolved rather than an address
-being followed, which keeps the evaluator free of storage and makes
-every resolution happen under one snapshot.
+=Base= carries the handle of a relation, which is enumerated to
+exhaustion. The evaluator only invokes protocols on the handles it
+receives, which keeps it free of storage and of name resolution.
 
 The returned handle carries a result protocol with =Protocols.Cursor=,
 giving it incremental consumption. Since executing a plan node yields
@@ -69,38 +67,26 @@ sublanguages. That is not to say however that we cannot have a builtin
 catalog relation installed and configured by the client that
 enumerates them (that's a concern for the future).
 
-* Context
-=Protocols.Context.t= supplies the selected database state, the root
-handle through which names are resolved (which assumes authorization,
-since we are a capability based system), and the status of the
-evaluation. Evaluators reach kernel resources *only* through it.
+* Handles
+There is no evaluation context. Since we are a capability based
+system, holding a handle is what authorizes its use, so the caller
+obtains every handle a program needs beforehand (through the
+directories it was granted) and passes them in. Evaluators reach
+kernel resources *only* through those handles. A program that refers
+to things by name carries the directory they are resolved in, as the
+lambda evaluator does:
 
 #+begin_src ocaml
-type t =
-  { snapshot : Concepts.Hash.hash
-  ; root : Handle.t
-  ; status : unit -> [`Live | `Cancelled | `Exhausted] }
+type program = Program of term * Directory.t Handle.interface
 #+end_src
 
-The snapshot is the hash of a commit. Since every object is content
-addressed and prolly trees do not depend on insertion order, equal
-state yields an equal hash, so a commit hash is a frozen world rather
-than a pointer into a changing one. A cursor therefore pins a hash
-instead of an open transaction, and every node of a plan reads the
-same state, which gives repeatable reads across a whole plan for free
-and makes concurrent commits simply invisible to a running
-evaluation.
+Since every object is content addressed and prolly trees do not
+depend on insertion order, equal state yields an equal hash, so the
+relation behind a handle does not change under a running evaluation.
+A successful evaluation and cursor exhaustion never commit. Commit
+should be an explicit host operation.
 
-=status= collapses cancellation and resource exhaustion into the
-single question an operator asks between tuples, namely whether it may
-produce another tuple. The runtime owns how =Exhausted= is decided. A
-nested invocation shares the snapshot, so nesting does not need to
-resolve a branch tip again, and a successful evaluation and cursor
-exhaustion never commit. Commit should be an explicit host operation.
-
-Budgets, authority narrowing, and resource accounting are not
-implemented, and adding a fourth status case would break exhaustive
-matches in consumers, which is the price of keeping this closed.
+Cancellation, budgets, and resource accounting are not implemented.
 
 * Composition
 Evaluators compose through invocation and result protocols alone. A
