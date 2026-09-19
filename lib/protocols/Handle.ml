@@ -36,6 +36,8 @@ let invoke { handle; interface } f =
   let _ = object_of handle in
   f interface
 
+let from { handle; _ } = handle
+
 let copy handle =
   let o = object_of handle in
   if o#reference then

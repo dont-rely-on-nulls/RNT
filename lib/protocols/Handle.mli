@@ -14,6 +14,7 @@ end
 val make : #obj -> t
 
 val into : t -> (protocol -> 'a option) -> 'a interface option
+val from : 'a interface -> t
 
 val invoke : 'a interface -> ('a -> 'b) -> 'b
 
