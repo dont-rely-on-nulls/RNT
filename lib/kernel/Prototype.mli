@@ -11,6 +11,10 @@ module Directory : sig
 end
 
 module Associative : sig
+  val of_properties : (string * (Protocols.Handle.t option -> (Protocols.Handle.t, Concepts.Condition.condition) result)) list -> Protocols.Handle.protocol
+
+  val update_only : (Protocols.Handle.t -> (Protocols.Handle.t, Concepts.Condition.condition) result) -> (Protocols.Handle.t option -> (Protocols.Handle.t, Concepts.Condition.condition) result)
+
   module OfTree (S : Abstract.Storage.STORAGE) (K : Merkle.KEY with type t = string) : sig
     module Tree : module type of Merkle.Make (S) (K)
     val make : storage:S.connection -> constructor:(Tree.node -> (Protocols.Handle.t, Concepts.Condition.condition) result) -> node:Tree.node -> Protocols.Handle.protocol

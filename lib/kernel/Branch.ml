@@ -69,6 +69,13 @@ module Make (S : Abstract.Storage.STORAGE) = struct
 
     method protocols : Protocols.Handle.protocol list =
       Protocols.[ Addressable.make self;
+                  Prototype.Associative.(of_properties
+                    [ "multigroup", update_only (fun node' ->
+                                        let open Utilities.Result in
+                                        let* addressable = Handle.require Addressable.from node' in
+                                        let addr = Addressable.address addressable in
+                                        ignore addr;
+                                        failwith "TODO") ]);
                   Prototype.Directory.of_properties
                     [ "multigroup", Prototype.mixture_of node
                                       (fun make node ->

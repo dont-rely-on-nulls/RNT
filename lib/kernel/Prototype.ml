@@ -9,7 +9,32 @@ let mixture ps = Protocols.Handle.make @@
 let rec mixture_of value f =
   mixture (f (fun value' -> mixture_of value' f) value)
 
+module Error = struct
+  open Concepts.Condition
+
+  let invalid_property key = condition "invalid-property" "The specified key does not correspond to any property of the object"
+                               ("key" |=| Concepts.Value.String key)
+
+  let deletion_not_supported () = condition "deletion-not-supported" "Attempting to delete an object property"
+                                    empty
+end
+
 module Associative = struct
+  let of_properties props =
+    Protocols.Associative.make @@
+      object
+        val props = BatList.to_seq props |> BatMap.of_seq
+
+        method update key value =
+          match BatMap.find_opt key props with
+          | None -> Error (Error.invalid_property key)
+          | Some f -> f value
+      end
+
+  let update_only f = function
+    | None -> Error (Error.deletion_not_supported ())
+    | Some x -> f x
+
   module OfTree (S : Abstract.Storage.STORAGE) (K : Merkle.KEY with type t = string) = struct
     module Tree = Merkle.Make (S) (K)
     module SI = Storage.Make (S)
@@ -35,7 +60,7 @@ module Associative = struct
 end
 
 module Directory = struct
-  let of_properties (props) =
+  let of_properties props =
     Protocols.Directory.make @@
       object
         val props = BatList.to_seq props |> BatMap.of_seq
