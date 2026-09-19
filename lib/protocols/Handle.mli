@@ -22,3 +22,5 @@ val equal : t -> t -> bool
 val release : t -> unit
 
 val hash : t -> Concepts.Hash.hash
+
+val require : (t -> 'a interface option) -> t -> ('a interface, Concepts.Condition.condition) result

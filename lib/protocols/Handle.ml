@@ -1,5 +1,12 @@
 type protocol = ..
 
+module Error = struct
+  open Concepts.Condition
+
+  let unimplemented_protocol () = condition "unimplemented-protocol" "A required protocol was not implemented by the specified object"
+                                    empty
+end
+
 class type obj = object
   method reference : bool
   method release : unit
@@ -45,3 +52,5 @@ let release ({ valid; _ } as handle) =
   let o = object_of handle in
   valid := false;
   o#release
+
+let require f h = Option.to_result ~none:(Error.unimplemented_protocol ()) (f h)

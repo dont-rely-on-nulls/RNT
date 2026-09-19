@@ -59,7 +59,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
       Ok { multigroups; previous }
   end
 
-  class branch storage value node = object
+  class branch storage value node = object (self)
     inherit Lifecycle.null
 
     val storage : S.connection = storage
@@ -67,15 +67,18 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     val node = node (* FIXME: can we not place this inside `t`? *)
 
     method protocols : Protocols.Handle.protocol list =
-      [ Prototype.Directory.of_properties
-          [ "multigroup", Prototype.mixture
-                            [ MMDirectory.make
-                                ~storage ~node
-                                ~constructor:(M.wrap storage) ] ] ]
+      Protocols.[ Addressable.make self;
+                  Prototype.Directory.of_properties
+                    [ "multigroup", Prototype.mixture
+                                      [ MMDirectory.make
+                                          ~storage ~node
+                                          ~constructor:(M.wrap storage) ] ] ]
 
     method hash =
       Representation.to_blob branch
       |> Concepts.Hash.hash_of_blob
+
+    method address = self#hash
   end
 
   let load tx conn addr =

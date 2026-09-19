@@ -51,13 +51,21 @@ module Make (S : Abstract.Storage.STORAGE) = struct
 
     method update key reference value =
       let open Utilities.Result in
+      let open Protocols in
       SI.with_transaction storage (fun tx ->
           match
             Utilities.Atomic.mswap head (fun head ->
+                let address_of h =
+                  let* i = Handle.require Addressable.from h in
+                  Ok (Addressable.address i)
+                in
                 let* branch = M.lookup tx key head |> Result.map_error (fun e -> Some e) in
-                (* FIXME: we should have an addressable protocol rather than assuming the hash is the content store address *)
-                let reference = Option.map Protocols.Handle.hash reference in
-                let value = Option.map Protocols.Handle.hash value in
+                let* reference = Option.map address_of reference
+                                 |> Utilities.Option.sequence
+                                 |> Result.map_error (fun e -> Some e) in
+                let* value = Option.map address_of value
+                             |> Utilities.Option.sequence
+                             |> Result.map_error (fun e -> Some e) in
                 if branch = reference then
                   begin
                     let* new_head = match value with

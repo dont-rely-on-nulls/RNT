@@ -17,6 +17,7 @@ end
 module Option : sig
   val ( let* ) : 'a option -> ('a -> 'b option) -> 'b option
   val fmap : ('a -> 'b option) -> 'a option -> 'b option
+  val sequence : ('a, 'b) result option -> ('a option, 'b) result
 end
 
 module Atomic : sig

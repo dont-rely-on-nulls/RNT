@@ -4,6 +4,14 @@ module Ordering = struct
   let of_int x = if x < 0 then Smaller else if x > 0 then Greater else Equal
 end
 
+module Option = struct
+  let ( let* ) = Option.bind
+  let fmap f m = Option.bind m f
+  let sequence = function
+    | None -> Ok None
+    | Some x -> Result.map Option.some x
+end
+
 module Result = struct
   let ( let* ) = Result.bind
   let fmap f m = Result.bind m f
@@ -78,11 +86,6 @@ module FingerTree = struct
   let join ss sep =
     BatFingerTree.print ~first:"" ~last:"" ~sep:sep BatIO.nwrite
     |> Fun.flip BatIO.to_string ss
-end
-
-module Option = struct
-  let ( let* ) = Option.bind
-  let fmap f m = Option.bind m f
 end
 
 module Atomic = struct
