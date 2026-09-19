@@ -345,12 +345,16 @@ module Make : TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> struct
 end
 
 module type INTERFACE = functor (S : Abstract.Storage.STORAGE) (K : KEY) (V : VALUE) -> sig
+  module Tree : module type of Make (S) (K)
+
   type address = Concepts.Hash.hash
   type node
 
   val with_batch: S.transaction -> (unit -> (node, Concepts.Condition.condition) result) -> (node, Concepts.Condition.condition) result
 
   val find : S.transaction -> address -> (node option, Concepts.Condition.condition) result
+  val from : Tree.node -> node
+  val into : node -> Tree.node
 
   val empty : node
   val empty_under : S.transaction -> (address, Concepts.Condition.condition) result
@@ -368,11 +372,11 @@ module type INTERFACE = functor (S : Abstract.Storage.STORAGE) (K : KEY) (V : VA
 end
 
 module Interface : INTERFACE = functor (S : Abstract.Storage.STORAGE) (K : KEY) (V : VALUE) -> struct
-  module T = Make (S) (K)
+  module Tree = Make (S) (K)
   module SI = Storage.Make (S)
 
-  type address = T.address
-  type node = T.node
+  type address = Tree.address
+  type node = Tree.node
 
   open Utilities.Result
 
@@ -384,28 +388,30 @@ module Interface : INTERFACE = functor (S : Abstract.Storage.STORAGE) (K : KEY) 
 
   let retrieve tx addr = SI.get_req tx (S.Hash addr) |> fmap V.decode
 
-  let find = T.find
-  let empty = T.empty
-  let empty_under = T.empty_under
-  let hash_of = T.hash_of
-  let with_batch = T.with_batch
+  let find = Tree.find
+  let from x = x
+  let into x = x
+  let empty = Tree.empty
+  let empty_under = Tree.empty_under
+  let hash_of = Tree.hash_of
+  let with_batch = Tree.with_batch
 
   let insert tx k v node =
     let* addr = intern tx v in
-    T.insert tx k addr node
+    Tree.insert tx k addr node
 
-  let remove = T.remove
+  let remove = Tree.remove
 
   let lookup tx k node =
-    let* addr = T.lookup tx k node in
+    let* addr = Tree.lookup tx k node in
     match addr with
     | None -> Ok None
     | Some addr -> retrieve tx addr |> Result.map Option.some
 
-  let mem tx k node = T.lookup tx k node |> Result.map Option.is_some
+  let mem tx k node = Tree.lookup tx k node |> Result.map Option.is_some
 
   let fold_left tx f acc node =
-    T.fold_left tx
+    Tree.fold_left tx
       (fun acc k addr ->
         let* acc = acc in
         let* v = retrieve tx addr in
@@ -418,7 +424,7 @@ module Interface : INTERFACE = functor (S : Abstract.Storage.STORAGE) (K : KEY) 
       (fun _ k v -> f k v |> ignore)
       () node
 
-  let keys = T.keys
+  let keys = Tree.keys
 end
 
 module StringKey : KEY with type t = string = struct

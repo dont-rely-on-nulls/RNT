@@ -11,6 +11,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
   module M = Multigroup.Make (S)
   module MultigroupM = Merkle.Interface (S) (Merkle.StringKey) (M)
   module MMDirectory = Prototype.Directory.OfTree (S) (Merkle.StringKey) (M)
+  module MMAssociative = Prototype.Associative.OfTree (S) (Merkle.StringKey)
 
   module Error = struct
     open Concepts.Condition
@@ -69,10 +70,14 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     method protocols : Protocols.Handle.protocol list =
       Protocols.[ Addressable.make self;
                   Prototype.Directory.of_properties
-                    [ "multigroup", Prototype.mixture
-                                      [ MMDirectory.make
-                                          ~storage ~node
-                                          ~constructor:(M.wrap storage) ] ] ]
+                    [ "multigroup", Prototype.mixture_of node
+                                      (fun make node ->
+                                        [ MMDirectory.make
+                                            ~storage ~node
+                                            ~constructor:(M.wrap storage);
+	                                      MMAssociative.make
+                                            ~storage ~node:(MultigroupM.into node)
+                                            ~constructor:(fun node' -> MultigroupM.from node' |> make |> Result.ok) ]) ] ]
 
     method hash =
       Representation.to_blob branch
