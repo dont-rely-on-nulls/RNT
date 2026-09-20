@@ -5,14 +5,12 @@ type mode = {bound: attributes; affords: affordance}
 type t = mode list
 
 let attributes_of_list = BatSet.String.of_list
-
 let decides_when bound = {bound= attributes_of_list bound; affords= Decides}
 
 let generates_when bound cardinality =
   {bound= attributes_of_list bound; affords= Generates cardinality}
 
 let enumerable cardinality = {bound= BatSet.String.empty; affords= Generates cardinality}
-
 let empty = []
 let declare mode declaration = mode :: declaration
 let of_list modes = modes
@@ -33,7 +31,5 @@ let generation declaration bound =
 let decision declaration bound =
   List.exists
     (fun {bound= declared; affords} ->
-      match affords with
-      | Decides -> BatSet.String.equal declared bound
-      | Generates _ -> false )
+      match affords with Decides -> BatSet.String.equal declared bound | Generates _ -> false )
     declaration

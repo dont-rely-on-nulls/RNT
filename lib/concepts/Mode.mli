@@ -23,4 +23,5 @@ val to_list : t -> mode list
     declared for fewer bound attributes applies to more, since the
     attributes left free are then fewer and no more numerous. *)
 val generation : t -> attributes -> Cardinality.t option
+
 val decision : t -> attributes -> bool
