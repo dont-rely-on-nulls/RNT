@@ -4,7 +4,17 @@ type t
    types and domains. Later figure out a way to represent the links
    without strings. *)
 type multigroup_description = string BatMap.String.t
-type relation_description = string BatMap.String.t
+
+(** where an attribute comes from with the path relation and the
+    attribute it has. *)
+type origin = {source: string list; attribute: string}
+
+(** an attribute of a derived relation may be for several occurrences
+    at once, for example in a natural join. So its provenance is a
+    collection. *)
+type attribute_description = {domain: string; provenance: origin list}
+
+type relation_description = attribute_description BatMap.String.t
 type tuple_description = {relation: relation_description; attributes: string BatMap.String.t}
 
 type description =

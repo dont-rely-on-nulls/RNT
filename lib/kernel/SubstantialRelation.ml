@@ -120,11 +120,12 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     kvs
     |> List.map (fun (name, domain) ->
            Concepts.Encoding.Bencode.as_string domain
-           |> Result.map (fun domain -> (name, domain)))
+           |> Result.map (fun domain ->
+                  (name, {Protocols.Schematics.domain; provenance= []}) ) )
     |> Utilities.List.sequence
     |> Result.map (fun kvs ->
            List.fold_left
-             (fun acc (name, domain) -> BatMap.String.add name domain acc)
+             (fun acc (name, attribute) -> BatMap.String.add name attribute acc)
              BatMap.String.empty kvs)
 
   let scan storage relation ~keep =

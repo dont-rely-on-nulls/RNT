@@ -1,5 +1,7 @@
 type multigroup_description = string BatMap.String.t
-type relation_description = string BatMap.String.t
+type origin = {source: string list; attribute: string}
+type attribute_description = {domain: string; provenance: origin list}
+type relation_description = attribute_description BatMap.String.t
 type tuple_description = {relation: relation_description; attributes: string BatMap.String.t}
 
 (* TODO: For now the description is completely detached from actual
