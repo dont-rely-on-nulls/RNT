@@ -127,7 +127,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
              (fun acc (name, domain) -> BatMap.String.add name domain acc)
              BatMap.String.empty kvs)
 
-  let enumerate storage relation =
+  let scan storage relation ~keep =
     let open Utilities.Result in
     let* tx = S.start storage in
     let* node = tuple_node tx relation in
@@ -137,11 +137,25 @@ module Make (S : Abstract.Storage.STORAGE) = struct
        and one tuple at a time rather than materialized before the
        first tuple is produced. *)
     let produce ~yield =
-      let walked = TupleSet.iter tx (fun _ tuple -> yield tuple) node in
+      let walked = TupleSet.iter tx (fun _ tuple -> if keep tuple then yield tuple) node in
       close ();
       walked
     in
     Ok (Generator.cursor_of ~on_release:close produce)
+
+  let enumerate storage relation = scan storage relation ~keep:(fun _ -> true)
+
+  let generate storage relation binding =
+    scan storage relation ~keep:(Protocols.Generative.satisfies binding)
+
+  let modes tx relation =
+    let open Utilities.Result in
+    let* description = schema_of tx relation in
+    let labels = BatMap.String.keys description |> BatList.of_enum in
+    Ok
+      (Concepts.Mode.of_list
+         [ Concepts.Mode.enumerable Concepts.Cardinality.Finite;
+           Concepts.Mode.decides_when labels ] )
 
   class relation storage value =
     object (self)
@@ -168,9 +182,13 @@ module Make (S : Abstract.Storage.STORAGE) = struct
          no name resolution, but cancellation should eventually be checked between tuples. *)
       method enumerate = enumerate storage relation
 
+      method modes = SI.with_transaction storage (fun tx -> modes tx relation)
+      method generate binding = generate storage relation binding
+
       method protocols : Protocols.Handle.protocol list =
         [ Protocols.Relation.make self
         ; Protocols.Enumerable.make self
+        ; Protocols.Generative.make self
         ; Protocols.Schematics.make self ]
       method hash = hash relation
     end
