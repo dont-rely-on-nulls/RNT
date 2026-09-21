@@ -10,15 +10,20 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
   let run conn =
     let open Utilities.Result in
     begin
-      let* root = I.initialize ~evaluators:["fol", Evaluators.FOL.make ()] conn in
+      let* root = I.initialize
+        ~evaluators:["fol", Evaluators.FOL.make (); "constraint", Evaluators.Constraint.make ()]
+        conn in
       let* branch = B.make conn in
       Kernel.Path.(update root ("branch" @/ this) "master" None (Some branch))
     end
     |> Helpers.condition_as_failure |> ignore;
     begin
-      let* root = I.initialize ~evaluators:["fol", Evaluators.FOL.make ()] conn in
+      let* root = I.initialize
+        ~evaluators:["fol", Evaluators.FOL.make (); "constraint", Evaluators.Constraint.make ()]
+        conn in
       let* _ = Kernel.Path.(lookup root ("branch" @/ "master" @/ "multigroup" @/ this)) in
       let* _ = Kernel.Path.(lookup root ("evaluator" @/ "fol" @/ this)) in
+      let* _ = Kernel.Path.(lookup root ("evaluator" @/ "constraint" @/ this)) in
       Ok ()
     end
     |> Helpers.condition_as_failure

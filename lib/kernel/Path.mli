@@ -3,7 +3,7 @@ type t
 val this : t
 val (@/) : string -> t -> t
 
-(** the names a path is made of, in the order it walks them *)
+(** the names a path walks, in order *)
 val to_list : t -> string list
 
 (** a path from the names it walks, the inverse of [to_list] *)

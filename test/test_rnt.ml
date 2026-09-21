@@ -5,6 +5,7 @@ let all_suites =
   @ Unit.Kernel.Merkle.suites ()
   @ Unit.Kernel.SubstantialRelation.suites ()
   @ Unit.Evaluators.FOL.suites ()
+  @ Unit.Evaluators.Constraint.suites ()
   @ Unit.Evaluators.Lambda.suites ()
   @ Integration.Registration.suites ()
 
