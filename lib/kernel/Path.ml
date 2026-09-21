@@ -1,6 +1,9 @@
 type t = string list
 
 let this = []
+let to_list path = path
+let of_list names = names
+let equal = List.equal String.equal
 let (@/) x y = x::y
 
 let to_string path =
@@ -30,11 +33,11 @@ let lookup handle path =
        let open Utilities.Result in
        let open Protocols in
        match Directory.from handle with
-       | None -> Error (Error.path_not_found path)
+       | None -> Error (Error.not_a_directory path)
        | Some dir ->
           let* elem = Directory.find dir x in
           match elem with
-          | None -> Error (Error.not_a_directory path)
+          | None -> Error (Error.path_not_found path)
           | Some elem -> walk elem xs
   in
   walk handle path
