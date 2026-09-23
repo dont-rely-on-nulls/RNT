@@ -6,9 +6,6 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
   module H = Helpers.Storage.Make (S) (C)
   module SR = Rnt.Kernel.SubstantialRelation.Make (S)
 
-  let hash s =
-    Concepts.Blob.blob_of_bytes (Bytes.of_string s) |> Concepts.Hash.hash_of_blob
-
   let alaric =
     { Concepts.Tuple.type_ = "employee";
       attributes =
@@ -28,7 +25,8 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
       begin
         let open Utilities.Result in
         let* tx = S.start conn in
-        let* relation = SR.empty tx ~schematics:(hash "schema") () in
+        let* schematics = H.store_schema tx ["name"] in
+        let* relation = SR.empty tx ~schematics () in
         let* relation = SR.assert_tuple tx relation alaric in
         let* () = S.commit tx in
         let* employee = SR.wrap conn relation in

@@ -6,9 +6,6 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
   module H = Helpers.Storage.Make (S) (C)
   module SR = Rnt.Kernel.SubstantialRelation.Make (S)
 
-  let hash s =
-    Concepts.Blob.blob_of_bytes (Bytes.of_string s) |> Concepts.Hash.hash_of_blob
-
   let datum =
     { Concepts.Tuple.type_ = "noun";
       attributes =
@@ -36,8 +33,9 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
   let evaluate conn term =
     let open Utilities.Result in
     let* tx = S.start conn in
+    let* schematics = H.store_schema tx ["lemma"] in
     let singleton tuple =
-      let* relation = SR.empty tx ~schematics:(hash "schema") () in
+      let* relation = SR.empty tx ~schematics () in
       SR.assert_tuple tx relation tuple
     in
     let* noun = singleton datum in

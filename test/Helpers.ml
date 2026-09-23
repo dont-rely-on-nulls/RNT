@@ -8,7 +8,7 @@ let rec recursively_remove path =
   else Sys.remove path
 
 let with_temporary_directory prefix ?(suffix = "") f =
-  let path = Filename.temp_dir ~temp_dir:"/tmp" prefix suffix in
+  let path = Filename.temp_dir ~temp_dir:(Filename.get_temp_dir_name ()) prefix suffix in
   Fun.protect (fun () -> f path) ~finally:(fun () -> recursively_remove path)
 
 let condition_as_failure = function
@@ -31,12 +31,18 @@ module Storage = struct
   end
 
   module Make (S : Abstract.Storage.STORAGE) (C : CONFIGURATOR) = struct
+    module SI = Kernel.Storage.Make (S)
+
+    let store_schema tx attributes =
+      Concepts.Encoding.Bencode.(Dict (List.map (fun a -> (a, String "string")) attributes) |> to_blob)
+      |> SI.store_blob tx
+
     let with_connection f dir () =
       with_temporary_directory dir begin fun dir ->
         begin
           let open Utilities.Result in
           let* conn = S.connect (C.configure dir) in
-          Ok (f conn)
+          Ok (Fun.protect ~finally:(fun () -> S.disconnect conn) (fun () -> f conn))
         end
         |> condition_as_failure
         end
