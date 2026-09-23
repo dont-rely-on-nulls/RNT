@@ -24,4 +24,7 @@ val to_list : t -> mode list
     attributes left free are then fewer and no more numerous. *)
 val generation : t -> attributes -> Cardinality.t option
 
+val exhaustible : t -> attributes -> bool
+
+(** declared outright, or implied by a generation that can be exhausted. *)
 val decision : t -> attributes -> bool

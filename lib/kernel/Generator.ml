@@ -10,20 +10,25 @@ let start produce =
 
 let resume k = Effect.Deep.continue k ()
 
-class producer_cursor produce on_release =
+class producer_cursor produce finally =
   object (self)
     inherit Lifecycle.null
     inherit Identity.of_id
 
     val mutable state : [`Fresh | `Live of (unit, step) Effect.Deep.continuation | `Done] = `Fresh
     method protocols : Protocols.Handle.protocol list = Protocols.[Cursor.make self]
+
+    method private finish =
+      state <- `Done;
+      Option.iter (fun f -> f ()) finally
+
     method private step : (Concepts.Tuple.t option, Concepts.Condition.condition) result =
       let settle = function
         | Element (tuple, k) ->
             state <- `Live k;
             Ok (Some tuple)
         | Finished r ->
-            state <- `Done;
+            self#finish;
             Result.map (fun () -> None) r
       in
       match state with
@@ -45,12 +50,8 @@ class producer_cursor produce on_release =
         Ok Protocols.Cursor.{tuples= BatFingerTree.empty; exhausted= (state = `Done)}
       else fill 0 BatFingerTree.empty
 
-    method! release =
-      (match state with
-       | `Fresh | `Live _ -> Option.iter (fun f -> f ()) on_release
-       | `Done -> ());
-      state <- `Done
+    method! release = match state with `Fresh | `Live _ -> self#finish | `Done -> ()
   end
 
-let cursor_of ?on_release produce =
-  new producer_cursor produce on_release |> Protocols.Handle.make
+let cursor_of ?finally produce =
+  new producer_cursor produce finally |> Protocols.Handle.make

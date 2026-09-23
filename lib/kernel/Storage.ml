@@ -36,10 +36,13 @@ module Make (S : Abstract.Storage.STORAGE) = struct
        let _ = S.abort tx in
        Error condition
 
-  let with_transaction connection body =
+  let within start connection body =
     let open Utilities.Result in
-    let* tx = S.start connection in
+    let* tx = start connection in
     body tx |> finish tx
+
+  let with_transaction connection = within S.start connection
+  let with_read connection = within S.start_read connection
 
   let store_blob tx blob =
     let open Utilities.Result in

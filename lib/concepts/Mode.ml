@@ -21,15 +21,16 @@ let generation declaration bound =
     (fun tightest {bound= declared; affords} ->
       match affords with
       | Generates cardinality when BatSet.String.subset declared bound ->
-          Some
-            ( match tightest with
-            | None -> cardinality
-            | Some other -> Cardinality.meet cardinality other )
+          Some (Option.fold ~none:cardinality ~some:(Cardinality.meet cardinality) tightest)
       | Generates _ | Decides -> tightest )
     None declaration
 
+let exhaustible declaration bound =
+  Option.fold ~none:false ~some:Cardinality.exhaustible (generation declaration bound)
+
 let decision declaration bound =
-  List.exists
-    (fun {bound= declared; affords} ->
-      match affords with Decides -> BatSet.String.equal declared bound | Generates _ -> false )
-    declaration
+  exhaustible declaration bound
+  || List.exists
+       (fun {bound= declared; affords} ->
+         match affords with Decides -> BatSet.String.equal declared bound | Generates _ -> false )
+       declaration

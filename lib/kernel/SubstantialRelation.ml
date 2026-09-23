@@ -123,46 +123,38 @@ module Make (S : Abstract.Storage.STORAGE) = struct
            |> Result.map (fun domain ->
                   (name, {Protocols.Schematics.domain; provenance= []}) ) )
     |> Utilities.List.sequence
-    |> Result.map (fun kvs ->
-           List.fold_left
-             (fun acc (name, attribute) -> BatMap.String.add name attribute acc)
-             BatMap.String.empty kvs)
+    |> Result.map BatMap.String.of_list
 
-  let scan storage relation ~keep =
+  let generate storage relation binding =
     let open Utilities.Result in
     let* tx = S.start_read storage in
-    let closed = ref false in
-    let close () = if not !closed then begin closed := true; ignore (S.abort tx) end in
+    let close () = ignore (S.abort tx) in
     let* node = tuple_node tx relation |> Result.map_error (fun c -> close (); c) in
     (* The fold is suspended by [yield], so the tree is walked one node
        and one tuple at a time rather than materialized before the
        first tuple is produced. *)
     let produce ~yield =
-      let walked = TupleSet.iter tx (fun _ tuple -> if keep tuple then yield tuple) node in
-      close ();
-      walked
+      TupleSet.iter tx
+        (fun _ tuple -> if Protocols.Generative.satisfies binding tuple then yield tuple)
+        node
     in
-    Ok (Generator.cursor_of ~on_release:close produce)
+    Ok (Generator.cursor_of ~finally:close produce)
 
-  let enumerate storage relation = scan storage relation ~keep:(fun _ -> true)
+  let enumerate storage relation = generate storage relation Protocols.Generative.nothing
 
-  let generate storage relation binding =
-    scan storage relation ~keep:(Protocols.Generative.satisfies binding)
+  let modes_of description =
+    Concepts.Mode.of_list
+      [ Concepts.Mode.enumerable Concepts.Cardinality.Finite;
+        Concepts.Mode.decides_when (BatMap.String.keys description |> BatList.of_enum) ]
 
-  let modes tx relation =
-    let open Utilities.Result in
-    let* description = schema_of tx relation in
-    let labels = BatMap.String.keys description |> BatList.of_enum in
-    Ok
-      (Concepts.Mode.of_list
-         [ Concepts.Mode.enumerable Concepts.Cardinality.Finite;
-           Concepts.Mode.decides_when labels ] )
+  let modes tx relation = schema_of tx relation |> Result.map modes_of
 
-  class relation storage value declaration =
+  class relation storage value description =
     object (self)
       inherit Lifecycle.null
       val storage : S.connection = storage
       val relation : t = value
+      val declaration = modes_of description
       method predicate = Ok relation.predicate
       method local_constraints = Ok relation.local_constraints
 
@@ -171,10 +163,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
       method contains (tuple : Concepts.Tuple.t) =
         SI.with_transaction storage (fun tx -> contains_tuple tx relation tuple)
 
-      method describe () =
-        let open Utilities.Result in
-        let* description = SI.with_transaction storage (fun tx -> schema_of tx relation) in
-        Ok (Protocols.Schematics.Relation description)
+      method describe () = Ok (Protocols.Schematics.Relation description)
 
       (* A substantial relation is finitely enumerable, so it carries [Enumerable] as well as
          [Relation]. A procedural relation would carry only the latter, which is how an evaluator
@@ -194,12 +183,11 @@ module Make (S : Abstract.Storage.STORAGE) = struct
       method hash = hash relation
     end
 
-  (* Modes follow from the schema alone, which a relation never changes,
-     so they are read once here rather than on every request. *)
+  (* A relation never changes its schema, so it is read once here and
+     the description and modes are served from it on every request. *)
   let instantiate tx conn relation =
-    let open Utilities.Result in
-    let* declaration = modes tx relation in
-    Ok (new relation conn relation declaration |> Protocols.Handle.make)
+    schema_of tx relation
+    |> Result.map (fun description -> new relation conn relation description |> Protocols.Handle.make)
 
   let make conn ~schematics ?predicate ?local_constraints ?indexes () =
     let open Utilities.Result in
@@ -213,7 +201,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     let* data = SI.get_req tx (S.Hash addr) in
     Representation.of_blob data
 
-  let wrap conn relation = SI.with_transaction conn (fun tx -> instantiate tx conn relation)
+  let wrap conn relation = SI.with_read conn (fun tx -> instantiate tx conn relation)
 
   let load tx conn addr =
     load_value tx addr |> Utilities.Result.fmap (instantiate tx conn)

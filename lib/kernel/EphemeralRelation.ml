@@ -42,14 +42,6 @@ module Make (D : DERIVATION) = struct
         |> Bytes.of_string
         |> Concepts.Hash.hash_of_bytes
 
-  let exhaustible declaration bound =
-    match Concepts.Mode.generation declaration bound with
-    | Some cardinality -> Concepts.Cardinality.exhaustible cardinality
-    | None -> false
-
-  let decides declaration bound =
-    Concepts.Mode.decision declaration bound || exhaustible declaration bound
-
   (* A cursor holds a reference to its relation, so the edges it reads
      outlive a release of the relation that produced it. *)
   class retaining scan release_owner =
@@ -65,16 +57,16 @@ module Make (D : DERIVATION) = struct
       method protocols : Protocols.Handle.protocol list = [Protocols.Cursor.make self]
     end
 
-  class ephemeral plan address declaration total edges =
+  class ephemeral (plan : D.plan) address declaration description edges =
     object (self)
       inherit Lifecycle.counted
-      val plan : D.plan = plan
+      val heading = BatMap.String.keys description |> BatSet.String.of_enum
       method destroy = List.iter Protocols.Handle.release edges
       method predicate = Ok None
       method local_constraints = Ok None
       method modes = Ok declaration
 
-      method private retained binding =
+      method generate binding =
         let open Utilities.Result in
         let bound = Protocols.Generative.bound binding in
         let* () =
@@ -90,11 +82,8 @@ module Make (D : DERIVATION) = struct
             ignore self#reference;
             Ok (new retaining scan (fun () -> self#release) |> Protocols.Handle.make)
 
-      method generate binding = self#retained binding
-      method enumerate = self#retained Protocols.Generative.nothing
-
-      method describe () =
-        D.describe plan |> Result.map (fun description -> Protocols.Schematics.Relation description)
+      method enumerate = self#generate Protocols.Generative.nothing
+      method describe () = Ok (Protocols.Schematics.Relation description)
 
       (* Membership of a derived relation is decided by the derivation
          and not by a lookup, so it is asked of the generator under the
@@ -104,11 +93,11 @@ module Make (D : DERIVATION) = struct
         let open Utilities.Result in
         let binding = tuple.Concepts.Tuple.attributes in
         let bound = Protocols.Generative.bound binding in
-        let* description = D.describe plan in
-        let described = BatMap.String.keys description |> BatSet.String.of_enum in
-        if not (BatSet.String.equal described bound) then Ok false
+        if not (BatSet.String.equal heading bound) then Ok false
         else
-          let* () = if decides declaration bound then Ok () else Error (Error.undecidable bound) in
+          let* () =
+            if Concepts.Mode.decision declaration bound then Ok () else Error (Error.undecidable bound)
+          in
           let* cursor = D.generate plan binding in
           let expected = Concepts.Tuple.hash tuple in
           Fun.protect
@@ -131,17 +120,22 @@ module Make (D : DERIVATION) = struct
             Protocols.Schematics.make self;
             Protocols.Generative.make self ]
         in
-        if total then Protocols.Enumerable.make self :: carried else carried
+        if Concepts.Mode.exhaustible declaration BatSet.String.empty then
+          Protocols.Enumerable.make self :: carried
+        else carried
 
       method hash : Concepts.Hash.hash = address
     end
 
   let derive ?pinned ?(edges = []) plan =
     let open Utilities.Result in
-    let* declaration =
-      D.modes plan |> Result.map_error (fun c -> List.iter Protocols.Handle.release edges; c)
+    let derived =
+      let* declaration = D.modes plan in
+      let* description = D.describe plan in
+      Ok
+        ( new ephemeral plan (identity ?pinned plan) declaration description edges
+        |> Protocols.Handle.make )
     in
-    Ok
-      ( new ephemeral plan (identity ?pinned plan) declaration (exhaustible declaration BatSet.String.empty) edges
-      |> Protocols.Handle.make )
+    Result.iter_error (fun _ -> List.iter Protocols.Handle.release edges) derived;
+    derived
 end
