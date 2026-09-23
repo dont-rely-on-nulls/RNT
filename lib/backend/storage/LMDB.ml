@@ -118,6 +118,11 @@ module C = struct
   module Errors = struct
     let mdb_notfound = -30798
   end
+
+  module Flags = struct
+    let mdb_notls = Unsigned.UInt.of_int 0x200000
+    let mdb_rdonly = Unsigned.UInt.of_int 0x20000
+  end
 end
 
 module Error = struct
@@ -147,7 +152,9 @@ let connect (c : Concepts.Configuration.term) =
   let* path, mode = parse c in
   begin
     let* env = C.mdb_env_create' () in
-    match C.mdb_env_open env path Unsigned.UInt.zero (PosixTypes.Mode.of_int mode) with
+    (* NOTLS ties readers to transactions rather than threads, so one
+       thread can hold several read transactions (nested cursors). *)
+    match C.mdb_env_open env path C.Flags.mdb_notls (PosixTypes.Mode.of_int mode) with
     | Error x -> C.mdb_env_close env; Error x
     | Ok () ->
         let* tx = C.mdb_txn_begin' env C.null_txn Unsigned.UInt.zero in
@@ -160,10 +167,13 @@ let connect (c : Concepts.Configuration.term) =
        Concepts.Condition.(
          complement ("path" |=| Concepts.Value.String path & "mode" |=| Concepts.Value.Integer mode) )
 
-let start ({env; dbi} : connection) =
-  C.mdb_txn_begin' env C.null_txn Unsigned.UInt.zero
+let begin_with flags ({env; dbi} : connection) =
+  C.mdb_txn_begin' env C.null_txn flags
   |> Result.map (fun tx -> {tx; dbi; active = true;})
   |> Result.map_error Error.lmdb_error
+
+let start = begin_with Unsigned.UInt.zero
+let start_read = begin_with C.Flags.mdb_rdonly
 
 let commit transaction =
   if not transaction.active then Error Error.closed_transaction

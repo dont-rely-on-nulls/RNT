@@ -9,6 +9,9 @@ module type STORAGE = sig
   (** begin a transaction within `connection` *)
   val start : connection -> (transaction, Concepts.Condition.condition) result
 
+  (** begin a read-only transaction, which may be held alongside others *)
+  val start_read : connection -> (transaction, Concepts.Condition.condition) result
+
   (** `commit` the current transaction *)
   val commit : transaction -> (unit, Concepts.Condition.condition) result
 
