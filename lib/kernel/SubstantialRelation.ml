@@ -131,9 +131,9 @@ module Make (S : Abstract.Storage.STORAGE) = struct
   let scan storage relation ~keep =
     let open Utilities.Result in
     let* tx = S.start_read storage in
-    let* node = tuple_node tx relation in
     let closed = ref false in
     let close () = if not !closed then begin closed := true; ignore (S.abort tx) end in
+    let* node = tuple_node tx relation |> Result.map_error (fun c -> close (); c) in
     (* The fold is suspended by [yield], so the tree is walked one node
        and one tuple at a time rather than materialized before the
        first tuple is produced. *)

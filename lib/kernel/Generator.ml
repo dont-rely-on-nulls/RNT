@@ -47,8 +47,8 @@ class producer_cursor produce on_release =
 
     method! release =
       (match state with
-       | `Live _ -> Option.iter (fun f -> f ()) on_release
-       | `Fresh | `Done -> ());
+       | `Fresh | `Live _ -> Option.iter (fun f -> f ()) on_release
+       | `Done -> ());
       state <- `Done
   end
 
