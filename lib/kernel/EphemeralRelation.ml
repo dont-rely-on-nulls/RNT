@@ -138,7 +138,9 @@ module Make (D : DERIVATION) = struct
 
   let derive ?pinned ?(edges = []) plan =
     let open Utilities.Result in
-    let* declaration = D.modes plan in
+    let* declaration =
+      D.modes plan |> Result.map_error (fun c -> List.iter Protocols.Handle.release edges; c)
+    in
     Ok
       ( new ephemeral plan (identity ?pinned plan) declaration (exhaustible declaration BatSet.String.empty) edges
       |> Protocols.Handle.make )
