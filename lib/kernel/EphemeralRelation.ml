@@ -98,19 +98,32 @@ module Make (D : DERIVATION) = struct
 
       (* Membership of a derived relation is decided by the derivation
          and not by a lookup, so it is asked of the generator under the
-         binding the tuple itself fixes. *)
+         binding the tuple itself fixes. Only a tuple carrying exactly the
+         described attributes can be a member, and it must match one whole. *)
       method contains (tuple : Concepts.Tuple.t) =
         let open Utilities.Result in
         let binding = tuple.Concepts.Tuple.attributes in
         let bound = Protocols.Generative.bound binding in
-        let* () = if decides declaration bound then Ok () else Error (Error.undecidable bound) in
-        let* cursor = D.generate plan binding in
-        Fun.protect
-          ~finally:(fun () -> Protocols.Handle.release cursor)
-          (fun () ->
-            let* scan = Protocols.Cursor.require cursor in
-            let* first = Protocols.Cursor.next scan in
-            Ok (Option.is_some first) )
+        let* description = D.describe plan in
+        let described = BatMap.String.keys description |> BatSet.String.of_enum in
+        if not (BatSet.String.equal described bound) then Ok false
+        else
+          let* () = if decides declaration bound then Ok () else Error (Error.undecidable bound) in
+          let* cursor = D.generate plan binding in
+          let expected = Concepts.Tuple.hash tuple in
+          Fun.protect
+            ~finally:(fun () -> Protocols.Handle.release cursor)
+            (fun () ->
+              let* scan = Protocols.Cursor.require cursor in
+              let rec seek () =
+                let* found = Protocols.Cursor.next scan in
+                match found with
+                | None -> Ok false
+                | Some member ->
+                    if Concepts.Hash.hash_equals (Concepts.Tuple.hash member) expected then Ok true
+                    else seek ()
+              in
+              seek () )
 
       method protocols : Protocols.Handle.protocol list =
         let carried =
