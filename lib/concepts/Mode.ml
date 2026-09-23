@@ -7,15 +7,8 @@ type t = mode list
 let attributes_of_list = BatSet.String.of_list
 let attributes_of_map map = BatMap.String.keys map |> BatSet.String.of_enum
 let decides_when bound = {bound= attributes_of_list bound; affords= Decides}
-
-let generates_when bound cardinality =
-  {bound= attributes_of_list bound; affords= Generates cardinality}
-
 let enumerable cardinality = {bound= BatSet.String.empty; affords= Generates cardinality}
-let empty = []
-let declare mode declaration = mode :: declaration
 let of_list modes = modes
-let to_list declaration = declaration
 
 let generation declaration bound =
   List.fold_left

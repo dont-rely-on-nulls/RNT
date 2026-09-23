@@ -13,12 +13,8 @@ type t
 val attributes_of_list : attribute list -> attributes
 val attributes_of_map : 'a BatMap.String.t -> attributes
 val decides_when : attribute list -> mode
-val generates_when : attribute list -> Cardinality.t -> mode
 val enumerable : Cardinality.t -> mode
-val empty : t
-val declare : mode -> t -> t
 val of_list : mode list -> t
-val to_list : t -> mode list
 
 (** the tightest class declared for generating under [bound]. A mode
     declared for fewer bound attributes applies to more, since the

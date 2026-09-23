@@ -147,8 +147,6 @@ module Make (S : Abstract.Storage.STORAGE) = struct
       [ Concepts.Mode.enumerable Concepts.Cardinality.Finite;
         {Concepts.Mode.bound= Concepts.Mode.attributes_of_map description; affords= Decides} ]
 
-  let modes tx relation = schema_of tx relation |> Result.map modes_of
-
   class relation storage value description =
     object (self)
       inherit Lifecycle.null

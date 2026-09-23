@@ -53,12 +53,4 @@ module Make (S : Abstract.Storage.STORAGE) : sig
     (Protocols.Schematics.relation_description, Concepts.Condition.condition) result
 
   val enumerate : S.connection -> t -> (Protocols.Handle.t, Concepts.Condition.condition) result
-
-  val generate :
-    S.connection ->
-    t ->
-    Protocols.Generative.binding ->
-    (Protocols.Handle.t, Concepts.Condition.condition) result
-
-  val modes : S.transaction -> t -> (Concepts.Mode.t, Concepts.Condition.condition) result
 end
