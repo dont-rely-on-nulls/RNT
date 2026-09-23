@@ -15,6 +15,22 @@ module type DERIVATION = sig
 end
 
 module Make (D : DERIVATION) = struct
+  module Error = struct
+    open Concepts.Condition
+
+    let attributes bound = Concepts.Value.String (String.concat ", " (BatSet.String.elements bound))
+
+    let ungenerable bound =
+      condition "ungenerable-binding"
+        "The derivation declares no mode that generates under the attributes bound."
+        ("bound" |=| attributes bound)
+
+    let undecidable bound =
+      condition "undecidable-membership"
+        "The derivation declares no mode that decides membership under the attributes of the tuple."
+        ("bound" |=| attributes bound)
+  end
+
   let pinned_tag = "rnt/pinned/1"
 
   let identity ?pinned plan =
@@ -26,10 +42,13 @@ module Make (D : DERIVATION) = struct
         |> Bytes.of_string
         |> Concepts.Hash.hash_of_bytes
 
-  let exhaustible declaration =
-    match Concepts.Mode.generation declaration BatSet.String.empty with
+  let exhaustible declaration bound =
+    match Concepts.Mode.generation declaration bound with
     | Some cardinality -> Concepts.Cardinality.exhaustible cardinality
     | None -> false
+
+  let decides declaration bound =
+    Concepts.Mode.decision declaration bound || exhaustible declaration bound
 
   (* A cursor holds a reference to its relation, so the edges it reads
      outlive a release of the relation that produced it. *)
@@ -57,6 +76,11 @@ module Make (D : DERIVATION) = struct
 
       method private retained binding =
         let open Utilities.Result in
+        let bound = Protocols.Generative.bound binding in
+        let* () =
+          if Option.is_some (Concepts.Mode.generation declaration bound) then Ok ()
+          else Error (Error.ungenerable bound)
+        in
         let* cursor = D.generate plan binding in
         match Protocols.Cursor.require cursor with
         | Error c ->
@@ -77,7 +101,10 @@ module Make (D : DERIVATION) = struct
          binding the tuple itself fixes. *)
       method contains (tuple : Concepts.Tuple.t) =
         let open Utilities.Result in
-        let* cursor = D.generate plan tuple.Concepts.Tuple.attributes in
+        let binding = tuple.Concepts.Tuple.attributes in
+        let bound = Protocols.Generative.bound binding in
+        let* () = if decides declaration bound then Ok () else Error (Error.undecidable bound) in
+        let* cursor = D.generate plan binding in
         Fun.protect
           ~finally:(fun () -> Protocols.Handle.release cursor)
           (fun () ->
@@ -100,6 +127,6 @@ module Make (D : DERIVATION) = struct
     let open Utilities.Result in
     let* declaration = D.modes plan in
     Ok
-      ( new ephemeral plan (identity ?pinned plan) declaration (exhaustible declaration) edges
+      ( new ephemeral plan (identity ?pinned plan) declaration (exhaustible declaration BatSet.String.empty) edges
       |> Protocols.Handle.make )
 end
