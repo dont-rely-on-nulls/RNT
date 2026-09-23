@@ -158,7 +158,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
          [ Concepts.Mode.enumerable Concepts.Cardinality.Finite;
            Concepts.Mode.decides_when labels ] )
 
-  class relation storage value =
+  class relation storage value declaration =
     object (self)
       inherit Lifecycle.null
       val storage : S.connection = storage
@@ -183,7 +183,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
          no name resolution, but cancellation should eventually be checked between tuples. *)
       method enumerate = enumerate storage relation
 
-      method modes = SI.with_transaction storage (fun tx -> modes tx relation)
+      method modes : (Concepts.Mode.t, Concepts.Condition.condition) result = Ok declaration
       method generate binding = generate storage relation binding
 
       method protocols : Protocols.Handle.protocol list =
@@ -194,23 +194,29 @@ module Make (S : Abstract.Storage.STORAGE) = struct
       method hash = hash relation
     end
 
+  (* Modes follow from the schema alone, which a relation never changes,
+     so they are read once here rather than on every request. *)
+  let instantiate tx conn relation =
+    let open Utilities.Result in
+    let* declaration = modes tx relation in
+    Ok (new relation conn relation declaration |> Protocols.Handle.make)
+
   let make conn ~schematics ?predicate ?local_constraints ?indexes () =
     let open Utilities.Result in
     SI.with_transaction conn (fun tx ->
         let* relation = empty tx ~schematics ?predicate ?local_constraints ?indexes () in
         let* _ = store tx relation in
-        Ok (new relation conn relation |> Protocols.Handle.make) )
+        instantiate tx conn relation )
 
   let load_value tx addr =
     let open Utilities.Result in
     let* data = SI.get_req tx (S.Hash addr) in
     Representation.of_blob data
 
-  let wrap conn relation =
-    new relation conn relation |> Protocols.Handle.make |> Result.ok
+  let wrap conn relation = SI.with_transaction conn (fun tx -> instantiate tx conn relation)
 
   let load tx conn addr =
-    load_value tx addr |> Utilities.Result.fmap (wrap conn)
+    load_value tx addr |> Utilities.Result.fmap (instantiate tx conn)
 
   let assert_tuple tx relation tuple =
     let open Utilities.Result in
