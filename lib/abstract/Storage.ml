@@ -6,6 +6,9 @@ module type STORAGE = sig
 
   val connect : Concepts.Configuration.term -> (connection, Concepts.Condition.condition) result
 
+  (** close `connection`, after which none of its transactions may be used *)
+  val disconnect : connection -> unit
+
   (** begin a transaction within `connection` *)
   val start : connection -> (transaction, Concepts.Condition.condition) result
 

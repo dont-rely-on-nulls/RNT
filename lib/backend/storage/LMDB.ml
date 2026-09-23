@@ -167,6 +167,8 @@ let connect (c : Concepts.Configuration.term) =
        Concepts.Condition.(
          complement ("path" |=| Concepts.Value.String path & "mode" |=| Concepts.Value.Integer mode) )
 
+let disconnect ({env; _} : connection) = C.mdb_env_close env
+
 let begin_with flags ({env; dbi} : connection) =
   C.mdb_txn_begin' env C.null_txn flags
   |> Result.map (fun tx -> {tx; dbi; active = true;})
