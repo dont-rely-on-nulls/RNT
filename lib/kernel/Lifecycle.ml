@@ -23,7 +23,6 @@ class virtual counted = object (self)
     true
 
   method release =
-    Atomic.decr references;
-    if Atomic.get references <= 0 then
+    if Atomic.fetch_and_add references (-1) = 1 then
       self#destroy
 end
