@@ -31,6 +31,21 @@ module Make (D : DERIVATION) = struct
     | Some cardinality -> Concepts.Cardinality.exhaustible cardinality
     | None -> false
 
+  (* A cursor holds a reference to its relation, so the edges it reads
+     outlive a release of the relation that produced it. *)
+  class retaining scan release_owner =
+    object (self)
+      inherit Lifecycle.counted
+      inherit Identity.of_id
+
+      method destroy =
+        Protocols.Handle.release (Protocols.Handle.from scan);
+        release_owner ()
+
+      method fetch limit = Protocols.Cursor.fetch scan limit
+      method protocols : Protocols.Handle.protocol list = [Protocols.Cursor.make self]
+    end
+
   class ephemeral plan address declaration total edges =
     object (self)
       inherit Lifecycle.counted
@@ -39,8 +54,20 @@ module Make (D : DERIVATION) = struct
       method predicate = Ok None
       method local_constraints = Ok None
       method modes = Ok declaration
-      method generate binding = D.generate plan binding
-      method enumerate = D.generate plan Protocols.Generative.nothing
+
+      method private retained binding =
+        let open Utilities.Result in
+        let* cursor = D.generate plan binding in
+        match Protocols.Cursor.require cursor with
+        | Error c ->
+            Protocols.Handle.release cursor;
+            Error c
+        | Ok scan ->
+            ignore self#reference;
+            Ok (new retaining scan (fun () -> self#release) |> Protocols.Handle.make)
+
+      method generate binding = self#retained binding
+      method enumerate = self#retained Protocols.Generative.nothing
 
       method describe () =
         D.describe plan |> Result.map (fun description -> Protocols.Schematics.Relation description)
