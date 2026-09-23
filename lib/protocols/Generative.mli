@@ -16,9 +16,20 @@ val modes : t Handle.interface -> (Concepts.Mode.t, Concepts.Condition.condition
 
 (** a handle carrying a cursor over the members agreeing with the
     binding and under the empty binding this is enumeration, so a
-    relation carrying enumerable answers the same members here. *)
+    relation carrying enumerable answers the same members here. Refused
+    when no declared mode generates under the attributes bound. *)
 val generate : t Handle.interface -> binding -> (Handle.t, Concepts.Condition.condition) result
 
 val nothing : binding
 val bound : binding -> Concepts.Mode.attributes
 val satisfies : binding -> Concepts.Tuple.t -> bool
+
+(** membership for a relation with no lookup of its own, asked of the
+    generator under the binding the tuple fixes. Only a tuple carrying
+    exactly the [heading] can be a member, and it must match one whole. *)
+class virtual membership : object
+  val virtual heading : Concepts.Mode.attributes
+  method virtual modes : (Concepts.Mode.t, Concepts.Condition.condition) result
+  method virtual generate : binding -> (Handle.t, Concepts.Condition.condition) result
+  method contains : Concepts.Tuple.t -> (bool, Concepts.Condition.condition) result
+end

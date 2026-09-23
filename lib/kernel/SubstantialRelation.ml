@@ -145,7 +145,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
   let modes_of description =
     Concepts.Mode.of_list
       [ Concepts.Mode.enumerable Concepts.Cardinality.Finite;
-        Concepts.Mode.decides_when (BatMap.String.keys description |> BatList.of_enum) ]
+        {Concepts.Mode.bound= Concepts.Mode.attributes_of_map description; affords= Decides} ]
 
   let modes tx relation = schema_of tx relation |> Result.map modes_of
 
@@ -161,7 +161,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
       (* The protocol takes a tuple, not bytes: encoding is this object's business, and a caller
          that had to produce the exact stored bytes would have to know this encoding to do it. *)
       method contains (tuple : Concepts.Tuple.t) =
-        SI.with_transaction storage (fun tx -> contains_tuple tx relation tuple)
+        SI.with_read storage (fun tx -> contains_tuple tx relation tuple)
 
       method describe () = Ok (Protocols.Schematics.Relation description)
 

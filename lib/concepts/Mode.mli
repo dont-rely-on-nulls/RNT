@@ -11,6 +11,7 @@ type mode = {bound: attributes; affords: affordance}
 type t
 
 val attributes_of_list : attribute list -> attributes
+val attributes_of_map : 'a BatMap.String.t -> attributes
 val decides_when : attribute list -> mode
 val generates_when : attribute list -> Cardinality.t -> mode
 val enumerable : Cardinality.t -> mode

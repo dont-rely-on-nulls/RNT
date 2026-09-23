@@ -26,6 +26,13 @@ let rec next i =
   | Some (_, tuple) -> Ok (Some tuple)
   | None -> if batch.exhausted then Ok None else next i
 
+let rec exists i p =
+  let open Utilities.Result in
+  let* found = next i in
+  match found with
+  | None -> Ok false
+  | Some tuple -> if p tuple then Ok true else exists i p
+
 let drain i ?(limit = 256) () =
   let open Utilities.Result in
   let rec loop tuples =

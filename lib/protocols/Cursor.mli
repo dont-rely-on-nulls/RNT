@@ -14,6 +14,11 @@ val fetch : t Handle.interface -> int -> (batch, Concepts.Condition.condition) r
 
 val next : t Handle.interface -> (Concepts.Tuple.t option, Concepts.Condition.condition) result
 
+val exists :
+  t Handle.interface ->
+  (Concepts.Tuple.t -> bool) ->
+  (bool, Concepts.Condition.condition) result
+
 val drain :
   t Handle.interface ->
   ?limit:int ->

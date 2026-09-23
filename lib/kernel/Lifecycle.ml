@@ -26,3 +26,15 @@ class virtual counted = object (self)
     if Atomic.fetch_and_add references (-1) = 1 then
       self#destroy
 end
+
+class retaining inner (owner : lifecycle) = object
+  inherit counted
+  initializer ignore owner#reference
+
+  method destroy =
+    Protocols.Handle.release inner;
+    owner#release
+
+  method hash = Protocols.Handle.hash inner
+  method protocols = Protocols.Handle.protocols inner
+end

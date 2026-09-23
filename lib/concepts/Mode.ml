@@ -5,6 +5,7 @@ type mode = {bound: attributes; affords: affordance}
 type t = mode list
 
 let attributes_of_list = BatSet.String.of_list
+let attributes_of_map map = BatMap.String.keys map |> BatSet.String.of_enum
 let decides_when bound = {bound= attributes_of_list bound; affords= Decides}
 
 let generates_when bound cardinality =

@@ -49,6 +49,7 @@ let equal h1 h2 =
   Concepts.Hash.hash_equals (object_of h1)#hash (object_of h2)#hash
 
 let hash h = (object_of h)#hash
+let protocols h = (object_of h)#protocols
 
 let release ({ valid; _ } as handle) =
   let o = object_of handle in
