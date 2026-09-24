@@ -20,7 +20,7 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
     |> Helpers.condition_as_failure |> ignore;
     begin
       let* root = I.initialize ~evaluators:["fol", Evaluators.FOL.make ()] conn in
-      let* _ = Kernel.Path.(lookup root ("branch" @/ "master" @/ "multigroup" @/ this)) in
+      let* _ = Kernel.Path.(lookup root ("branch" @/ "master" @/ "multigroup" @/ "library" @/ this)) in
       let* _ = Kernel.Path.(lookup root ("evaluator" @/ "fol" @/ this)) in
       Ok ()
     end

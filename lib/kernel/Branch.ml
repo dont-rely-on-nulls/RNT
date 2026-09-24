@@ -12,6 +12,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
   module MultigroupM = Merkle.Interface (S) (Merkle.StringKey) (M)
   module MMDirectory = Prototype.Directory.OfTree (S) (Merkle.StringKey) (M)
   module MMAssociative = Prototype.Associative.OfTree (S) (Merkle.StringKey)
+  module MMAddressable = Prototype.Addressable.OfTree (S) (Merkle.StringKey)
 
   module Error = struct
     open Concepts.Condition
@@ -28,10 +29,6 @@ module Make (S : Abstract.Storage.STORAGE) = struct
   module rec Representation : Concepts.Encoding.Record.S with type t = t = Concepts.Encoding.Record.Make (Body)
   and Body : Concepts.Encoding.Record.BODY = struct
     type nonrec t = t
-
-    let load tx addr =
-      SI.get_req tx addr
-      |> Utilities.Result.fmap Representation.of_blob
 
     let tag = 'Y'
     let malformed () =
@@ -56,8 +53,13 @@ module Make (S : Abstract.Storage.STORAGE) = struct
                       |> fmap (Value.option_of_bencode
                                  (fun v -> Value.hash_of_bencode v
                                            |> Result.map (fun hash -> S.Hash hash)
-                                           |> Result.map (Fun.flip (SI.Pointer.make) load))) in
+                                           |> Result.map (SI.Pointer.make Loader.load))) in
       Ok { multigroups; previous }
+  end
+  and Loader : sig val load : (S.transaction -> S.address -> (t, Concepts.Condition.condition) result) end = struct
+    let load tx addr =
+      SI.get_req tx addr
+      |> Utilities.Result.fmap Representation.of_blob
   end
 
   class branch storage value node = object (self)
@@ -73,15 +75,25 @@ module Make (S : Abstract.Storage.STORAGE) = struct
       Protocols.[ Addressable.make self;
                   Prototype.Associative.(of_properties
                     [ "multigroup", update_only (fun node' ->
+                                        (* FIXME: most of this should not be here *)
                                         let open Utilities.Result in
                                         let* addressable = Handle.require Addressable.from node' in
                                         let addr = Addressable.address addressable in
-                                        ignore addr;
-                                        failwith "TODO") ]);
+                                        let branch' = { multigroups = addr;
+                                                        previous = self#address
+                                                                   |> (fun hash -> S.Hash hash)
+                                                                   |> SI.Pointer.make Loader.load
+                                                                   |> Option.some } in
+                                        let* node' = SI.with_transaction storage (fun tx ->
+                                                         let* _ = SI.store_blob tx (Representation.to_blob branch') in
+                                                         MultigroupM.find tx addr |> fmap (Option.to_result ~none:(Error.incomplete_branch addr))) in
+                                        new branch storage branch' node' |> Protocols.Handle.make |> Result.ok) ]);
                   Prototype.Directory.of_properties
                     [ "multigroup", Prototype.mixture_of node
                                       (fun make node ->
-                                        [ MMDirectory.make
+                                        [ MMAddressable.make
+                                            ~node:(MultigroupM.into node);
+                                          MMDirectory.make
                                             ~storage ~node
                                             ~constructor:(M.wrap storage);
 	                                      MMAssociative.make

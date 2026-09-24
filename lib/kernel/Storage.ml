@@ -5,9 +5,9 @@ module Make (S : Abstract.Storage.STORAGE) = struct
       loader : S.transaction -> S.address -> ('a, Concepts.Condition.condition) result
     }
 
-    let make addr loader = { addr; loader }
+    let make loader addr = { addr; loader }
     let address_of { addr; _ } = addr
-    let swap { loader; _ } addr = make addr loader
+    let swap { loader; _ } addr = make loader addr
     let deref tx { addr; loader } = loader tx addr
   end
 

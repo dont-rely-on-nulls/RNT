@@ -21,6 +21,18 @@ module Error = struct
                                     empty
 end
 
+module Addressable = struct
+  module OfTree (S : Abstract.Storage.STORAGE) (K : Merkle.KEY) = struct
+    module Tree = Merkle.Make (S) (K)
+
+    let make ~node =
+      Protocols.Addressable.make @@
+        object
+          method address = Tree.hash_of node
+        end
+  end
+end
+
 module Associative = struct
   let of_properties props =
     Protocols.Associative.make @@

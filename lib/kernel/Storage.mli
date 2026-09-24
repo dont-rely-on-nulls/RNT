@@ -2,7 +2,7 @@ module Make : functor (S : Abstract.Storage.STORAGE) -> sig
   module Pointer : sig
     type 'a t
 
-    val make : S.address -> (S.transaction -> S.address -> ('a, Concepts.Condition.condition) result) -> 'a t
+    val make : (S.transaction -> S.address -> ('a, Concepts.Condition.condition) result) -> S.address -> 'a t
     val address_of : 'a t -> S.address
     val swap : 'a t -> S.address -> 'a t
     val deref : S.transaction -> 'a t -> ('a, Concepts.Condition.condition) result

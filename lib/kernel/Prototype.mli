@@ -20,3 +20,10 @@ module Associative : sig
     val make : storage:S.connection -> constructor:(Tree.node -> (Protocols.Handle.t, Concepts.Condition.condition) result) -> node:Tree.node -> Protocols.Handle.protocol
   end
 end
+
+module Addressable : sig
+  module OfTree (S : Abstract.Storage.STORAGE) (K : Merkle.KEY) : sig
+    module Tree : module type of Merkle.Make (S) (K)
+    val make : node:Tree.node -> Protocols.Handle.protocol
+  end
+end
