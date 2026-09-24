@@ -2,6 +2,8 @@ class namespace = object (self)
   inherit Lifecycle.null
   inherit Identity.of_id
 
+  method to_string = "namespace"
+
   val entries : (string, Protocols.Handle.t) BatMap.t Atomic.t =
     Atomic.make BatMap.empty
 

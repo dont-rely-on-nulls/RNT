@@ -15,6 +15,8 @@ class producer_cursor produce on_release =
     inherit Lifecycle.null
     inherit Identity.of_id
 
+    method to_string = "producer-cursor"
+
     val mutable state : [`Fresh | `Live of (unit, step) Effect.Deep.continuation | `Done] = `Fresh
     method protocols : Protocols.Handle.protocol list = Protocols.[Cursor.make self]
     method private step : (Concepts.Tuple.t option, Concepts.Condition.condition) result =

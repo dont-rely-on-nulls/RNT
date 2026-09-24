@@ -146,6 +146,9 @@ module Make (S : Abstract.Storage.STORAGE) = struct
   class relation storage value =
     object (self)
       inherit Lifecycle.null
+
+      method to_string = "relation"
+
       val storage : S.connection = storage
       val relation : t = value
       method predicate = Ok relation.predicate

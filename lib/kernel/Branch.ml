@@ -63,6 +63,8 @@ module Make (S : Abstract.Storage.STORAGE) = struct
   class branch storage value node = object (self)
     inherit Lifecycle.null
 
+    method to_string = "branch"
+
     val storage : S.connection = storage
     val branch : t = value
     val node = node (* FIXME: can we not place this inside `t`? *)

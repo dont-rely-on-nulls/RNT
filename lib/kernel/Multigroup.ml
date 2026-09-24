@@ -41,6 +41,8 @@ module Make (S : Abstract.Storage.STORAGE) = struct
   class multigroup conn value node = object
     inherit Lifecycle.null
 
+    method to_string = "multigroup"
+
     val multigroup = value
     val storage = conn
     val node = node (* FIXME: see the comment on Branch.ml *)

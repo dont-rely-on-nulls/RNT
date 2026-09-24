@@ -28,6 +28,8 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     inherit Lifecycle.null
     inherit Identity.of_id
 
+    method to_string = "branch-manager"
+
     val storage : S.connection = storage
     val label : string = label
     val head : M.node Atomic.t = Atomic.make head

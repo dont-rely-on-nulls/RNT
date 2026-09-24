@@ -31,6 +31,8 @@ class evaluator = object (self)
   inherit Kernel.Lifecycle.null
   inherit Kernel.Identity.of_id
 
+  method to_string = "fol-evaluator"
+
   method invoke = execute
   method protocols : Protocols.Handle.protocol list = [Program.make self]
 end
