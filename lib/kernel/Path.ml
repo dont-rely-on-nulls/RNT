@@ -15,32 +15,41 @@ module Error = struct
 
   let path_not_found path = condition "path-not-found" "A given path was not found under the specified object"
                               ("path" |=| Concepts.Value.String (to_string path))
-
-  let not_a_registry path = condition "not-a-registry" "The specified path did not point to a registry"
-                              ("path" |=| Concepts.Value.String (to_string path))
-
-  let not_a_directory path = condition "not-a-directory" "The specified path did not point to a directory"
-                               ("path" |=| Concepts.Value.String (to_string path))
 end
 
-let lookup handle path =
+let walking f g handle path =
   let rec walk handle = function
-    | [] -> Ok handle
+    | [] -> g handle
     | x::xs ->
        let open Utilities.Result in
        let open Protocols in
-       match Directory.from handle with
+       let* dir = Handle.require Directory.from handle in
+       let* elem = Directory.find dir x in
+       match elem with
        | None -> Error (Error.path_not_found path)
-       | Some dir ->
-          let* elem = Directory.find dir x in
-          match elem with
-          | None -> Error (Error.not_a_directory path)
-          | Some elem -> walk elem xs
+       | Some elem -> f x handle (fun () -> walk elem xs)
   in
   walk handle path
 
+let lookup = walking (fun _ _ f -> f ()) Result.ok
+
 let update handle path key reference value =
   let open Utilities.Result in
+  let open Protocols in
   let* handle = lookup handle path in
-  let* registry = Protocols.Registry.from handle |> Option.to_result ~none:(Error.not_a_registry path) in
-  Protocols.Registry.update registry key reference value
+  let* registry = Handle.require Registry.from handle in
+  Registry.update registry key reference value
+
+let assoc handle path key value =
+  let open Utilities.Result in
+  let open Utilities.Fun in
+  let open Protocols in
+  let assoc_on handle key value =
+    let* a = Handle.require Associative.from handle in
+    let* a' = Associative.update a key value in
+    Ok (Handle.from a')
+  in
+  walking
+    (fun key dir f -> f () |> fmap (assoc_on dir key |.| Option.some))
+    (fun h -> assoc_on h key value)
+    handle path
