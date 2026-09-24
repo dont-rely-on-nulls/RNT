@@ -23,13 +23,16 @@ let walking f g handle path =
     | x::xs ->
        let open Utilities.Result in
        let open Protocols in
-       let* dir = Handle.require Directory.from handle in
+       let* dir =
+         Handle.require Directory.from handle
+         |> Result.map_error Concepts.Condition.(complement ("before-segment" |=| Concepts.Value.String x)) in
        let* elem = Directory.find dir x in
        match elem with
        | None -> Error (Error.path_not_found path)
        | Some elem -> f x handle (fun () -> walk elem xs)
   in
   walk handle path
+  |> Result.map_error Concepts.Condition.(complement ("path" |=| Concepts.Value.String (to_string path)))
 
 let lookup = walking (fun _ _ f -> f ()) Result.ok
 
