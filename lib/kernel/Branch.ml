@@ -17,8 +17,9 @@ module Make (S : Abstract.Storage.STORAGE) = struct
   module Error = struct
     open Concepts.Condition
 
-    let incomplete_branch addr = condition "incomplete-branch" "A stored branch is missing part of its expected structure. Is your storage corrupted?"
-                                   ("address" |=| Concepts.Value.String (Concepts.Hash.to_hum_string addr))
+    let incomplete_branch addr =
+      condition "incomplete-branch" "A stored branch is missing part of its expected structure. Is your storage corrupted?"
+        ("address" |=| Concepts.Value.String (Concepts.Hash.to_hum_string addr))
   end
 
   type t = {
@@ -62,6 +63,8 @@ module Make (S : Abstract.Storage.STORAGE) = struct
       |> Utilities.Result.fmap Representation.of_blob
   end
 
+  let pointer_of hash = SI.Pointer.make Loader.load (S.Hash hash)
+
   class branch storage value node = object (self)
     inherit Lifecycle.null
 
@@ -71,23 +74,25 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     val branch : t = value
     val node = node (* FIXME: can we not place this inside `t`? *)
 
+    method deriving branch' =
+      let open Utilities.Result in
+      let branch'' = { branch' with previous = self#address
+                                               |> pointer_of
+                                               |> Option.some } in
+      let* node' = SI.with_transaction storage (fun tx ->
+                       let* _ = SI.store_blob tx (Representation.to_blob branch'') in
+                       MultigroupM.find tx branch'.multigroups
+                       |> fmap (Option.to_result ~none:(Error.incomplete_branch branch'.multigroups))) in
+      new branch storage branch'' node' |> Protocols.Handle.make |> Result.ok
+
     method protocols : Protocols.Handle.protocol list =
+      let open Utilities.Result in
       Protocols.[ Addressable.make self;
                   Prototype.Associative.(of_properties
                     [ "multigroup", update_only (fun node' ->
-                                        (* FIXME: most of this should not be here *)
-                                        let open Utilities.Result in
-                                        let* addressable = Handle.require Addressable.from node' in
-                                        let addr = Addressable.address addressable in
-                                        let branch' = { multigroups = addr;
-                                                        previous = self#address
-                                                                   |> (fun hash -> S.Hash hash)
-                                                                   |> SI.Pointer.make Loader.load
-                                                                   |> Option.some } in
-                                        let* node' = SI.with_transaction storage (fun tx ->
-                                                         let* _ = SI.store_blob tx (Representation.to_blob branch') in
-                                                         MultigroupM.find tx addr |> fmap (Option.to_result ~none:(Error.incomplete_branch addr))) in
-                                        new branch storage branch' node' |> Protocols.Handle.make |> Result.ok) ]);
+                                        Handle.require Addressable.from node'
+                                        |> Result.map Addressable.address
+                                        |> fmap (fun addr -> self#deriving { branch with multigroups = addr })) ]);
                   Prototype.Directory.of_properties
                     [ "multigroup", Prototype.mixture_of node
                                       (fun make node ->
