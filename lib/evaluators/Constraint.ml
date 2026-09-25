@@ -315,7 +315,7 @@ module Derivation = struct
       in
       Ok ()
     in
-    Ok (Kernel.Generator.cursor_of ~on_release:(fun () -> Live.abandoned live) produce)
+    Ok (Kernel.Generator.cursor_of ~finally:(fun () -> Live.abandoned live) produce)
 end
 
 module Derived = Kernel.EphemeralRelation.Make (Derivation)
