@@ -126,8 +126,8 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
   (* let determinism _conn = *)
   (*   () *)
 
-  let suite prefix =
-    ( "merkle/" ^ prefix,
+  let suite =
+    ( "kernel/merkle",
       [ test_case "insert-and-lookup" `Quick (H.with_connection insert_and_lookup "merkle-test");
         test_case "batching" `Quick (H.with_connection batching "merkle-test");
         test_case "persistence" `Quick (H.with_connection persistence "merkle-test");
@@ -136,4 +136,4 @@ end
 
 module LMDB = Make (Rnt.Backend.Storage.LMDB) (Helpers.Storage.LMDB_Configurator)
 
-let suites () = [LMDB.suite "lmdb"]
+let suites () = [LMDB.suite]

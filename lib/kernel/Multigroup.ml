@@ -57,7 +57,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
           [ Addressable.make self;
             Prototype.Directory.of_properties
               [ ( "relation",
-                  Prototype.mixture [RMDirectory.make ~storage ~node ~constructor:(R.wrap storage)]
+                  Prototype.mixture [RMDirectory.make ~storage ~node ~constructor:(R.load storage)]
                 ) ] ]
 
       method hash = Representation.to_blob multigroup |> Concepts.Hash.hash_of_blob

@@ -32,10 +32,28 @@ module Storage = struct
 
   module Make (S : Abstract.Storage.STORAGE) (C : CONFIGURATOR) = struct
     module SI = Kernel.Storage.Make (S)
+    module SR = Kernel.SubstantialRelation.Make (S)
 
     let store_schema tx attributes =
       Concepts.Encoding.Bencode.(Dict (List.map (fun a -> a, String "string") attributes) |> to_blob)
       |> SI.store_blob tx
+
+    let relation conn attributes tuples =
+      let open Utilities.Result in
+      let* value =
+        SI.with_transaction conn (fun tx ->
+            let* schematics = store_schema tx attributes in
+            let* _ = SR.TupleSet.empty_under tx in
+            let* node =
+              List.fold_left
+                (fun node tuple ->
+                  let* node = node in
+                  SR.TupleSet.insert tx (Concepts.Tuple.hash tuple) tuple node )
+                (Ok SR.TupleSet.empty) tuples
+            in
+            Ok {SR.schematics; tuples= SR.TupleSet.hash_of node} )
+      in
+      SR.load conn value
 
     let with_connection f dir () =
       with_temporary_directory dir begin fun dir ->

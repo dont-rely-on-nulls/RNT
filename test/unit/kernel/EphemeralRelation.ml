@@ -1,46 +1,21 @@
 open Alcotest
 module Concepts = Rnt.Concepts
 module Protocols = Rnt.Protocols
-
-(* A derivation over a fixed set of members. It reads nothing and
-   computes nothing, so what the tests observe is the kernel object
-   rather than any particular evaluator. *)
-module Derivation = struct
-  type plan = {name: string; members: Concepts.Tuple.t list; declared: Concepts.Mode.t}
-
-  let identity {name; _} = Concepts.Hash.hash_of_bytes (Bytes.of_string name)
-
-  let describe _ =
-    Ok
-      (BatMap.String.singleton "value"
-         { Protocols.Schematics.domain= "integer";
-           provenance= [{Protocols.Schematics.source= ["example"]; attribute= "value"}] } )
-
-  let modes {declared; _} = Ok declared
-
-  let generate {members; _} binding =
-    Ok
-      (Rnt.Kernel.Generator.cursor_of (fun ~yield ->
-           List.iter
-             (fun member -> if Protocols.Generative.satisfies binding member then yield member)
-             members;
-           Ok () ) )
-end
-
-module Derived = Rnt.Kernel.EphemeralRelation.Make (Derivation)
+module Ephemeral = Rnt.Kernel.EphemeralRelation
 
 let member n =
   { Concepts.Tuple.type_= "example";
     attributes= BatMap.String.singleton "value" (Concepts.Value.Integer n) }
 
-let plan_over cardinality =
-  { Derivation.name= "the-derivation";
-    members= [member 1; member 2; member 3];
-    declared=
-      Concepts.Mode.of_list
-        [Concepts.Mode.enumerable cardinality; Concepts.Mode.decides_when ["value"]] }
+let description =
+  BatMap.String.singleton "value"
+    { Protocols.Schematics.domain= "integer";
+      provenance= [{Protocols.Schematics.source= ["example"]; attribute= "value"}] }
 
-let derive plan = Derived.derive plan |> Helpers.condition_as_failure
+let over ?inputs members =
+  Ephemeral.instantiate ?inputs description
+    {Ephemeral.schematics= `Temporary description}
+    (fun () -> Ok (Rnt.Kernel.Generator.cursor_of (fun ~yield -> List.iter yield members; Ok ())))
 
 let values tuples =
   BatFingerTree.to_list tuples
@@ -50,25 +25,11 @@ let values tuples =
       | _ -> None )
   |> List.sort compare
 
-let commit = Concepts.Hash.hash_of_bytes (Bytes.of_string "a-commit")
-
-let identity_is_the_derivation () =
-  let plan = plan_over Concepts.Cardinality.Finite in
-  check bool "unpinned, the identity of the plan" true
-    (Concepts.Hash.hash_equals (Derived.identity plan) (Derivation.identity plan));
-  check bool "pinned to a commit, another identity" false
-    (Concepts.Hash.hash_equals (Derived.identity plan) (Derived.identity ~pinned:commit plan));
-  check bool "the same pin twice is the same identity" true
-    (Concepts.Hash.hash_equals
-       (Derived.identity ~pinned:commit plan)
-       (Derived.identity ~pinned:commit plan) )
-
-let an_exhaustible_derivation_enumerates () =
-  let derived = derive (plan_over Concepts.Cardinality.Finite) in
+let enumerates_every_member () =
   let enumerated =
     begin
       let open Rnt.Utilities.Result in
-      let* enumerable = Protocols.Enumerable.require derived in
+      let* enumerable = Protocols.Enumerable.require (over [member 1; member 2; member 3]) in
       let* cursor = Protocols.Enumerable.enumerate enumerable in
       let* scan = Protocols.Cursor.require cursor in
       let* tuples = Protocols.Cursor.drain scan () in
@@ -79,28 +40,25 @@ let an_exhaustible_derivation_enumerates () =
   in
   check (list int) "every member" [1; 2; 3] enumerated
 
-let a_countable_derivation_decides_only () =
-  let derived = derive (plan_over Concepts.Cardinality.Countable) in
+let decides_membership () =
   let holds, rejects =
     begin
       let open Rnt.Utilities.Result in
-      let* relation = Protocols.Relation.require derived in
+      let* relation = Protocols.Relation.require (over [member 1; member 2; member 3]) in
       let* holds = Protocols.Relation.contains relation (member 2) in
       let* rejects = Protocols.Relation.contains relation (member 9) in
       Ok (holds, rejects)
     end
     |> Helpers.condition_as_failure
   in
-  check bool "no enumeration is offered" false (Option.is_some (Protocols.Enumerable.from derived));
-  check bool "membership is still decided" true holds;
-  check bool "and still refused" false rejects
+  check bool "a member is held" true holds;
+  check bool "a stranger is refused" false rejects
 
-let a_derivation_describes_itself () =
-  let derived = derive (plan_over Concepts.Cardinality.Finite) in
+let describes_itself () =
   let described =
     begin
       let open Rnt.Utilities.Result in
-      let* schematics = Protocols.Handle.require Protocols.Schematics.from derived in
+      let* schematics = Protocols.Handle.require Protocols.Schematics.from (over []) in
       Protocols.Schematics.describe schematics
     end
     |> Helpers.condition_as_failure
@@ -118,32 +76,27 @@ let a_derivation_describes_itself () =
                 String.concat "/" origin.Protocols.Schematics.source
                 ^ "/"
                 ^ origin.Protocols.Schematics.attribute ) ) )
-  | _ -> fail "a derived relation describes itself as a relation"
+  | _ -> fail "an ephemeral relation describes itself as a relation"
 
-let releasing_a_derivation_releases_its_inputs () =
+let releasing_releases_its_inputs () =
   let released = ref false in
   let input =
     object
       method reference = true
       method release = released := true
       method hash = Concepts.Hash.hash_of_int 0
+      method to_string = "input"
       method protocols : Protocols.Handle.protocol list = []
     end
   in
-  let edge = Protocols.Handle.make input in
-  let derived =
-    Derived.derive ~edges:[edge] (plan_over Concepts.Cardinality.Finite)
-    |> Helpers.condition_as_failure
-  in
-  check bool "an input is held while the derivation lives" false !released;
-  Protocols.Handle.release derived;
+  let relation = over ~inputs:[Protocols.Handle.make input] [] in
+  check bool "an input is held while the relation lives" false !released;
+  Protocols.Handle.release relation;
   check bool "and released with it" true !released
 
 let suites () =
   [ ( "kernel/ephemeral-relation",
-      [ test_case "identity-is-the-derivation" `Quick identity_is_the_derivation;
-        test_case "an-exhaustible-derivation-enumerates" `Quick an_exhaustible_derivation_enumerates;
-        test_case "a-countable-derivation-decides-only" `Quick a_countable_derivation_decides_only;
-        test_case "a-derivation-describes-itself" `Quick a_derivation_describes_itself;
-        test_case "releasing-a-derivation-releases-its-inputs" `Quick
-          releasing_a_derivation_releases_its_inputs ] ) ]
+      [ test_case "enumerates-every-member" `Quick enumerates_every_member;
+        test_case "decides-membership" `Quick decides_membership;
+        test_case "describes-itself" `Quick describes_itself;
+        test_case "releasing-releases-its-inputs" `Quick releasing_releases_its_inputs ] ) ]

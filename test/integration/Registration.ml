@@ -30,11 +30,11 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
     end
     |> Helpers.condition_as_failure
 
-  let suite prefix =
-    ( "registration/" ^ prefix,
-      [test_case "registration tests" `Quick (H.with_connection run "registration-test")] )
+  let suite =
+    ( "registration",
+      [test_case "register-and-lookup" `Quick (H.with_connection run "registration-test")] )
 end
 
 module LMDB = Make (Rnt.Backend.Storage.LMDB) (Helpers.Storage.LMDB_Configurator)
 
-let suites () = [LMDB.suite "lmdb"]
+let suites () = [LMDB.suite]

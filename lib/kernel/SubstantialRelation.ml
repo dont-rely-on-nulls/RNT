@@ -43,12 +43,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
 
   module TupleSet = Merkle.Interface (S) (TupleKey) (TupleValue)
 
-  type t =
-    { schematics: Concepts.Hash.hash;
-      predicate: Concepts.Hash.hash option;
-      local_constraints: Concepts.Hash.hash option;
-      tuples: TupleSet.address;
-      indexes: Concepts.Hash.hash option }
+  type t = {schematics: Concepts.Hash.hash; tuples: TupleSet.address}
 
   module rec Representation : (Concepts.Encoding.Record.S with type t = t) =
     Concepts.Encoding.Record.Make (Body)
@@ -59,57 +54,25 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     let tag = 'R'
     let malformed = Error.malformed_relation
 
-    let fields {schematics; predicate; local_constraints; tuples; indexes} =
+    let fields {schematics; tuples} =
       let open Concepts.Encoding in
-      [ "schema", Value.bencode_of_hash schematics;
-        "predicate", Value.bencode_of_option Value.bencode_of_hash predicate;
-        "local-constraints", Value.bencode_of_option Value.bencode_of_hash local_constraints;
-        "tuples", Value.bencode_of_hash tuples;
-        "indexes", Value.bencode_of_option Value.bencode_of_hash indexes ]
+      ["schema", Value.bencode_of_hash schematics; "tuples", Value.bencode_of_hash tuples]
 
     let of_fields fields =
       let open Utilities.Result in
       let open Concepts.Encoding in
       let* schematics = Bencode.field "schema" fields |> fmap Value.hash_of_bencode in
-      let* predicate =
-        Bencode.field "predicate" fields |> fmap (Value.option_of_bencode Value.hash_of_bencode)
-      in
-      let* local_constraints =
-        Bencode.field "local-constraints" fields
-        |> fmap (Value.option_of_bencode Value.hash_of_bencode)
-      in
       let* tuples = Bencode.field "tuples" fields |> fmap Value.hash_of_bencode in
-      let* indexes =
-        Bencode.field "indexes" fields |> fmap (Value.option_of_bencode Value.hash_of_bencode)
-      in
-      Ok {schematics; predicate; local_constraints; tuples; indexes}
+      Ok {schematics; tuples}
   end
 
   let encode = Representation.to_blob
   let decode = Representation.of_blob
-  let schematics {schematics; _} = schematics
-  let predicate {predicate; _} = predicate
-  let local_constraints {local_constraints; _} = local_constraints
-  let tuples {tuples; _} = tuples
-  let indexes {indexes; _} = indexes
-  let hash relation = Representation.to_blob relation |> Concepts.Hash.hash_of_blob
 
   let tuple_node tx relation =
     let open Utilities.Result in
     let* tuples = TupleSet.find tx relation.tuples in
     Option.to_result ~none:(Error.invalid_tuple_root relation.tuples) tuples
-
-  let empty tx ~schematics ?predicate ?local_constraints ?indexes () =
-    let open Utilities.Result in
-    let* tuples = TupleSet.empty_under tx in
-    Ok {schematics; predicate; local_constraints; tuples; indexes}
-
-  let store tx relation = SI.store_blob tx (Representation.to_blob relation)
-
-  let contains_tuple tx relation tuple =
-    let open Utilities.Result in
-    let* node = tuple_node tx relation in
-    TupleSet.mem tx (Concepts.Tuple.hash tuple) node
 
   let schema_of tx relation =
     let open Utilities.Result in
@@ -123,87 +86,52 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     |> Utilities.List.sequence
     |> Result.map BatMap.String.of_list
 
-  let generate storage relation binding =
+  let enumerate connection relation =
     let open Utilities.Result in
-    let* tx = S.start_read storage in
+    let* tx = S.start_read connection in
     let close () = ignore (S.abort tx) in
     let* node = tuple_node tx relation |> Result.map_error (fun c -> close (); c) in
-    (* The fold is suspended by [yield], so the tree is walked one node
-       and one tuple at a time rather than materialized before the
-       first tuple is produced. *)
-    let produce ~yield =
-      TupleSet.iter tx
-        (fun _ tuple -> if Protocols.Generative.satisfies binding tuple then yield tuple)
-        node
-    in
-    Ok (Generator.cursor_of ~finally:close produce)
+    Ok
+      (Generator.cursor_of ~finally:close (fun ~yield ->
+           TupleSet.iter tx (fun _ tuple -> yield tuple) node ) )
 
-  let enumerate storage relation = generate storage relation Protocols.Generative.nothing
-
-  let modes_of description =
-    Concepts.Mode.of_list
-      [ Concepts.Mode.enumerable Concepts.Cardinality.Finite;
-        {Concepts.Mode.bound= Concepts.Mode.attributes_of_map description; affords= Decides} ]
-
-  class relation storage value description =
+  class substantial_relation connection value description =
     object (self)
       inherit Lifecycle.null
       method to_string = "relation"
-      val storage : S.connection = storage
+      val connection : S.connection = connection
       val relation : t = value
-      val declaration = modes_of description
-      method predicate = Ok relation.predicate
-      method local_constraints = Ok relation.local_constraints
 
-      (* The protocol takes a tuple, not bytes: encoding is this object's business, and a caller
-         that had to produce the exact stored bytes would have to know this encoding to do it. *)
       method contains (tuple : Concepts.Tuple.t) =
-        SI.with_read storage (fun tx -> contains_tuple tx relation tuple)
+        SI.with_read connection (fun tx ->
+            let open Utilities.Result in
+            let* node = tuple_node tx relation in
+            TupleSet.mem tx (Concepts.Tuple.hash tuple) node )
 
       method describe () = Ok (Protocols.Schematics.Relation description)
-
-      (* A substantial relation is finitely enumerable, so it carries [Enumerable] as well as
-         [Relation]. A procedural relation would carry only the latter, which is how an evaluator
-         discovers it cannot iterate one -- see [Protocols.Enumerable]. The context is accepted and
-         unused here: this enumeration reads through its own cursor-lifetime transaction and needs
-         no name resolution, but cancellation should eventually be checked between tuples. *)
-      method enumerate = enumerate storage relation
-      method modes : (Concepts.Mode.t, Concepts.Condition.condition) result = Ok declaration
-      method generate binding = generate storage relation binding
+      method enumerate = enumerate connection relation
 
       method protocols : Protocols.Handle.protocol list =
         [ Protocols.Relation.make self;
           Protocols.Enumerable.make self;
           Protocols.Schematics.make self ]
 
-      method hash = hash relation
+      method hash = encode relation |> Concepts.Hash.hash_of_blob
     end
 
-  (* A relation never changes its schema, so it is read once here and
-     the description and modes are served from it on every request. *)
-  let instantiate tx conn relation =
-    schema_of tx relation
+  let load connection relation =
+    SI.with_read connection (fun tx -> schema_of tx relation)
     |> Result.map (fun description ->
-        new relation conn relation description |> Protocols.Handle.make )
+        new substantial_relation connection relation description |> Protocols.Handle.make )
 
-  let make conn ~schematics ?predicate ?local_constraints ?indexes () =
+  let instantiate connection ~schematics =
     let open Utilities.Result in
-    SI.with_transaction conn (fun tx ->
-        let* relation = empty tx ~schematics ?predicate ?local_constraints ?indexes () in
-        let* _ = store tx relation in
-        instantiate tx conn relation )
-
-  let load_value tx addr =
-    let open Utilities.Result in
-    let* data = SI.get_req tx (S.Hash addr) in
-    Representation.of_blob data
-
-  let wrap conn relation = SI.with_read conn (fun tx -> instantiate tx conn relation)
-  let load tx conn addr = load_value tx addr |> Utilities.Result.fmap (instantiate tx conn)
-
-  let assert_tuple tx relation tuple =
-    let open Utilities.Result in
-    let* node = tuple_node tx relation in
-    let* node = TupleSet.insert tx (Concepts.Tuple.hash tuple) tuple node in
-    Ok {relation with tuples= TupleSet.hash_of node}
+    let* relation =
+      SI.with_transaction connection (fun tx ->
+          let* tuples = TupleSet.empty_under tx in
+          let relation = {schematics; tuples} in
+          let* _ = SI.store_blob tx (encode relation) in
+          Ok relation )
+    in
+    load connection relation
 end

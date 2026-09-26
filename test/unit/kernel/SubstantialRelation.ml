@@ -5,8 +5,6 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
   module H = Helpers.Storage.Make (S) (C)
   module SR = Rnt.Kernel.SubstantialRelation.Make (S)
 
-  let hash s = Concepts.Blob.blob_of_bytes (Bytes.of_string s) |> Concepts.Hash.hash_of_blob
-
   let alaric =
     { Concepts.Tuple.type_= "employee";
       attributes=
@@ -14,26 +12,38 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
         |> BatMap.String.add "name" (Concepts.Value.String "Alaric")
         |> BatMap.String.add "age" (Concepts.Value.Integer 42) }
 
-  let assert_and_enumerate conn =
-    let before, after, enumerated =
+  let contains relation tuple =
+    let open Utilities.Result in
+    let* relation = Protocols.Relation.require relation in
+    Protocols.Relation.contains relation tuple
+
+  let enumerate relation =
+    let open Utilities.Result in
+    let* enumerable = Protocols.Enumerable.require relation in
+    let* cursor = Protocols.Enumerable.enumerate enumerable in
+    let* scan = Protocols.Cursor.require cursor in
+    let* enumerated = Protocols.Cursor.drain scan () in
+    Protocols.Handle.release cursor;
+    Ok (BatFingerTree.to_list enumerated)
+
+  let contain_and_enumerate conn =
+    let absent, present, enumerated =
       begin
         let open Utilities.Result in
-        let* tx = S.start conn in
-        let* relation = SR.empty tx ~schematics:(hash "schema") () in
-        let* before = SR.contains_tuple tx relation alaric in
-        let* relation = SR.assert_tuple tx relation alaric in
-        let* after = SR.contains_tuple tx relation alaric in
-        let* () = S.commit tx in
-        let* cursor = SR.enumerate conn relation in
-        let* scan = Protocols.Cursor.require cursor in
-        let* enumerated = Protocols.Cursor.drain scan () in
-        Protocols.Handle.release cursor;
-        Ok (before, after, BatFingerTree.to_list enumerated)
+        let* schematics =
+          H.SI.with_transaction conn (fun tx -> H.store_schema tx ["name"; "age"])
+        in
+        let* empty = SR.instantiate conn ~schematics in
+        let* absent = contains empty alaric in
+        let* holding = H.relation conn ["name"; "age"] [alaric] in
+        let* present = contains holding alaric in
+        let* enumerated = enumerate holding in
+        Ok (absent, present, enumerated)
       end
       |> Helpers.condition_as_failure
     in
-    check bool "absent before assertion" false before;
-    check bool "present after assertion" true after;
+    check bool "absent from an empty relation" false absent;
+    check bool "present in a relation holding it" true present;
     check int "one tuple enumerated" 1 (List.length enumerated);
     check bool "the tuple that was asserted" true
       (List.for_all
@@ -41,12 +51,12 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
            Concepts.Hash.hash_equals (Concepts.Tuple.hash tuple) (Concepts.Tuple.hash alaric) )
          enumerated )
 
-  let suite prefix =
-    ( "substantial-relation/" ^ prefix,
-      [ test_case "assert-and-enumerate" `Quick
-          (H.with_connection assert_and_enumerate "substantial-relation-test") ] )
+  let suite =
+    ( "kernel/substantial-relation",
+      [ test_case "contain-and-enumerate" `Quick
+          (H.with_connection contain_and_enumerate "substantial-relation-test") ] )
 end
 
 module LMDB = Make (Rnt.Backend.Storage.LMDB) (Helpers.Storage.LMDB_Configurator)
 
-let suites () = [LMDB.suite "lmdb"]
+let suites () = [LMDB.suite]
