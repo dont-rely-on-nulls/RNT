@@ -26,6 +26,7 @@ class retaining inner (owner : lifecycle) =
   object
     inherit counted
     initializer ignore owner#reference
+    method to_string = "retaining"
     method destroy = Protocols.Handle.release inner; owner#release
     method hash = Protocols.Handle.hash inner
     method protocols = Protocols.Handle.protocols inner

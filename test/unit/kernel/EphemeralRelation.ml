@@ -124,6 +124,7 @@ let releasing_a_derivation_releases_its_inputs () =
   let released = ref false in
   let input =
     object
+      method to_string = "input"
       method reference = true
       method release = released := true
       method hash = Concepts.Hash.hash_of_int 0

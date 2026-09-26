@@ -16,6 +16,7 @@ class virtual counted : controlled_lifecycle
     the object that produced it. *)
 class retaining : Protocols.Handle.t -> lifecycle -> object
   inherit lifecycle
+  method to_string : string
   method destroy : unit
   method hash : Concepts.Hash.hash
   method protocols : Protocols.Handle.protocol list

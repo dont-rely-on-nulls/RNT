@@ -2,7 +2,9 @@ module Make (S : Abstract.Storage.STORAGE) = struct
   module SI = Storage.Make (S)
   module R = SubstantialRelation.Make (S)
   module RelationM = Merkle.Interface (S) (Merkle.StringKey) (R)
+  module RMAddressable = Prototype.Addressable.OfTree (S) (Merkle.StringKey)
   module RMDirectory = Prototype.Directory.OfTree (S) (Merkle.StringKey) (R)
+  module RMAssociative = Prototype.Associative.OfTree (S) (Merkle.StringKey)
 
   type t = {relations: RelationM.address}
 
@@ -52,12 +54,34 @@ module Make (S : Abstract.Storage.STORAGE) = struct
       val storage = conn
       val node = node (* FIXME: see the comment on Branch.ml *)
 
+      method deriving multigroup' =
+        let open Utilities.Result in
+        let* node' =
+          SI.with_transaction storage (fun tx ->
+              let* _ = SI.store_blob tx (Representation.to_blob multigroup') in
+              RelationM.find tx multigroup'.relations
+              |> fmap (Option.to_result ~none:(Error.incomplete_multigroup multigroup'.relations)) )
+        in
+        new multigroup storage multigroup' node' |> Protocols.Handle.make |> Result.ok
+
       method protocols : Protocols.Handle.protocol list =
+        let open Utilities.Result in
         Protocols.
           [ Addressable.make self;
+            Prototype.Associative.(
+              of_properties
+                [ ( "relation",
+                    update_only (fun node' ->
+                        Handle.require Addressable.from node'
+                        |> Result.map Addressable.address
+                        |> fmap (fun addr -> self#deriving {relations= addr}) ) ) ] );
             Prototype.Directory.of_properties
               [ ( "relation",
-                  Prototype.mixture [RMDirectory.make ~storage ~node ~constructor:(R.wrap storage)]
+                  Prototype.mixture_of node (fun make node ->
+                      [ RMAddressable.make ~node:(RelationM.into node);
+                        RMDirectory.make ~storage ~node ~constructor:(R.wrap storage);
+                        RMAssociative.make ~storage ~node:(RelationM.into node)
+                          ~constructor:(fun node' -> RelationM.from node' |> make |> Result.ok ) ] )
                 ) ] ]
 
       method hash = Representation.to_blob multigroup |> Concepts.Hash.hash_of_blob

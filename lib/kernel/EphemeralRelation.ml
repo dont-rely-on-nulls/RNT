@@ -35,6 +35,7 @@ module Make (D : DERIVATION) = struct
       method predicate = Ok None
       method local_constraints = Ok None
       method modes = Ok declaration
+      method to_string = "ephemeral-relation"
 
       (* A cursor holds a reference to its relation, so the edges it reads
          outlive a release of the relation that produced it. *)
