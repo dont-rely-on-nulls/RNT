@@ -174,7 +174,6 @@ module Make (S : Abstract.Storage.STORAGE) = struct
       method protocols : Protocols.Handle.protocol list =
         [ Protocols.Relation.make self;
           Protocols.Enumerable.make self;
-          Protocols.Generative.make self;
           Protocols.Schematics.make self ]
 
       method hash = hash relation
