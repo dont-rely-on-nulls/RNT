@@ -87,7 +87,6 @@ module Make (S : Abstract.Storage.STORAGE) = struct
 
   let encode = Representation.to_blob
   let decode = Representation.of_blob
-
   let schematics {schematics; _} = schematics
   let predicate {predicate; _} = predicate
   let local_constraints {local_constraints; _} = local_constraints
@@ -119,9 +118,8 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     let* kvs = Concepts.Encoding.Bencode.as_dict fields in
     kvs
     |> List.map (fun (name, domain) ->
-           Concepts.Encoding.Bencode.as_string domain
-           |> Result.map (fun domain ->
-                  (name, {Protocols.Schematics.domain; provenance= []}) ) )
+        Concepts.Encoding.Bencode.as_string domain
+        |> Result.map (fun domain -> name, {Protocols.Schematics.domain; provenance= []}) )
     |> Utilities.List.sequence
     |> Result.map BatMap.String.of_list
 
@@ -150,9 +148,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
   class relation storage value description =
     object (self)
       inherit Lifecycle.null
-
       method to_string = "relation"
-
       val storage : S.connection = storage
       val relation : t = value
       val declaration = modes_of description
@@ -172,15 +168,15 @@ module Make (S : Abstract.Storage.STORAGE) = struct
          unused here: this enumeration reads through its own cursor-lifetime transaction and needs
          no name resolution, but cancellation should eventually be checked between tuples. *)
       method enumerate = enumerate storage relation
-
       method modes : (Concepts.Mode.t, Concepts.Condition.condition) result = Ok declaration
       method generate binding = generate storage relation binding
 
       method protocols : Protocols.Handle.protocol list =
-        [ Protocols.Relation.make self
-        ; Protocols.Enumerable.make self
-        ; Protocols.Generative.make self
-        ; Protocols.Schematics.make self ]
+        [ Protocols.Relation.make self;
+          Protocols.Enumerable.make self;
+          Protocols.Generative.make self;
+          Protocols.Schematics.make self ]
+
       method hash = hash relation
     end
 
@@ -188,7 +184,8 @@ module Make (S : Abstract.Storage.STORAGE) = struct
      the description and modes are served from it on every request. *)
   let instantiate tx conn relation =
     schema_of tx relation
-    |> Result.map (fun description -> new relation conn relation description |> Protocols.Handle.make)
+    |> Result.map (fun description ->
+        new relation conn relation description |> Protocols.Handle.make )
 
   let make conn ~schematics ?predicate ?local_constraints ?indexes () =
     let open Utilities.Result in
@@ -203,9 +200,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     Representation.of_blob data
 
   let wrap conn relation = SI.with_read conn (fun tx -> instantiate tx conn relation)
-
-  let load tx conn addr =
-    load_value tx addr |> Utilities.Result.fmap (instantiate tx conn)
+  let load tx conn addr = load_value tx addr |> Utilities.Result.fmap (instantiate tx conn)
 
   let assert_tuple tx relation tuple =
     let open Utilities.Result in

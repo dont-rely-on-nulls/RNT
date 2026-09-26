@@ -9,8 +9,7 @@ module Error = struct
     condition "evaluation-cancelled" "An evaluation was stopped before it produced its result" empty
 end
 
-type plan = Base of Protocols.Handle.t
-          | Project of plan * string BatFingerTree.t
+type plan = Base of Protocols.Handle.t | Project of plan * string BatFingerTree.t
 
 module Program = Protocols.Program.Make (struct
   type t = plan
@@ -20,21 +19,20 @@ let execute =
   let open Utilities.Result in
   function
   | Base relation_handle ->
-     Fun.protect
-       ~finally:(fun () -> Protocols.Handle.release relation_handle)
-       (fun () ->
-         let* enumerable = Protocols.Enumerable.require relation_handle in
-         Protocols.Enumerable.enumerate enumerable)
+      Fun.protect
+        ~finally:(fun () -> Protocols.Handle.release relation_handle)
+        (fun () ->
+          let* enumerable = Protocols.Enumerable.require relation_handle in
+          Protocols.Enumerable.enumerate enumerable )
   | Project (_plan, _attributes) -> failwith "TODO"
 
-class evaluator = object (self)
-  inherit Kernel.Lifecycle.null
-  inherit Kernel.Identity.of_id
-
-  method to_string = "fol-evaluator"
-
-  method invoke = execute
-  method protocols : Protocols.Handle.protocol list = [Program.make self]
-end
+class evaluator =
+  object (self)
+    inherit Kernel.Lifecycle.null
+    inherit Kernel.Identity.of_id
+    method to_string = "fol-evaluator"
+    method invoke = execute
+    method protocols : Protocols.Handle.protocol list = [Program.make self]
+  end
 
 let make () = new evaluator |> Protocols.Handle.make

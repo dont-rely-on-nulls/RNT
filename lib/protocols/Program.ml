@@ -8,7 +8,6 @@ module Make (P : PROGRAM) = struct
   end
 
   type Handle.protocol += Program of implementation
-
   type t = implementation
 
   let make impl = Program (impl :> implementation)

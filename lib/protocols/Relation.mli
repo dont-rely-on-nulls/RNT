@@ -16,5 +16,4 @@ val predicate :
 val local_constraints :
   t Handle.interface -> (Concepts.Hash.hash option, Concepts.Condition.condition) result
 
-val contains :
-  t Handle.interface -> Concepts.Tuple.t -> (bool, Concepts.Condition.condition) result
+val contains : t Handle.interface -> Concepts.Tuple.t -> (bool, Concepts.Condition.condition) result

@@ -2,7 +2,6 @@ open Rnt
 
 module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = struct
   open Alcotest
-
   module H = Helpers.Storage.Make (S) (C)
   module I = Kernel.Initialization.Make (S)
   module B = Kernel.Branch.Make (S)
@@ -14,13 +13,18 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
       let* root = I.initialize ~evaluators:["fol", Evaluators.FOL.make ()] conn in
       let* multigroup = M.make conn in
       let* branch = B.make conn in
-      let* branch' = Kernel.Path.(assoc branch ("multigroup" @/ this) "library" (Some multigroup)) in
+      let* branch' =
+        Kernel.Path.(assoc branch ("multigroup" @/ this) "library" (Some multigroup))
+      in
       Kernel.Path.(update root ("branch" @/ this) "master" None (Some branch'))
     end
-    |> Helpers.condition_as_failure |> ignore;
+    |> Helpers.condition_as_failure
+    |> ignore;
     begin
       let* root = I.initialize ~evaluators:["fol", Evaluators.FOL.make ()] conn in
-      let* _ = Kernel.Path.(lookup root ("branch" @/ "master" @/ "multigroup" @/ "library" @/ this)) in
+      let* _ =
+        Kernel.Path.(lookup root ("branch" @/ "master" @/ "multigroup" @/ "library" @/ this))
+      in
       let* _ = Kernel.Path.(lookup root ("evaluator" @/ "fol" @/ this)) in
       Ok ()
     end
@@ -28,7 +32,7 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
 
   let suite prefix =
     ( "registration/" ^ prefix,
-      [test_case "registration tests" `Quick (H.with_connection run "registration-test")])
+      [test_case "registration tests" `Quick (H.with_connection run "registration-test")] )
 end
 
 module LMDB = Make (Rnt.Backend.Storage.LMDB) (Helpers.Storage.LMDB_Configurator)

@@ -2,16 +2,14 @@ open Rnt
 
 module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = struct
   open Alcotest
-
   module H = Helpers.Storage.Make (S) (C)
   module SR = Rnt.Kernel.SubstantialRelation.Make (S)
 
-  let hash s =
-    Concepts.Blob.blob_of_bytes (Bytes.of_string s) |> Concepts.Hash.hash_of_blob
+  let hash s = Concepts.Blob.blob_of_bytes (Bytes.of_string s) |> Concepts.Hash.hash_of_blob
 
   let alaric =
-    { Concepts.Tuple.type_ = "employee";
-      attributes =
+    { Concepts.Tuple.type_= "employee";
+      attributes=
         BatMap.String.empty
         |> BatMap.String.add "name" (Concepts.Value.String "Alaric")
         |> BatMap.String.add "age" (Concepts.Value.Integer 42) }
@@ -40,8 +38,8 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
     check bool "the tuple that was asserted" true
       (List.for_all
          (fun tuple ->
-           Concepts.Hash.hash_equals (Concepts.Tuple.hash tuple) (Concepts.Tuple.hash alaric))
-         enumerated)
+           Concepts.Hash.hash_equals (Concepts.Tuple.hash tuple) (Concepts.Tuple.hash alaric) )
+         enumerated )
 
   let suite prefix =
     ( "substantial-relation/" ^ prefix,

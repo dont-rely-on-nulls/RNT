@@ -41,7 +41,7 @@ module Make (D : DERIVATION) = struct
       method generate binding =
         D.generate plan binding
         |> Result.map (fun cursor ->
-               new Lifecycle.retaining cursor (self :> Lifecycle.lifecycle) |> Protocols.Handle.make )
+            new Lifecycle.retaining cursor (self :> Lifecycle.lifecycle) |> Protocols.Handle.make )
 
       method enumerate = self#generate Protocols.Generative.nothing
       method describe () = Ok (Protocols.Schematics.Relation description)

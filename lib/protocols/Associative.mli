@@ -5,7 +5,10 @@ class type implementation = object
 end
 
 val make : #implementation -> Handle.protocol
-
 val from : Handle.t -> t Handle.interface option
 
-val update : t Handle.interface -> string -> Handle.t option -> (t Handle.interface, Concepts.Condition.condition) result
+val update :
+  t Handle.interface ->
+  string ->
+  Handle.t option ->
+  (t Handle.interface, Concepts.Condition.condition) result

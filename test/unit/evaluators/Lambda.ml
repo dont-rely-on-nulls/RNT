@@ -2,21 +2,18 @@ open Rnt
 
 module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = struct
   open Alcotest
-
   module H = Helpers.Storage.Make (S) (C)
   module SR = Rnt.Kernel.SubstantialRelation.Make (S)
 
   let datum =
-    { Concepts.Tuple.type_ = "noun";
-      attributes =
-        BatMap.String.empty
-        |> BatMap.String.add "lemma" (Concepts.Value.String "datum") }
+    { Concepts.Tuple.type_= "noun";
+      attributes= BatMap.String.empty |> BatMap.String.add "lemma" (Concepts.Value.String "datum")
+    }
 
   let reticulare =
-    { Concepts.Tuple.type_ = "verb";
-      attributes =
-        BatMap.String.empty
-        |> BatMap.String.add "lemma" (Concepts.Value.String "rēticulāre") }
+    { Concepts.Tuple.type_= "verb";
+      attributes=
+        BatMap.String.empty |> BatMap.String.add "lemma" (Concepts.Value.String "rēticulāre") }
 
   let not_a_directory () =
     Concepts.Condition.condition "not-a-directory"
@@ -48,18 +45,13 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
         [ Kernel.Prototype.Directory.of_properties
             ["noun", noun; "verb", verb; "lambda", Rnt.Evaluators.Lambda.make ()] ]
     in
-    let* directory =
-      Protocols.Directory.from root |> Option.to_result ~none:(not_a_directory ())
-    in
+    let* directory = Protocols.Directory.from root |> Option.to_result ~none:(not_a_directory ()) in
     let* found = Protocols.Directory.find directory "lambda" in
     let* evaluator = Option.to_result ~none:(not_a_program ()) found in
     let* interpreter =
-      Rnt.Evaluators.Lambda.Program.from evaluator
-      |> Option.to_result ~none:(not_a_program ())
+      Rnt.Evaluators.Lambda.Program.from evaluator |> Option.to_result ~none:(not_a_program ())
     in
-    let* cursor =
-      Rnt.Evaluators.Lambda.(Program.invoke interpreter (Program (term, directory)))
-    in
+    let* cursor = Rnt.Evaluators.Lambda.(Program.invoke interpreter (Program (term, directory))) in
     let* scan = Protocols.Cursor.require cursor in
     let* tuples = Protocols.Cursor.drain scan () in
     Protocols.Handle.release cursor;
@@ -81,8 +73,7 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
   let identity_applied_to_a_relation conn =
     let open Rnt.Evaluators.Lambda in
     let scanned =
-      evaluate conn (Apply (Abstract ("x", Name "x"), Name "noun"))
-      |> Helpers.condition_as_failure
+      evaluate conn (Apply (Abstract ("x", Name "x"), Name "noun")) |> Helpers.condition_as_failure
     in
     check int "one tuple scanned" 1 (List.length scanned);
     check bool "the tuple that was asserted" true (List.for_all (is datum) scanned)
@@ -94,8 +85,8 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
     let scanned =
       evaluate conn
         (Apply
-           ( Apply (Abstract ("x", Abstract ("y", Name "x")), Name "noun"),
-             Abstract ("z", Name "z") ))
+           (Apply (Abstract ("x", Abstract ("y", Name "x")), Name "noun"), Abstract ("z", Name "z"))
+        )
       |> Helpers.condition_as_failure
     in
     check int "one tuple scanned" 1 (List.length scanned);
@@ -124,9 +115,9 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
     let open Rnt.Evaluators.Lambda in
     match evaluate conn (Abstract ("x", Name "x")) with
     | Error condition ->
-       check bool "unapplied abstraction" true
-         (String.starts_with ~prefix:"unapplied-abstraction"
-            (Concepts.Condition.to_string_hum condition))
+        check bool "unapplied abstraction" true
+          (String.starts_with ~prefix:"unapplied-abstraction"
+             (Concepts.Condition.to_string_hum condition) )
     | Ok _ -> fail "an abstraction was enumerated"
 
   let suite prefix =

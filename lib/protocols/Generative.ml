@@ -68,7 +68,8 @@ class virtual membership =
       else
         let* declaration = self#modes in
         let* () =
-          if Concepts.Mode.decision declaration bound then Ok () else Error (Error.undecidable bound)
+          if Concepts.Mode.decision declaration bound then Ok ()
+          else Error (Error.undecidable bound)
         in
         let* cursor = self#generate binding in
         let expected = Concepts.Tuple.hash tuple in

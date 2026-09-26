@@ -2,11 +2,12 @@ open Rnt
 
 module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = struct
   open Alcotest
-
   module H = Helpers.Storage.Make (S) (C)
 
   let storage_and_retrieval conn =
-    let key = Concepts.Value.String "value" |> Concepts.Encoding.blob_of_value |> Concepts.Hash.hash_of_blob in
+    let key =
+      Concepts.Value.String "value" |> Concepts.Encoding.blob_of_value |> Concepts.Hash.hash_of_blob
+    in
     let value = Concepts.Value.Integer 42 in
     let blob = Concepts.Encoding.blob_of_value value in
     let v, v' =
@@ -26,7 +27,8 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
 
   let suite prefix =
     ( "storage/" ^ prefix,
-      [test_case "storage-and-retrieval" `Quick (H.with_connection storage_and_retrieval "storage-test")] )
+      [ test_case "storage-and-retrieval" `Quick
+          (H.with_connection storage_and_retrieval "storage-test") ] )
 end
 
 module LMDB = Make (Rnt.Backend.Storage.LMDB) (Helpers.Storage.LMDB_Configurator)

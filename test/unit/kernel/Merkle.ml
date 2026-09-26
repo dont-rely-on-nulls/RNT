@@ -2,9 +2,10 @@ open Rnt
 
 module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = struct
   open Alcotest
-
   module H = Helpers.Storage.Make (S) (C)
-  module T = Rnt.Kernel.Merkle.Interface (S) (Rnt.Kernel.Merkle.StringKey) (Rnt.Kernel.Merkle.StringKey)
+
+  module T =
+    Rnt.Kernel.Merkle.Interface (S) (Rnt.Kernel.Merkle.StringKey) (Rnt.Kernel.Merkle.StringKey)
 
   (* TODO: be a bit more comprehensive (ideally, we want to test splits as well) *)
   let insert_and_lookup conn =
@@ -12,10 +13,11 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
       begin
         let open Utilities.Result in
         let* tx = S.start conn in
-        let* node = T.empty
-                    |> T.insert tx "k1" "v1"
-                    |> fmap (T.insert tx "k2" "v2")
-                    |> fmap (T.insert tx "k3" "v3")
+        let* node =
+          T.empty
+          |> T.insert tx "k1" "v1"
+          |> fmap (T.insert tx "k2" "v2")
+          |> fmap (T.insert tx "k3" "v3")
         in
         let* node' = T.insert tx "k3" "toodles" node in
         let* v1 = T.lookup tx "k1" node in
@@ -31,7 +33,8 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
     check (option string) "that in-memory reads from the first write work properly" (Some "v1") v1;
     check (option string) "that in-memory reads from the second write work properly" (Some "v2") v2;
     check (option string) "that in-memory reads from the third write work properly" (Some "v3") v3;
-    check (option string) "that in-memory reads from a value replacement work properly" (Some "toodles") v3';
+    check (option string) "that in-memory reads from a value replacement work properly"
+      (Some "toodles") v3';
     check (option string) "that in-memory reads from a non-existent key returns nothing" None bogus
 
   let batching conn =
@@ -40,10 +43,12 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
         let open Utilities.Result in
         let* tx = S.start conn in
         let intermediate = ref None in
-        let* final = T.with_batch tx (fun () ->
-                         let* i = T.empty |> T.insert tx "tree" "maple" in
-                         intermediate := Some (T.hash_of i);
-                         T.insert tx "tree" "spruce" i) in
+        let* final =
+          T.with_batch tx (fun () ->
+              let* i = T.empty |> T.insert tx "tree" "maple" in
+              intermediate := Some (T.hash_of i);
+              T.insert tx "tree" "spruce" i )
+        in
         let* () = S.commit tx in
         Ok (Option.get !intermediate, T.hash_of final)
       end
@@ -62,16 +67,16 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
     check bool "that the intermediate node does not get persisted" true (Option.is_none i_node);
     check bool "that the final node does get persisted" true (Option.is_some f_node)
 
-
   let persistence conn =
     let addr =
       begin
         let open Utilities.Result in
         let* tx = S.start conn in
-        let* node = T.empty
-                    |> T.insert tx "k1" "v1"
-                    |> fmap (T.insert tx "k2" "v2")
-                    |> fmap (T.insert tx "k3" "v3")
+        let* node =
+          T.empty
+          |> T.insert tx "k1" "v1"
+          |> fmap (T.insert tx "k2" "v2")
+          |> fmap (T.insert tx "k3" "v3")
         in
         let* () = S.commit tx in
         Ok (T.hash_of node)
@@ -99,10 +104,11 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
       begin
         let open Utilities.Result in
         let* tx = S.start conn in
-        let* node = T.empty
-                    |> T.insert tx "k1" "v1"
-                    |> fmap (T.insert tx "k2" "v2")
-                    |> fmap (T.insert tx "k3" "v3")
+        let* node =
+          T.empty
+          |> T.insert tx "k1" "v1"
+          |> fmap (T.insert tx "k2" "v2")
+          |> fmap (T.insert tx "k3" "v3")
         in
         let* keys = T.fold_left tx (fun acc k _ -> k :: acc) [] node |> Result.map List.rev in
         let* values = T.fold_left tx (fun acc _ v -> v :: acc) [] node |> Result.map List.rev in
@@ -111,8 +117,10 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
       end
       |> Helpers.condition_as_failure
     in
-    check (list string) "that keys are properly enumerated from left to right" ["k1"; "k2"; "k3"] keys;
-    check (list string) "that values are properly enumerated from left to right" ["v1"; "v2"; "v3"] values
+    check (list string) "that keys are properly enumerated from left to right" ["k1"; "k2"; "k3"]
+      keys;
+    check (list string) "that values are properly enumerated from left to right" ["v1"; "v2"; "v3"]
+      values
 
   (* TODO: this will need `remove` *)
   (* let determinism _conn = *)
@@ -120,10 +128,10 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
 
   let suite prefix =
     ( "merkle/" ^ prefix,
-      [test_case "insert-and-lookup" `Quick (H.with_connection insert_and_lookup "merkle-test");
-       test_case "batching" `Quick (H.with_connection batching "merkle-test");
-       test_case "persistence" `Quick (H.with_connection persistence "merkle-test");
-       test_case "iteration" `Quick (H.with_connection iteration "merkle-test")])
+      [ test_case "insert-and-lookup" `Quick (H.with_connection insert_and_lookup "merkle-test");
+        test_case "batching" `Quick (H.with_connection batching "merkle-test");
+        test_case "persistence" `Quick (H.with_connection persistence "merkle-test");
+        test_case "iteration" `Quick (H.with_connection iteration "merkle-test") ] )
 end
 
 module LMDB = Make (Rnt.Backend.Storage.LMDB) (Helpers.Storage.LMDB_Configurator)
