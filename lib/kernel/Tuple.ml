@@ -117,6 +117,8 @@ module Make (S : Abstract.Storage.STORAGE) = struct
   class tuple ~relation conn value node = object (self)
     inherit Lifecycle.null
 
+    method to_string = "tuple"
+
     val tuple = value
     val storage = conn
     val node = node

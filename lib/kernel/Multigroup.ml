@@ -38,23 +38,28 @@ module Make (S : Abstract.Storage.STORAGE) = struct
   let encode = Representation.to_blob
   let decode = Representation.of_blob
 
-  class multigroup conn value node = object
+  class multigroup conn value node = object (self)
     inherit Lifecycle.null
+
+    method to_string = "multigroup"
 
     val multigroup = value
     val storage = conn
     val node = node (* FIXME: see the comment on Branch.ml *)
 
     method protocols : Protocols.Handle.protocol list =
-      [ Prototype.Directory.of_properties
-          [ "relation", Prototype.mixture
-                          [ RMDirectory.make
-                              ~storage ~node
-                              ~constructor:(R.wrap storage) ] ] ]
+      Protocols.[ Addressable.make self;
+                  Prototype.Directory.of_properties
+                    [ "relation", Prototype.mixture
+                                    [ RMDirectory.make
+                                        ~storage ~node
+                                        ~constructor:(R.wrap storage) ] ] ]
 
     method hash =
       Representation.to_blob multigroup
       |> Concepts.Hash.hash_of_blob
+
+    method address = self#hash
   end
 
   let wrap conn value =
@@ -62,4 +67,12 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     let* node = SI.with_transaction conn (fun tx -> RelationM.find tx value.relations)
                 |> fmap (Option.to_result ~none:(Error.incomplete_multigroup value.relations)) in
     new multigroup conn value node |> Protocols.Handle.make |> Result.ok
+
+  let make conn =
+    let open Utilities.Result in
+    SI.with_transaction conn (fun tx ->
+        let* empty = RelationM.empty_under tx in
+        let multigroup = { relations = empty } in
+        let* _ = SI.store_blob tx (Representation.to_blob multigroup) in
+        new multigroup conn multigroup RelationM.empty |> Protocols.Handle.make |> Result.ok)
 end

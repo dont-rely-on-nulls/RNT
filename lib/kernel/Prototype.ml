@@ -4,6 +4,8 @@ let mixture ps = Protocols.Handle.make @@
                      inherit Identity.of_id (* Should we allow the user to override this? *)
 
                      method protocols = ps
+
+                     method to_string = "mixture"
                    end
 
 let rec mixture_of value f =
@@ -17,6 +19,18 @@ module Error = struct
 
   let deletion_not_supported () = condition "deletion-not-supported" "Attempting to delete an object property"
                                     empty
+end
+
+module Addressable = struct
+  module OfTree (S : Abstract.Storage.STORAGE) (K : Merkle.KEY) = struct
+    module Tree = Merkle.Make (S) (K)
+
+    let make ~node =
+      Protocols.Addressable.make @@
+        object
+          method address = Tree.hash_of node
+        end
+  end
 end
 
 module Associative = struct

@@ -12,12 +12,14 @@ module Make (S : Abstract.Storage.STORAGE) = struct
   module MultigroupM = Merkle.Interface (S) (Merkle.StringKey) (M)
   module MMDirectory = Prototype.Directory.OfTree (S) (Merkle.StringKey) (M)
   module MMAssociative = Prototype.Associative.OfTree (S) (Merkle.StringKey)
+  module MMAddressable = Prototype.Addressable.OfTree (S) (Merkle.StringKey)
 
   module Error = struct
     open Concepts.Condition
 
-    let incomplete_branch addr = condition "incomplete-branch" "A stored branch is missing part of its expected structure. Is your storage corrupted?"
-                                   ("address" |=| Concepts.Value.String (Concepts.Hash.to_hum_string addr))
+    let incomplete_branch addr =
+      condition "incomplete-branch" "A stored branch is missing part of its expected structure. Is your storage corrupted?"
+        ("address" |=| Concepts.Value.String (Concepts.Hash.to_hum_string addr))
   end
 
   type t = {
@@ -28,10 +30,6 @@ module Make (S : Abstract.Storage.STORAGE) = struct
   module rec Representation : Concepts.Encoding.Record.S with type t = t = Concepts.Encoding.Record.Make (Body)
   and Body : Concepts.Encoding.Record.BODY = struct
     type nonrec t = t
-
-    let load tx addr =
-      SI.get_req tx addr
-      |> Utilities.Result.fmap Representation.of_blob
 
     let tag = 'Y'
     let malformed () =
@@ -56,30 +54,51 @@ module Make (S : Abstract.Storage.STORAGE) = struct
                       |> fmap (Value.option_of_bencode
                                  (fun v -> Value.hash_of_bencode v
                                            |> Result.map (fun hash -> S.Hash hash)
-                                           |> Result.map (Fun.flip (SI.Pointer.make) load))) in
+                                           |> Result.map (SI.Pointer.make Loader.load))) in
       Ok { multigroups; previous }
   end
+  and Loader : sig val load : (S.transaction -> S.address -> (t, Concepts.Condition.condition) result) end = struct
+    let load tx addr =
+      SI.get_req tx addr
+      |> Utilities.Result.fmap Representation.of_blob
+  end
+
+  let pointer_of hash = SI.Pointer.make Loader.load (S.Hash hash)
 
   class branch storage value node = object (self)
     inherit Lifecycle.null
+
+    method to_string = "branch"
 
     val storage : S.connection = storage
     val branch : t = value
     val node = node (* FIXME: can we not place this inside `t`? *)
 
+    method deriving branch' =
+      let open Utilities.Result in
+      let branch'' = { branch' with previous = self#address
+                                               |> pointer_of
+                                               |> Option.some } in
+      let* node' = SI.with_transaction storage (fun tx ->
+                       let* _ = SI.store_blob tx (Representation.to_blob branch'') in
+                       MultigroupM.find tx branch'.multigroups
+                       |> fmap (Option.to_result ~none:(Error.incomplete_branch branch'.multigroups))) in
+      new branch storage branch'' node' |> Protocols.Handle.make |> Result.ok
+
     method protocols : Protocols.Handle.protocol list =
+      let open Utilities.Result in
       Protocols.[ Addressable.make self;
                   Prototype.Associative.(of_properties
                     [ "multigroup", update_only (fun node' ->
-                                        let open Utilities.Result in
-                                        let* addressable = Handle.require Addressable.from node' in
-                                        let addr = Addressable.address addressable in
-                                        ignore addr;
-                                        failwith "TODO") ]);
+                                        Handle.require Addressable.from node'
+                                        |> Result.map Addressable.address
+                                        |> fmap (fun addr -> self#deriving { branch with multigroups = addr })) ]);
                   Prototype.Directory.of_properties
                     [ "multigroup", Prototype.mixture_of node
                                       (fun make node ->
-                                        [ MMDirectory.make
+                                        [ MMAddressable.make
+                                            ~node:(MultigroupM.into node);
+                                          MMDirectory.make
                                             ~storage ~node
                                             ~constructor:(M.wrap storage);
 	                                      MMAssociative.make

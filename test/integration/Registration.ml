@@ -6,18 +6,21 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
   module H = Helpers.Storage.Make (S) (C)
   module I = Kernel.Initialization.Make (S)
   module B = Kernel.Branch.Make (S)
+  module M = Kernel.Multigroup.Make (S)
 
   let run conn =
     let open Utilities.Result in
     begin
       let* root = I.initialize ~evaluators:["fol", Evaluators.FOL.make ()] conn in
+      let* multigroup = M.make conn in
       let* branch = B.make conn in
-      Kernel.Path.(update root ("branch" @/ this) "master" None (Some branch))
+      let* branch' = Kernel.Path.(assoc branch ("multigroup" @/ this) "library" (Some multigroup)) in
+      Kernel.Path.(update root ("branch" @/ this) "master" None (Some branch'))
     end
     |> Helpers.condition_as_failure |> ignore;
     begin
       let* root = I.initialize ~evaluators:["fol", Evaluators.FOL.make ()] conn in
-      let* _ = Kernel.Path.(lookup root ("branch" @/ "master" @/ "multigroup" @/ this)) in
+      let* _ = Kernel.Path.(lookup root ("branch" @/ "master" @/ "multigroup" @/ "library" @/ this)) in
       let* _ = Kernel.Path.(lookup root ("evaluator" @/ "fol" @/ this)) in
       Ok ()
     end

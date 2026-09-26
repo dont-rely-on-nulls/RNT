@@ -150,6 +150,9 @@ module Make (S : Abstract.Storage.STORAGE) = struct
   class relation storage value description =
     object (self)
       inherit Lifecycle.null
+
+      method to_string = "relation"
+
       val storage : S.connection = storage
       val relation : t = value
       val declaration = modes_of description

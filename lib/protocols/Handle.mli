@@ -8,6 +8,7 @@ class type obj = object
   method reference : bool
   method release : unit
   method hash : Concepts.Hash.hash
+  method to_string : string
   method protocols : protocol list
 end
 
@@ -24,5 +25,6 @@ val release : t -> unit
 
 val hash : t -> Concepts.Hash.hash
 val protocols : t -> protocol list
+val to_string : t -> string
 
 val require : (t -> 'a interface option) -> t -> ('a interface, Concepts.Condition.condition) result

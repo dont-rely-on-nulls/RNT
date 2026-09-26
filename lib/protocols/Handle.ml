@@ -3,14 +3,16 @@ type protocol = ..
 module Error = struct
   open Concepts.Condition
 
-  let unimplemented_protocol () = condition "unimplemented-protocol" "A required protocol was not implemented by the specified object"
-                                    empty
+  let unimplemented_protocol obj_name =
+    condition "unimplemented-protocol" "A required protocol was not implemented by the specified object"
+      ("object" |=| Concepts.Value.String obj_name)
 end
 
 class type obj = object
   method reference : bool
   method release : unit
   method hash : Concepts.Hash.hash
+  method to_string : string
   method protocols : protocol list
 end
 
@@ -51,9 +53,11 @@ let equal h1 h2 =
 let hash h = (object_of h)#hash
 let protocols h = (object_of h)#protocols
 
+let to_string h = (object_of h)#to_string
+
 let release ({ valid; _ } as handle) =
   let o = object_of handle in
   valid := false;
   o#release
 
-let require f h = Option.to_result ~none:(Error.unimplemented_protocol ()) (f h)
+let require f h = Option.to_result ~none:(Error.unimplemented_protocol (to_string h)) (f h)

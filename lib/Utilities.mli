@@ -34,3 +34,7 @@ module FingerTree : sig
 
   val join : string BatFingerTree.t -> string -> string
 end
+
+module Fun : sig
+  val ( |.| ) : ('a -> 'b) -> ('c -> 'a) -> 'c -> 'b
+end

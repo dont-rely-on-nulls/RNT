@@ -104,3 +104,7 @@ module Atomic = struct
     then Ok atom
     else mswap atom f
 end
+
+module Fun = struct
+  let ( |.| ) = Fun.compose
+end

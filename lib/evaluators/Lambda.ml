@@ -98,6 +98,9 @@ let execute term =
 class evaluator = object (self)
   inherit Kernel.Lifecycle.null
   inherit Kernel.Identity.of_id
+
+  method to_string = "lambda-evaluator"
+
   method invoke program = execute program
   method protocols : Protocols.Handle.protocol list = [Program.make self]
 end
