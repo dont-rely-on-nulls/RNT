@@ -5,8 +5,8 @@ type step =
   | Finished of (unit, Concepts.Condition.condition) result
 
 let start produce =
-  try Finished (produce ~yield:(fun tuple -> Effect.perform (Yield tuple))) with
-  | effect (Yield tuple), k -> Element (tuple, k)
+  try Finished (produce ~yield:(fun tuple -> Effect.perform (Yield tuple)))
+  with effect Yield tuple, k -> Element (tuple, k)
 
 let resume k = Effect.Deep.continue k ()
 
@@ -14,9 +14,7 @@ class producer_cursor produce finally =
   object (self)
     inherit Lifecycle.null
     inherit Identity.of_id
-
     method to_string = "producer-cursor"
-
     val mutable state : [`Fresh | `Live of (unit, step) Effect.Deep.continuation | `Done] = `Fresh
     method protocols : Protocols.Handle.protocol list = Protocols.[Cursor.make self]
 
@@ -48,12 +46,10 @@ class producer_cursor produce finally =
           | None -> Ok Protocols.Cursor.{tuples; exhausted= true}
           | Some tuple -> fill (taken + 1) (BatFingerTree.snoc tuples tuple)
       in
-      if limit <= 0 then
-        Ok Protocols.Cursor.{tuples= BatFingerTree.empty; exhausted= (state = `Done)}
+      if limit <= 0 then Ok Protocols.Cursor.{tuples= BatFingerTree.empty; exhausted= state = `Done}
       else fill 0 BatFingerTree.empty
 
     method! release = match state with `Fresh | `Live _ -> self#finish | `Done -> ()
   end
 
-let cursor_of ?finally produce =
-  new producer_cursor produce finally |> Protocols.Handle.make
+let cursor_of ?finally produce = new producer_cursor produce finally |> Protocols.Handle.make

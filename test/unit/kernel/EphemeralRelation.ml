@@ -1,5 +1,4 @@
 open Alcotest
-
 module Concepts = Rnt.Concepts
 module Protocols = Rnt.Protocols
 
@@ -14,8 +13,8 @@ module Derivation = struct
   let describe _ =
     Ok
       (BatMap.String.singleton "value"
-         { Protocols.Schematics.domain = "integer";
-           provenance = [{Protocols.Schematics.source = ["example"]; attribute = "value"}] } )
+         { Protocols.Schematics.domain= "integer";
+           provenance= [{Protocols.Schematics.source= ["example"]; attribute= "value"}] } )
 
   let modes {declared; _} = Ok declared
 
@@ -31,13 +30,13 @@ end
 module Derived = Rnt.Kernel.EphemeralRelation.Make (Derivation)
 
 let member n =
-  { Concepts.Tuple.type_ = "example";
-    attributes = BatMap.String.singleton "value" (Concepts.Value.Integer n) }
+  { Concepts.Tuple.type_= "example";
+    attributes= BatMap.String.singleton "value" (Concepts.Value.Integer n) }
 
 let plan_over cardinality =
-  { Derivation.name = "the-derivation";
-    members = [member 1; member 2; member 3];
-    declared =
+  { Derivation.name= "the-derivation";
+    members= [member 1; member 2; member 3];
+    declared=
       Concepts.Mode.of_list
         [Concepts.Mode.enumerable cardinality; Concepts.Mode.decides_when ["value"]] }
 
@@ -46,9 +45,9 @@ let derive plan = Derived.derive plan |> Helpers.condition_as_failure
 let values tuples =
   BatFingerTree.to_list tuples
   |> List.filter_map (fun tuple ->
-         match BatMap.String.find_opt "value" tuple.Concepts.Tuple.attributes with
-         | Some (Concepts.Value.Integer n) -> Some n
-         | _ -> None )
+      match BatMap.String.find_opt "value" tuple.Concepts.Tuple.attributes with
+      | Some (Concepts.Value.Integer n) -> Some n
+      | _ -> None )
   |> List.sort compare
 
 let commit = Concepts.Hash.hash_of_bytes (Bytes.of_string "a-commit")
@@ -92,8 +91,7 @@ let a_countable_derivation_decides_only () =
     end
     |> Helpers.condition_as_failure
   in
-  check bool "no enumeration is offered" false
-    (Option.is_some (Protocols.Enumerable.from derived));
+  check bool "no enumeration is offered" false (Option.is_some (Protocols.Enumerable.from derived));
   check bool "membership is still decided" true holds;
   check bool "and still refused" false rejects
 
@@ -115,10 +113,11 @@ let a_derivation_describes_itself () =
         ( BatMap.String.values description
         |> BatList.of_enum
         |> List.concat_map (fun attribute ->
-               attribute.Protocols.Schematics.provenance
-               |> List.map (fun origin ->
-                      String.concat "/" origin.Protocols.Schematics.source
-                      ^ "/" ^ origin.Protocols.Schematics.attribute ) ) )
+            attribute.Protocols.Schematics.provenance
+            |> List.map (fun origin ->
+                String.concat "/" origin.Protocols.Schematics.source
+                ^ "/"
+                ^ origin.Protocols.Schematics.attribute ) ) )
   | _ -> fail "a derived relation describes itself as a relation"
 
 let releasing_a_derivation_releases_its_inputs () =
@@ -143,8 +142,7 @@ let releasing_a_derivation_releases_its_inputs () =
 let suites () =
   [ ( "kernel/ephemeral-relation",
       [ test_case "identity-is-the-derivation" `Quick identity_is_the_derivation;
-        test_case "an-exhaustible-derivation-enumerates" `Quick
-          an_exhaustible_derivation_enumerates;
+        test_case "an-exhaustible-derivation-enumerates" `Quick an_exhaustible_derivation_enumerates;
         test_case "a-countable-derivation-decides-only" `Quick a_countable_derivation_decides_only;
         test_case "a-derivation-describes-itself" `Quick a_derivation_describes_itself;
         test_case "releasing-a-derivation-releases-its-inputs" `Quick

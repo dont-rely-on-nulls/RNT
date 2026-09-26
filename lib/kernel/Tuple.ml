@@ -7,9 +7,10 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     let unknown_attribute name =
       condition "unknown-attribute" "No such attribute on this tuple"
         ("attribute" |=| Concepts.Value.String name)
+
     let malformed_value () =
-      condition "malformed-tuple-value"
-        "A tuple field did not conform to what was expected" empty
+      condition "malformed-tuple-value" "A tuple field did not conform to what was expected" empty
+
     let incomplete_tuple addr =
       condition "incomplete-tuple"
         "A stored tuple is missing part of its expected structure. Is your storage corrupted?"
@@ -24,9 +25,9 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     let encode value =
       let open Concepts.Encoding in
       Bencode.to_blob
-        (match value with
-         | Concepts.Value.String s -> Bencode.Tagged ('s', Bencode.String s)
-         | Concepts.Value.Integer n -> Bencode.Tagged ('i', Bencode.Int n))
+        ( match value with
+        | Concepts.Value.String s -> Bencode.Tagged ('s', Bencode.String s)
+        | Concepts.Value.Integer n -> Bencode.Tagged ('i', Bencode.Int n) )
 
     let decode blob =
       let open Utilities.Result in
@@ -48,7 +49,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
      over an in-memory storage. Consider later splitting [t] into
      resident (an address) and ephemeral (an in-memory attribute map)
      forms instead. *)
-  type t = { type_ : string; attributes : AttributeM.address }
+  type t = {type_: string; attributes: AttributeM.address}
 
   module rec Representation : (Concepts.Encoding.Record.S with type t = t) =
     Concepts.Encoding.Record.Make (Body)
@@ -59,26 +60,24 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     let tag = 'T'
     let malformed = Error.malformed_value
 
-    let fields { type_; attributes } =
+    let fields {type_; attributes} =
       let open Concepts.Encoding in
-      [ "type", Bencode.String type_;
-        "attributes", Value.bencode_of_hash attributes ]
+      ["type", Bencode.String type_; "attributes", Value.bencode_of_hash attributes]
 
     let of_fields data =
       let open Utilities.Result in
       let open Concepts.Encoding in
       let* type_ = Bencode.field "type" data |> fmap Bencode.as_string in
       let* attributes = Bencode.field "attributes" data |> fmap Value.hash_of_bencode in
-      Ok { type_; attributes }
+      Ok {type_; attributes}
   end
 
   let encode = Representation.to_blob
   let decode = Representation.of_blob
   let hash tuple = Representation.to_blob tuple |> Concepts.Hash.hash_of_blob
+  let type_of {type_; _} = type_
 
-  let type_of { type_; _ } = type_
-
-  let node tx { attributes; _ } =
+  let node tx {attributes; _} =
     let open Utilities.Result in
     AttributeM.find tx attributes
     |> fmap (Option.to_result ~none:(Error.incomplete_tuple attributes))
@@ -86,7 +85,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
   let empty tx ~type_ () =
     let open Utilities.Result in
     let* attributes = AttributeM.empty_under tx in
-    Ok { type_; attributes }
+    Ok {type_; attributes}
 
   let make tx ~type_ attributes =
     let open Utilities.Result in
@@ -96,10 +95,10 @@ module Make (S : Abstract.Storage.STORAGE) = struct
           |> BatEnum.fold
                (fun node (name, value) ->
                  let* node = node in
-                 AttributeM.insert tx name value node)
-               (Ok AttributeM.empty))
+                 AttributeM.insert tx name value node )
+               (Ok AttributeM.empty) )
     in
-    Ok { type_; attributes = AttributeM.hash_of node }
+    Ok {type_; attributes= AttributeM.hash_of node}
 
   let attribute tx tuple name =
     let open Utilities.Result in
@@ -114,30 +113,27 @@ module Make (S : Abstract.Storage.STORAGE) = struct
       (fun acc name value -> BatMap.String.add name value acc)
       BatMap.String.empty node
 
-  class tuple ~relation conn value node = object (self)
-    inherit Lifecycle.null
+  class tuple ~relation conn value node =
+    object (self)
+      inherit Lifecycle.null
+      method to_string = "tuple"
+      val tuple = value
+      val storage = conn
+      val node = node
 
-    method to_string = "tuple"
+      method describe () =
+        let open Utilities.Result in
+        let* attributes =
+          SI.with_transaction storage (fun tx ->
+              AttributeM.fold_left tx
+                (fun acc name value -> BatMap.String.add name (Attribute.domain value) acc)
+                BatMap.String.empty node )
+        in
+        Ok (Protocols.Schematics.Tuple {Protocols.Schematics.relation; attributes})
 
-    val tuple = value
-    val storage = conn
-    val node = node
-
-    method describe () =
-      let open Utilities.Result in
-      let* attributes =
-        SI.with_transaction storage (fun tx ->
-            AttributeM.fold_left tx
-              (fun acc name value -> BatMap.String.add name (Attribute.domain value) acc)
-              BatMap.String.empty node)
-      in
-      Ok (Protocols.Schematics.Tuple { Protocols.Schematics.relation; attributes })
-
-    method protocols : Protocols.Handle.protocol list =
-      [Protocols.Schematics.make self]
-
-    method hash = hash tuple
-  end
+      method protocols : Protocols.Handle.protocol list = [Protocols.Schematics.make self]
+      method hash = hash tuple
+    end
 
   let wrap ~relation conn value =
     let open Utilities.Result in

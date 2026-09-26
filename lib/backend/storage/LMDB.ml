@@ -82,8 +82,7 @@ module C = struct
        point could allow collection of the buffer before LMDB is done
        with it. The Sys.opaque_identity hides it from OCaml's
        optimizations. *)
-    Fun.protect ~finally:(fun () -> ignore (Sys.opaque_identity buf))
-      (fun () -> body (addr s))
+    Fun.protect ~finally:(fun () -> ignore (Sys.opaque_identity buf)) (fun () -> body (addr s))
 
   let bytes_of_mdb_val (s : mdb_val structure) =
     let buf =
@@ -96,8 +95,7 @@ module C = struct
       (ptr mdb_txn @-> mdb_dbi @-> ptr mdb_val @-> ptr mdb_val @-> returning mdb_result)
 
   let mdb_get' txn dbi key =
-    with_mdb_val key (fun key ->
-        with_output_pointer mdb_val (make mdb_val) (mdb_get txn dbi key))
+    with_mdb_val key (fun key -> with_output_pointer mdb_val (make mdb_val) (mdb_get txn dbi key))
     |> Result.map bytes_of_mdb_val
 
   let mdb_put =
@@ -105,8 +103,7 @@ module C = struct
       (ptr mdb_txn @-> mdb_dbi @-> ptr mdb_val @-> ptr mdb_val @-> uint @-> returning mdb_result)
 
   let mdb_put' txn dbi key data flags =
-    with_mdb_val key (fun key ->
-        with_mdb_val data (fun data -> mdb_put txn dbi key data flags))
+    with_mdb_val key (fun key -> with_mdb_val data (fun data -> mdb_put txn dbi key data flags))
 
   let mdb_strerror = foreign "mdb_strerror" (int @-> returning string)
 
@@ -127,8 +124,8 @@ end
 
 module Error = struct
   open Concepts.Condition
-  let closed_transaction =
-    condition "closed-transaction" "The transaction has already ended" empty
+
+  let closed_transaction = condition "closed-transaction" "The transaction has already ended" empty
 
   let lmdb_error code =
     condition "lmdb-error" (C.mdb_strerror code) ("code" |=| Concepts.Value.Integer code)
@@ -136,7 +133,6 @@ end
 
 type connection = {env: C.mdb_env_ptr; dbi: C.mdb_dbi}
 type transaction = {tx: C.mdb_txn_ptr; dbi: C.mdb_dbi; mutable active: bool}
-
 type address = Label of string | Hash of Concepts.Hash.hash
 
 let parse (c : Concepts.Configuration.term) =
@@ -171,7 +167,7 @@ let disconnect ({env; _} : connection) = C.mdb_env_close env
 
 let begin_with flags ({env; dbi} : connection) =
   C.mdb_txn_begin' env C.null_txn flags
-  |> Result.map (fun tx -> {tx; dbi; active = true;})
+  |> Result.map (fun tx -> {tx; dbi; active= true})
   |> Result.map_error Error.lmdb_error
 
 let start = begin_with Unsigned.UInt.zero
@@ -203,17 +199,17 @@ let bytes_of_address = function
   | Hash h -> Concepts.Hash.bytes_of_hash h
 
 let get ({tx; dbi; active} : transaction) (addr : address) =
-  if not active then Error Error.closed_transaction else
-  begin match C.mdb_get' tx dbi (bytes_of_address addr) with
-  | Ok x -> Ok (Some (Concepts.Blob.blob_of_bytes x))
-  | Error e when e = C.Errors.mdb_notfound -> Ok None
-  | Error e -> Error e
-  end
-  |> Result.map_error Error.lmdb_error
+  if not active then Error Error.closed_transaction
+  else
+    begin match C.mdb_get' tx dbi (bytes_of_address addr) with
+    | Ok x -> Ok (Some (Concepts.Blob.blob_of_bytes x))
+    | Error e when e = C.Errors.mdb_notfound -> Ok None
+    | Error e -> Error e
+    end
+    |> Result.map_error Error.lmdb_error
 
 let put ({tx; dbi; active} : transaction) (addr : address) (b : Concepts.Blob.t) =
-  if not active then Error Error.closed_transaction else
-  C.mdb_put' tx dbi (bytes_of_address addr)
-    (Concepts.Blob.bytes_of_blob b)
-    Unsigned.UInt.zero
-  |> Result.map_error Error.lmdb_error
+  if not active then Error Error.closed_transaction
+  else
+    C.mdb_put' tx dbi (bytes_of_address addr) (Concepts.Blob.bytes_of_blob b) Unsigned.UInt.zero
+    |> Result.map_error Error.lmdb_error

@@ -22,6 +22,7 @@ end
 
 module Atomic : sig
   val swap : 'a Atomic.t -> ('a -> 'a) -> 'a Atomic.t
+
   (* This is silly *)
   val mswap : 'a Atomic.t -> ('a -> ('a, 'b) result) -> ('a Atomic.t, 'b) result
 end
@@ -29,9 +30,7 @@ end
 module FingerTree : sig
   val map2 : ('a -> 'b -> 'c) -> 'a BatFingerTree.t -> 'b BatFingerTree.t -> 'c BatFingerTree.t
   val zip : 'a BatFingerTree.t -> 'b BatFingerTree.t -> ('a * 'b) BatFingerTree.t
-
   val sequence : ('a, 'b) result BatFingerTree.t -> ('a BatFingerTree.t, 'b) result
-
   val join : string BatFingerTree.t -> string -> string
 end
 

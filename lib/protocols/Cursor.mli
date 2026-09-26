@@ -1,6 +1,4 @@
-type batch =
-  {tuples: Concepts.Tuple.t BatFingerTree.t; exhausted: bool}
-
+type batch = {tuples: Concepts.Tuple.t BatFingerTree.t; exhausted: bool}
 type t
 
 class type implementation = object
@@ -11,13 +9,10 @@ val make : #implementation -> Handle.protocol
 val from : Handle.t -> t Handle.interface option
 val require : Handle.t -> (t Handle.interface, Concepts.Condition.condition) result
 val fetch : t Handle.interface -> int -> (batch, Concepts.Condition.condition) result
-
 val next : t Handle.interface -> (Concepts.Tuple.t option, Concepts.Condition.condition) result
 
 val exists :
-  t Handle.interface ->
-  (Concepts.Tuple.t -> bool) ->
-  (bool, Concepts.Condition.condition) result
+  t Handle.interface -> (Concepts.Tuple.t -> bool) -> (bool, Concepts.Condition.condition) result
 
 val drain :
   t Handle.interface ->

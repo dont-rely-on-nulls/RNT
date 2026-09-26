@@ -14,7 +14,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
       List.fold_left
         (fun acc (name, handle) ->
           let* _ = acc in
-          Registry.update evaluator_registry name None (Some handle))
+          Registry.update evaluator_registry name None (Some handle) )
         (Ok true) evaluators
     in
     let* _ = Registry.update registry "evaluator" None (Some evaluator_namespace) in

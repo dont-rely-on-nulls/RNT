@@ -17,10 +17,8 @@ class type implementation = object
 end
 
 type Handle.protocol += Schematics of implementation
-
 type t = implementation
 
 let make impl = Schematics (impl :> implementation)
-let from handle =
-  Handle.into handle (function Schematics impl -> Some impl | _ -> None)
+let from handle = Handle.into handle (function Schematics impl -> Some impl | _ -> None)
 let describe impl = Handle.invoke impl (fun o -> o#describe ())

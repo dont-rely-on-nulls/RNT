@@ -2,15 +2,13 @@ open Rnt
 
 module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = struct
   open Alcotest
-
   module H = Helpers.Storage.Make (S) (C)
   module SR = Rnt.Kernel.SubstantialRelation.Make (S)
 
   let alaric =
-    { Concepts.Tuple.type_ = "employee";
-      attributes =
-        BatMap.String.empty
-        |> BatMap.String.add "name" (Concepts.Value.String "Alaric") }
+    { Concepts.Tuple.type_= "employee";
+      attributes= BatMap.String.empty |> BatMap.String.add "name" (Concepts.Value.String "Alaric")
+    }
 
   let not_a_directory () =
     Concepts.Condition.condition "not-a-directory"
@@ -41,8 +39,7 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
         let* found = Protocols.Directory.find directory "fol" in
         let* evaluator = Option.to_result ~none:(not_a_program ()) found in
         let* interpreter =
-          Rnt.Evaluators.FOL.Program.from evaluator
-          |> Option.to_result ~none:(not_a_program ())
+          Rnt.Evaluators.FOL.Program.from evaluator |> Option.to_result ~none:(not_a_program ())
         in
         let* cursor =
           Rnt.Evaluators.FOL.Program.invoke interpreter (Rnt.Evaluators.FOL.Base employee)
@@ -58,8 +55,8 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
     check bool "the tuple that was asserted" true
       (List.for_all
          (fun tuple ->
-           Concepts.Hash.hash_equals (Concepts.Tuple.hash tuple) (Concepts.Tuple.hash alaric))
-         scanned)
+           Concepts.Hash.hash_equals (Concepts.Tuple.hash tuple) (Concepts.Tuple.hash alaric) )
+         scanned )
 
   let suite prefix =
     ( "fol/" ^ prefix,

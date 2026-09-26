@@ -7,9 +7,7 @@ end
 module Option = struct
   let ( let* ) = Option.bind
   let fmap f m = Option.bind m f
-  let sequence = function
-    | None -> Ok None
-    | Some x -> Result.map Option.some x
+  let sequence = function None -> Ok None | Some x -> Result.map Option.some x
 end
 
 module Result = struct
@@ -32,9 +30,8 @@ module Generic (S : SEQUENCE) = struct
       (fun m acc ->
         let* acc = acc in
         let* m = m in
-        Ok (S.cons m acc))
-      ms
-      (Ok S.empty)
+        Ok (S.cons m acc) )
+      ms (Ok S.empty)
 end
 
 module List = struct
@@ -42,15 +39,13 @@ module List = struct
     type 'a t = 'a list
 
     let empty = []
-    let cons x xs = x::xs
+    let cons x xs = x :: xs
     let fold = List.fold_right
   end
 
   include Generic (ListSequence)
 
-  let hd_opt = function
-    | x::_ -> Some x
-    | [] -> None
+  let hd_opt = function x :: _ -> Some x | [] -> None
 end
 
 module FingerTree = struct
@@ -59,10 +54,7 @@ module FingerTree = struct
 
     let empty = BatFingerTree.empty
     let cons x xs = BatFingerTree.cons xs x
-    let fold f xs acc = BatFingerTree.fold_right
-                          (Fun.flip f)
-                          acc
-                          xs
+    let fold f xs acc = BatFingerTree.fold_right (Fun.flip f) acc xs
   end
 
   include Generic (FingerTreeSequence)
@@ -71,38 +63,30 @@ module FingerTree = struct
     let rec frob xs ys acc =
       match BatFingerTree.front xs with
       | None -> acc
-      | Some (xs', x) ->
-         match BatFingerTree.front ys with
-         | None -> acc
-         | Some (ys', y) ->
-            f x y
-            |> BatFingerTree.snoc acc
-            |> frob xs' ys'
+      | Some (xs', x) -> (
+        match BatFingerTree.front ys with
+        | None -> acc
+        | Some (ys', y) -> f x y |> BatFingerTree.snoc acc |> frob xs' ys' )
     in
     frob xs ys BatFingerTree.empty
 
   let zip xs ys = map2 (fun x y -> x, y) xs ys
 
   let join ss sep =
-    BatFingerTree.print ~first:"" ~last:"" ~sep:sep BatIO.nwrite
-    |> Fun.flip BatIO.to_string ss
+    BatFingerTree.print ~first:"" ~last:"" ~sep BatIO.nwrite |> Fun.flip BatIO.to_string ss
 end
 
 module Atomic = struct
   let rec swap atom f =
     let v = Atomic.get atom in
     let v' = f v in
-    if Atomic.compare_and_set atom v v'
-    then atom
-    else swap atom f
+    if Atomic.compare_and_set atom v v' then atom else swap atom f
 
   let rec mswap atom f =
     let open Result in
     let v = Atomic.get atom in
     let* v' = f v in
-    if Atomic.compare_and_set atom v v'
-    then Ok atom
-    else mswap atom f
+    if Atomic.compare_and_set atom v v' then Ok atom else mswap atom f
 end
 
 module Fun = struct

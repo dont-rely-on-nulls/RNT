@@ -5,7 +5,5 @@ class type implementation = object
 end
 
 val make : #implementation -> Handle.protocol
-
 val from : Handle.t -> t Handle.interface option
-
 val address : t Handle.interface -> Concepts.Hash.hash

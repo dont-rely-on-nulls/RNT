@@ -25,7 +25,6 @@ module Make (S : Abstract.Storage.STORAGE) : sig
     (Protocols.Handle.t, Concepts.Condition.condition) result
 
   val load_value : S.transaction -> Concepts.Hash.hash -> (t, Concepts.Condition.condition) result
-
   val wrap : S.connection -> t -> (Protocols.Handle.t, Concepts.Condition.condition) result
 
   val load :

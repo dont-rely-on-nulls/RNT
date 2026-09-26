@@ -34,17 +34,17 @@ module Storage = struct
     module SI = Kernel.Storage.Make (S)
 
     let store_schema tx attributes =
-      Concepts.Encoding.Bencode.(Dict (List.map (fun a -> (a, String "string")) attributes) |> to_blob)
+      Concepts.Encoding.Bencode.(Dict (List.map (fun a -> a, String "string") attributes) |> to_blob)
       |> SI.store_blob tx
 
     let with_connection f dir () =
       with_temporary_directory dir begin fun dir ->
-        begin
-          let open Utilities.Result in
-          let* conn = S.connect (C.configure dir) in
-          Ok (Fun.protect ~finally:(fun () -> S.disconnect conn) (fun () -> f conn))
-        end
-        |> condition_as_failure
+          begin
+            let open Utilities.Result in
+            let* conn = S.connect (C.configure dir) in
+            Ok (Fun.protect ~finally:(fun () -> S.disconnect conn) (fun () -> f conn))
+          end
+          |> condition_as_failure
         end
   end
 end

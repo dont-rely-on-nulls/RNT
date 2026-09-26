@@ -1,5 +1,4 @@
 open Alcotest
-
 module C = Rnt.Concepts.Cardinality
 
 let klass = testable (fun ppf c -> Format.pp_print_string ppf (C.to_string c)) C.equal
