@@ -25,10 +25,17 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
     check (option Helpers.value) "`get` after `put` should return the inserted value" (Some value)
       v'
 
+  let creates_missing_directories () =
+    Helpers.with_temporary_directory "storage-test" (fun base ->
+        let path = Filename.concat (Filename.concat base "nested") "db" in
+        S.connect (C.configure path) |> Helpers.condition_as_failure |> S.disconnect;
+        check bool "the storage directory exists" true (Sys.is_directory path) )
+
   let suite prefix =
     ( "storage/" ^ prefix,
       [ test_case "storage-and-retrieval" `Quick
-          (H.with_connection storage_and_retrieval "storage-test") ] )
+          (H.with_connection storage_and_retrieval "storage-test");
+        test_case "creates-missing-directories" `Quick creates_missing_directories ] )
 end
 
 module LMDB = Make (Rnt.Backend.Storage.LMDB) (Helpers.Storage.LMDB_Configurator)
