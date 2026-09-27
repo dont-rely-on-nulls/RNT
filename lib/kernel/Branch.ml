@@ -3,7 +3,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
      multigroup has a name and a set of schemas
      schema has a name and a set of relations
 
-     /branch/master/multigroup/universe/schema/sky/relation/planet
+     \branch\master\multigroup\universe\schema\sky\relation\planet
    *)
 
   module SI = Storage.Make (S)

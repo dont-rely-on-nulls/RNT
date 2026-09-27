@@ -6,9 +6,8 @@ let ( @/ ) x y = x :: y
 let to_string path =
   path
   |> List.map (fun x ->
-      let str = BatString.replace ~str:x ~sub:"^" ~by:"^^" |> snd in
-      BatString.replace ~str ~sub:"/" ~by:"^/" |> snd )
-  |> BatIO.to_string (BatList.print ~first:"/" ~last:"" ~sep:"/" BatString.print)
+      BatString.nreplace ~str:(BatString.nreplace ~str:x ~sub:"^" ~by:"^^") ~sub:"\\" ~by:"^\\" )
+  |> BatIO.to_string (BatList.print ~first:"\\" ~last:"" ~sep:"\\" BatString.print)
 
 module Error = struct
   open Concepts.Condition
