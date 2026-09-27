@@ -67,14 +67,14 @@ let describes_itself () =
   | Protocols.Schematics.Relation description ->
       check (list string) "the attributes of the result" ["value"]
         (BatMap.String.keys description |> BatList.of_enum);
-      check (list string) "and where each was drawn from" ["example/value"]
+      check (list string) "and where each was drawn from" ["example\\value"]
         ( BatMap.String.values description
         |> BatList.of_enum
         |> List.concat_map (fun attribute ->
             attribute.Protocols.Schematics.provenance
             |> List.map (fun origin ->
-                String.concat "/" origin.Protocols.Schematics.source
-                ^ "/"
+                String.concat "\\" origin.Protocols.Schematics.source
+                ^ "\\"
                 ^ origin.Protocols.Schematics.attribute ) ) )
   | _ -> fail "an ephemeral relation describes itself as a relation"
 
