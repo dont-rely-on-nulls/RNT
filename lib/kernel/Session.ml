@@ -13,6 +13,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
       method pin state' = Atomic.set state state'
       method protocols = Protocols.[Directory.make self; Session.make self]
       method list = Ok (BatFingerTree.singleton "branch")
+
       method find =
         function
         | "branch" ->
