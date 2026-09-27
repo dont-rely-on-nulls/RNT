@@ -9,6 +9,7 @@ class type virtual controlled_lifecycle = object
 end
 
 class null : lifecycle
+class exclusive : lifecycle
 class virtual counted : controlled_lifecycle
 
 (** stands for [inner], carrying what it carries, while holding a

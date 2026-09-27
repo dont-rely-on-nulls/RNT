@@ -37,14 +37,22 @@ let walking f g handle path =
   |> Result.map_error
        Concepts.Condition.(complement ("path" |=| Concepts.Value.String (to_string path)))
 
-let lookup = walking (fun _ _ f -> f ()) Result.ok
+(* Handles we find in the middle of a walk get released once we're
+   done with them, but never the caller's root.  If you leak one and
+   its refcount never drops, nothing under that path gets collected,
+   and an exclusive object, like a session, stays locked forever. *)
+let releasing root handle f =
+  Fun.protect ~finally:(fun () -> if handle != root then Protocols.Handle.release handle) f
+
+let lookup handle path = walking (fun _ parent -> releasing handle parent) Result.ok handle path
 
 let update handle path key reference value =
   let open Utilities.Result in
   let open Protocols in
-  let* handle = lookup handle path in
-  let* registry = Handle.require Registry.from handle in
-  Registry.update registry key reference value
+  let* target = lookup handle path in
+  releasing handle target (fun () ->
+      let* registry = Handle.require Registry.from target in
+      Registry.update registry key reference value )
 
 let assoc handle path key value =
   let open Utilities.Result in
@@ -56,6 +64,7 @@ let assoc handle path key value =
     Ok (Handle.from a')
   in
   walking
-    (fun key dir f -> f () |> fmap (assoc_on dir key |.| Option.some))
-    (fun h -> assoc_on h key value)
+    (fun key dir f ->
+      releasing handle dir (fun () -> f () |> fmap (assoc_on dir key |.| Option.some)) )
+    (fun h -> releasing handle h (fun () -> assoc_on h key value))
     handle path

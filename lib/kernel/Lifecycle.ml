@@ -14,6 +14,13 @@ class null =
     method release = ()
   end
 
+class exclusive =
+  object
+    val taken = Atomic.make false
+    method reference = Atomic.compare_and_set taken false true
+    method release = Atomic.set taken false
+  end
+
 class virtual counted =
   object (self)
     val references = Atomic.make 1
