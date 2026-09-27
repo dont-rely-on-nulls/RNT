@@ -18,5 +18,6 @@ module Make (S : Abstract.Storage.STORAGE) = struct
         (Ok true) evaluators
     in
     let* _ = Registry.update registry "evaluator" None (Some evaluator_namespace) in
+    let* _ = Registry.update registry "session" None (Some (Namespace.make ())) in
     Ok root
 end
