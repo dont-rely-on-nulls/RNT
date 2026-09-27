@@ -129,6 +129,10 @@ module Error = struct
 
   let lmdb_error code =
     condition "lmdb-error" (C.mdb_strerror code) ("code" |=| Concepts.Value.Integer code)
+
+  let uncreatable_directory path message =
+    condition "uncreatable-directory" "The storage directory could not be created"
+      ("path" |=| Concepts.Value.String path & "message" |=| Concepts.Value.String message)
 end
 
 type connection = {env: C.mdb_env_ptr; dbi: C.mdb_dbi}
@@ -143,9 +147,23 @@ let parse (c : Concepts.Configuration.term) =
   let* mode = value_for "mode" config |> fmap as_int in
   Ok (path, mode)
 
+(* directories are traversable wherever they are readable *)
+let directory_mode mode = mode lor ((mode land 0o444) lsr 2)
+
+let rec ensure_directory path mode =
+  let open Utilities.Result in
+  if Sys.file_exists path then Ok ()
+  else
+    let* () = ensure_directory (Filename.dirname path) mode in
+    match Sys.mkdir path mode with
+    | () -> Ok ()
+    | exception Sys_error _ when Sys.file_exists path -> Ok ()
+    | exception Sys_error message -> Error (Error.uncreatable_directory path message)
+
 let connect (c : Concepts.Configuration.term) =
   let open Utilities.Result in
   let* path, mode = parse c in
+  let* () = ensure_directory path (directory_mode mode) in
   begin
     let* env = C.mdb_env_create' () in
     (* NOTLS ties readers to transactions rather than threads, so one
