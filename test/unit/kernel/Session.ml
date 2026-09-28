@@ -33,7 +33,7 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
         let* _ = update root ("branch" @/ this) "master" (Some branch) (Some branch') in
         let unchanged = finds root library in
         let* tip' = address branch' in
-        let* interface = Protocols.Session.require session in
+        let* interface = Protocols.Handle.require Protocols.Session.from session in
         Protocols.Session.pin interface {Protocols.Session.branch= "master"; snapshot= tip'};
         let after = finds root library in
         let followed = Protocols.Session.state interface in
