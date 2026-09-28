@@ -1,4 +1,4 @@
-type state = {branch: string; snapshot: Concepts.Hash.hash}
+type state = {snapshot: Concepts.Hash.hash}
 type t
 
 class type implementation = object

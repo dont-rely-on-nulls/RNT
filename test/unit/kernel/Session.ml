@@ -16,7 +16,7 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
   let finds root path = Rnt.Kernel.Path.lookup root path |> Result.is_ok
 
   let pin_and_follow conn =
-    let before, after, unchanged, followed, pinned, refused =
+    let before, after, unchanged, pinned, refused =
       begin
         let open Utilities.Result in
         let open Rnt.Kernel.Path in
@@ -24,7 +24,7 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
         let* branch = B.make conn in
         let* _ = update root ("branch" @/ this) "master" None (Some branch) in
         let* tip = address branch in
-        let session = Session.make conn {Protocols.Session.branch= "master"; snapshot= tip} in
+        let session = Session.make conn {Protocols.Session.snapshot= tip} in
         let* _ = update root ("session" @/ this) "client" None (Some session) in
         let library = "session" @/ "client" @/ "branch" @/ "multigroup" @/ "library" @/ this in
         let before = finds root library in
@@ -34,22 +34,20 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
         let unchanged = finds root library in
         let* tip' = address branch' in
         let* interface = Protocols.Handle.require Protocols.Session.from session in
-        Protocols.Session.pin interface {Protocols.Session.branch= "master"; snapshot= tip'};
+        Protocols.Session.pin interface {Protocols.Session.snapshot= tip'};
         let after = finds root library in
-        let followed = Protocols.Session.state interface in
         let* pinned = lookup root ("session" @/ "client" @/ "branch" @/ this) |> fmap address in
         let refused =
           assoc session ("branch" @/ "multigroup" @/ this) "other" (Some multigroup)
           |> Result.is_error
         in
-        Ok (before, after, unchanged, followed, Concepts.Hash.hash_equals pinned tip', refused)
+        Ok (before, after, unchanged, Concepts.Hash.hash_equals pinned tip', refused)
       end
       |> Helpers.condition_as_failure
     in
     check bool "the pinned state lacks the multigroup" false before;
     check bool "advancing the branch leaves the session pinned" false unchanged;
     check bool "re-pinning exposes the multigroup" true after;
-    check string "the session follows its branch" "master" followed.Protocols.Session.branch;
     check bool "the session reconstructs the pinned branch" true pinned;
     check bool "the session refuses derivation through it" true refused
 
@@ -61,7 +59,7 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
         let* root = I.initialize conn in
         let* branch = B.make conn in
         let* tip = address branch in
-        let session = Session.make conn {Protocols.Session.branch= "master"; snapshot= tip} in
+        let session = Session.make conn {Protocols.Session.snapshot= tip} in
         let* _ = update root ("session" @/ this) "client" None (Some session) in
         let client = "session" @/ "client" @/ this in
         let* _ = lookup root ("session" @/ "client" @/ "branch" @/ this) in
