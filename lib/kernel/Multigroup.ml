@@ -1,8 +1,35 @@
 module Make (S : Abstract.Storage.STORAGE) = struct
   module SI = Storage.Make (S)
   module R = SubstantialRelation.Make (S)
-  module RelationM = Merkle.Interface (S) (Merkle.StringKey) (R)
-  module RMDirectory = Prototype.Directory.OfTree (S) (Merkle.StringKey) (R)
+  module E = EphemeralRelation.Make (S)
+
+  module Entry = struct
+    module Stored = EphemeralRelation.Persisted.Representation
+
+    type t = Substantial of R.t | Ephemeral of EphemeralRelation.Persisted.t
+
+    let encode = function
+      | Substantial relation -> R.encode relation
+      | Ephemeral relation -> Stored.to_blob relation
+
+    let decode blob =
+      let open Utilities.Result in
+      let open Concepts.Encoding in
+      let* data = Bencode.of_blob blob in
+      match data with
+      | Bencode.Tagged (tag, _) when Char.equal tag Stored.tag ->
+          Stored.of_bencode data |> Result.map (fun relation -> Ephemeral relation)
+      | _ -> R.Representation.of_bencode data |> Result.map (fun relation -> Substantial relation)
+
+    let load storage = function
+      | Substantial relation -> R.load storage relation
+      | Ephemeral relation -> E.load storage relation
+  end
+
+  module RelationM = Merkle.Interface (S) (Merkle.StringKey) (Entry)
+  module RMAddressable = Prototype.Addressable.OfTree (S) (Merkle.StringKey)
+  module RMDirectory = Prototype.Directory.OfTree (S) (Merkle.StringKey) (Entry)
+  module RMAssociative = Prototype.Associative.OfTree (S) (Merkle.StringKey)
 
   type t = {relations: RelationM.address}
 
@@ -57,7 +84,11 @@ module Make (S : Abstract.Storage.STORAGE) = struct
           [ Addressable.make self;
             Prototype.Directory.of_properties
               [ ( "relation",
-                  Prototype.mixture [RMDirectory.make ~storage ~node ~constructor:(R.load storage)]
+                  Prototype.mixture_of node (fun make node ->
+                      [ RMAddressable.make ~node:(RelationM.into node);
+                        RMDirectory.make ~storage ~node ~constructor:(Entry.load storage);
+                        RMAssociative.make ~storage ~node:(RelationM.into node)
+                          ~constructor:(fun node' -> RelationM.from node' |> make |> Result.ok ) ] )
                 ) ] ]
 
       method hash = Representation.to_blob multigroup |> Concepts.Hash.hash_of_blob
