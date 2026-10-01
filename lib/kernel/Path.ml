@@ -2,6 +2,8 @@ type t = string list
 
 let this = []
 let ( @/ ) x y = x :: y
+let of_list segments = segments
+let to_list path = path
 
 let to_string path =
   path

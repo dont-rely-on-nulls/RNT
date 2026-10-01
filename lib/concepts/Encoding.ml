@@ -235,6 +235,7 @@ module Record = struct
   module type S = sig
     type t
 
+    val tag : char
     val to_bencode : t -> Bencode.t
     val of_bencode : Bencode.t -> (t, Condition.condition) result
     val to_blob : t -> Blob.t
@@ -255,6 +256,7 @@ module Record = struct
   module Make (B : BODY) : S with type t = B.t = struct
     type t = B.t
 
+    let tag = B.tag
     let to_bencode object_ = Bencode.Tagged (B.tag, Bencode.Dict (B.fields object_))
 
     let of_bencode = function
