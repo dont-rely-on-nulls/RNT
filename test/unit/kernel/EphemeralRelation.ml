@@ -12,10 +12,11 @@ let description =
     { Protocols.Schematics.domain= "integer";
       provenance= [{Protocols.Schematics.source= ["example"]; attribute= "value"}] }
 
-let over ?inputs members =
-  Ephemeral.instantiate ?inputs description
-    {Ephemeral.schematics= `Temporary description}
-    (fun () -> Ok (Rnt.Kernel.Generator.cursor_of (fun ~yield -> List.iter yield members; Ok ())))
+let temporary = {Ephemeral.name= None; schematics= `Temporary description; program= None}
+
+let over ?inputs ?(value = temporary) members =
+  Ephemeral.instantiate ?inputs description value (fun () ->
+      Ok (Rnt.Kernel.Generator.cursor_of (fun ~yield -> List.iter yield members; Ok ())) )
 
 let values tuples =
   BatFingerTree.to_list tuples
@@ -78,6 +79,20 @@ let describes_itself () =
                 ^ origin.Protocols.Schematics.attribute ) ) )
   | _ -> fail "an ephemeral relation describes itself as a relation"
 
+let addressed_once_persisted () =
+  let persisted code =
+    { Ephemeral.name= Some "example";
+      schematics= `Persisted (Concepts.Hash.hash_of_int 1);
+      program= Some {Ephemeral.evaluator= "fol"; code= Concepts.Hash.hash_of_int code} }
+  in
+  let address value =
+    Protocols.Addressable.from (over ~value []) |> Option.map Protocols.Addressable.address
+  in
+  check bool "a temporary relation has no address" true (Option.is_none (address temporary));
+  check bool "a persisted one has" true (Option.is_some (address (persisted 2)));
+  check bool "and its program is part of it" false
+    (Option.equal Concepts.Hash.hash_equals (address (persisted 2)) (address (persisted 3)))
+
 let releasing_releases_its_inputs () =
   let released = ref false in
   let input =
@@ -99,4 +114,5 @@ let suites () =
       [ test_case "enumerates-every-member" `Quick enumerates_every_member;
         test_case "decides-membership" `Quick decides_membership;
         test_case "describes-itself" `Quick describes_itself;
+        test_case "addressed-once-persisted" `Quick addressed_once_persisted;
         test_case "releasing-releases-its-inputs" `Quick releasing_releases_its_inputs ] ) ]

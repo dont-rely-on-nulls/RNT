@@ -51,7 +51,9 @@ module Storage = struct
                   SR.TupleSet.insert tx (Concepts.Tuple.hash tuple) tuple node )
                 (Ok SR.TupleSet.empty) tuples
             in
-            Ok {SR.schematics; tuples= SR.TupleSet.hash_of node} )
+            let relation = {SR.schematics; tuples= SR.TupleSet.hash_of node} in
+            let* _ = SI.store_blob tx (SR.encode relation) in
+            Ok relation )
       in
       SR.load conn value
 

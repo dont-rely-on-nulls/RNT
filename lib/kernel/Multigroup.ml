@@ -79,9 +79,31 @@ module Make (S : Abstract.Storage.STORAGE) = struct
       val storage = conn
       val node = node (* FIXME: see the comment on Branch.ml *)
 
+      (* TODO: Add later to the lifecycle management, accounting for
+         derived instances. Callers must release the previous handle
+         when done with it so its instance can be cleaned up after the
+         last reference is released. *)
+      method deriving multigroup' =
+        let open Utilities.Result in
+        let* node' =
+          SI.with_transaction storage (fun tx ->
+              let* _ = SI.store_blob tx (Representation.to_blob multigroup') in
+              RelationM.find tx multigroup'.relations
+              |> fmap (Option.to_result ~none:(Error.incomplete_multigroup multigroup'.relations)) )
+        in
+        new multigroup storage multigroup' node' |> Protocols.Handle.make |> Result.ok
+
       method protocols : Protocols.Handle.protocol list =
+        let open Utilities.Result in
         Protocols.
           [ Addressable.make self;
+            Prototype.Associative.(
+              of_properties
+                [ ( "relation",
+                    update_only (fun node' ->
+                        Handle.require Addressable.from node'
+                        |> Result.map Addressable.address
+                        |> fmap (fun addr -> self#deriving {relations= addr}) ) ) ] );
             Prototype.Directory.of_properties
               [ ( "relation",
                   Prototype.mixture_of node (fun make node ->
