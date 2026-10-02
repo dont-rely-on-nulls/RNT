@@ -2,48 +2,185 @@
 
 #+html: <img alt="the RNT logo" style="width=15%" src="./images/logo.png" /><br>
 #+html: <a href="https://builtwithnix.org"><img alt="built with nix" src="https://builtwithnix.org/badge.svg" /></a><br>
-#+html: <a href="https://github.com/dont-rely-on-nulls/RNT"><img alt="AGPLv3 License" src="https://img.shields.io/badge/License-AGPL%20v3-blue.svg" /></a>
+#+html: <a href="./LICENSE"><img alt="AGPLv3 License" src="https://img.shields.io/badge/License-AGPL%20v3-blue.svg" /></a>
 
 * About
 
-RNT is an experimental database kernel inspired by the object-management model of the Windows NT kernel. The project explores what database internals look like when relations, tuples, transactions, namespaces, permissions, cursors, and handles are treated as explicit runtime-managed objects. /RNT stands for "Relations, Not Tables"/
+RNT is an experimental database kernel written in OCaml, modeled on
+the Windows NT kernel. As in NT, the kernel doesn't understand any
+query language itself. It manages objects (relations, tuples,
+branches, sessions, evaluators) and exposes them through named paths,
+handles, and protocols. Query languages and data models are meant to
+sit on top as /subsystems/, the way Win32 and POSIX sit on top of the
+NT native API.
 
-The goal is a small, understandable runtime where database state is accessed through uniform paths, guarded by explicit security checks, and managed through visible lifecycle rules. The codebase is still early, so several classes define architectural boundaries before they define complete behavior.
+The relational model is the common ground. RNT is designed to host
+several subsystems over it: a purely relational language such as
+[[https://src.symbolic.engineering/Sakura/about][Sakura]], a graph view for network design, a SQL interface for legacy
+compatibility, or a virtual machine for a functional language that
+treats relations as values. Today it ships one: a first-order logic
+evaluator for retrieval.
+
+/RNT/ takes its name inspiration on the the /NT kernel/ that inspired
+it, but it stands for /"Relations, Not Tables"/.
+
+The goal is a small runtime you can read end to end: database state is
+reached through uniform paths, access goes through explicit handles,
+and every object follows visible lifecycle rules. The kernel sits
+between the subsystems, protects the integrity of the data, and keeps
+the logical representation separate from the physical one.
 
 * Motivation
 
-The NT kernel is a good model for a dedicated database kernel for three reasons.
+The relational model is one of the most beautiful inventions in
+computer science (C. J. Date's Introduction to Database Systems
+citation needed), and in its purest form (that is, the relation theory
+in mathematics) it renders a disproportionally strong foundation
+representation of information in comparison to its
+simplicity. Attempts to design systems relying on other abstractions
+often fail to provide a generic representation of an algebra with
+sufficient guarantees. And atop of that, DBMSes usually go for the
+monolithic route, that usually constraints the system to perform a set
+of operations and create an ever increasingly complex system, full of
+potential edge cases. With the borrowed abstractions from a hybrid
+kernel such as NT, we gain enormous extensibility while keeping a
+great deal of purity of information representation.
 
-**The object manager.** NT's OB gives every kernel resource a named path in a hierarchical namespace, a security descriptor, and a uniform open and close lifecycle enforced through handles. A database kernel has the same requirements: relations, transactions, cursors, and namespaces all need to be located by path, checked for access, and cleaned up when the last handle closes. Rather than building those mechanisms independently for each database concept, this project borrows the NT object manager's shape directly. The result is a single, consistent runtime model instead of a collection of loosely related subsystems.
+The NT kernel is a good model for a dedicated database kernel for
+three reasons:
 
-**Physical backends as drivers.** NT device drivers expose a narrow dispatch table. The kernel routes I/O through it without knowing whether the device is a local disk, a USB key, or a network adapter. Storage backends in a database kernel follow the same pattern. SQLite and an in-memory store both satisfy the same interface here. A remote backend like etcd is just another driver, but it brings its own concerns: network latency, connection management, and the possibility of partial failure. The driver boundary keeps those concerns inside the backend module and out of the rest of the kernel.
+- Object management :: Every kernel resource in NT has a path in a
+  hierarchical namespace, an access check, and a lifecycle governed by
+  handles. A database needs the same for relations, transactions,
+  cursors, and namespaces. RNT uses this one model for all of them
+  instead of building each mechanism separately, so the whole runtime
+  can be explored through one interface.
 
-**Clients as environment subsystems.** NT supports Win32, POSIX, and OS/2 as environment subsystems layered above a common native API. Each subsystem translates its own conventions into native NT system calls; the kernel itself knows nothing about Win32 or POSIX. A database client works the same way. A PostgreSQL wire adapter, a MySQL wire adapter, or an HTTP/JSON interface each translates its protocol into kernel-level operations: handle opens, cursor iterations, VM plan evaluations. The kernel never sees SQL syntax or protocol framing. Adding a new wire protocol means implementing a new translation layer, not touching the kernel.
+- Hardware abstraction :: NT drivers expose a narrow dispatch table,
+  and the kernel doesn't care what device is behind it. RNT treats
+  storage backends the same way: a backend implements a small
+  interface, and the kernel stays unaware of the engine. The goal is
+  to let each dataset choose its own driver, for example a local
+  key-value store for one dataset and etcd for another, both active at
+  once.
 
-* Design Direction
+- Clients as environment subsystems :: In RNT, a query language is a
+  subsystem that translates its own conventions into kernel
+  operations, as Win32, POSIX, and OS/2 do over NT's native API. For
+  relational work, write a first-order logic evaluator. To run a
+  lambda calculus language, write a virtual machine. Because all
+  subsystems share the same objects, they are meant to work with one
+  another.
 
-- Object management: database objects are registered, located, and referenced through a central registry.
-- Permissions: access checks are kept separate from object lookup so security policy can evolve independently.
-- Identity and lifecycle: opening, closing, monitoring, pinning, cleanup, and contention are modeled as runtime responsibilities.
-- Handles: authorized access is explicit, which makes ownership, accounting, and cleanup visible.
-- Cursors and VM: retrieval is designed around pull-based cursors and a split between terminating first-order logic and higher-order logic execution.
-- Storage: tuples are content-addressed. Each one is stored under the SHA256 digest of its serialized bytes. The physical layer is a pluggable KV backend (=IStorageBackend=); the current implementation uses SQLite.
+* Design
 
-* Current Status
+RNT has very few fixed parts. Most of what a database usually
+hard-codes, such as what an object can do, which language queries it,
+and where its bytes live, is something you can add from outside the
+kernel without touching it.
 
-Rewrite in progress, to be elaborated.
+** Everything is an object, and everything has a path
+
+Relations, branches, sessions, evaluators and every object live in one
+object tree. If you can name it, you can reach it:
+
+#+BEGIN_SRC ocaml
+Path.lookup root ("session" @/ "client" @/ "branch" @/ this)
+#+END_SRC
+
+See [[file:docs/object-system.org][docs/object-system.org]] and [[file:docs/object-taxonomy.org][docs/object-taxonomy.org]].
+
+** Teach objects new tricks
+
+What an object can do is a list of /protocols/: =Directory=,
+=Enumerable=, =Cursor=, =Evaluator=, and so on. The set is open, so
+your own code can declare a new protocol and build objects that speak
+it alongside the built-in ones:
+
+#+BEGIN_SRC ocaml
+type Protocols.Handle.protocol += Describable of < describe : string >
+
+let staff =
+  Kernel.Prototype.mixture
+    [ Describable (object method describe = "everyone on payroll" end);
+      Kernel.Prototype.Directory.of_properties ["employee", employees] ]
+#+END_SRC
+
+Clients that only know =Directory= keep working. Clients that know
+=Describable= ask the handle for it, and get it only if the object
+supports it.
+
+** Bring your own language
+
+The kernel ships no query language. An evaluator is just another
+object that implements the =Evaluator= protocol, so adding a language
+means writing one method. Here is one that counts the tuples of a
+relation:
+
+#+BEGIN_SRC ocaml
+  Protocols.Evaluator.make
+    (object
+       method invoke relation =
+         let open Utilities.Result in
+         let* enumerable = Protocols.Enumerable.require relation in
+         let* cursor = Protocols.Enumerable.enumerate enumerable in
+         let* scan = Protocols.Cursor.require cursor in
+         let* tuples = Protocols.Cursor.drain scan () in
+         Protocols.Handle.release cursor;
+         let n = BatFingerTree.size tuples in
+         Ok (Kernel.Prototype.mixture
+               [Describable (object method describe = string_of_int n end)])
+     end)
+#+END_SRC
+
+Register it in the object tree, and it sits next to the first-order
+logic evaluator that ships with RNT. See [[file:docs/evaluators.org][docs/evaluators.org]].
+
+** Bring your own storage
+
+A storage backend implements eight operations: connect, disconnect,
+start a transaction (read-write or read-only), commit, abort, get, and
+put. The LMDB driver is about 230 lines. Everything above it,
+including relations, indexes, and branches, comes from the kernel.
+
+Tuples are content-addressed (SHA-256 of their encoding) and indexed
+by prolly trees, so every state of a relation has a hash. That gives
+versioning almost for free: branches are kernel objects, and a session
+can pin a snapshot while its branch keeps moving.
+
+** Nothing happens behind your back
+
+All access goes through an explicit handle, which makes ownership,
+accounting, and cleanup visible. Opening, closing, pinning, cleanup,
+and contention are runtime responsibilities with documented rules; see
+[[file:docs/lifecycle.org][docs/lifecycle.org]]. Access checks are planned to stay separate from
+object lookup, so security policy can evolve on its own.
+
+* Status
+
+RNT is early and its APIs will change. What works today, with tests:
+
+- content-addressed tuple storage on LMDB
+- prolly-tree indexes (chunking is still naive; see =lib/kernel/Merkle.ml=)
+- branches, and sessions that pin a snapshot
+- path lookup across the object tree
+- substantial and ephemeral relations with pull-based cursors
+- a FOL evaluator supporting scan and projection
 
 * Building
 
-** GNU/Linux with Nix
+** With Nix (GNU/Linux, macOS)
 
-To be elaborated.
+#+BEGIN_SRC sh
+nix build                          # build and run the tests
+nix develop --command dune test    # or work inside the dev shell
+#+END_SRC
 
 * License
 
 RNT is free software licensed under the GNU Affero General Public License v3.0.
 See =LICENSE= for the full terms.
 
-Copyright (C) 2026 RNT contributors, and Don't Rely on Nulls.
+Copyright (C) 2026 RNT contributors, Don't Rely on Nulls and Symbolic Engineering.
 
 Maintainers: Marcos Magueta & Estevan Castilho.
