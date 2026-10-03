@@ -88,6 +88,92 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
       |> List.map (fun tuple -> BatMap.String.bindings tuple.Concepts.Tuple.attributes)
       |> List.sort compare )
 
+  let instantiate_a_program conn =
+    let projected =
+      begin
+        let open Utilities.Result in
+        let* employees = H.relation conn ["name"; "age"] [employee "Alaric" 42] in
+        let root = Kernel.Prototype.(mixture [Directory.of_properties ["employee", employees]]) in
+        let* plan =
+          Rnt.Evaluators.FOL.(
+            instantiate (Kernel.Path.lookup root)
+              (Project (Base Kernel.Path.("employee" @/ this), BatFingerTree.singleton "name")) )
+        in
+        let* evaluator = Protocols.Evaluator.require (Rnt.Evaluators.FOL.make ()) in
+        let* result = Rnt.Evaluators.FOL.program plan |> Protocols.Evaluator.invoke evaluator in
+        drain result
+      end
+      |> Helpers.condition_as_failure
+    in
+    check
+      (list (list (pair string Helpers.value)))
+      "the program ran over the relation its path resolved to"
+      [["name", Concepts.Value.String "Alaric"]]
+      (projected |> List.map (fun tuple -> BatMap.String.bindings tuple.Concepts.Tuple.attributes))
+
+  module E = Kernel.EphemeralRelation.Make (S)
+
+  let store conn term =
+    E.persist conn ~name:"view" ~evaluator:Rnt.Evaluators.FOL.name
+      ~code:(Rnt.Evaluators.FOL.encode term)
+      (BatMap.String.singleton "name" {Protocols.Schematics.domain= "string"; provenance= []})
+
+  let namespace entries =
+    let open Utilities.Result in
+    let root = Kernel.Namespace.make () in
+    let* registry = Protocols.Handle.require Protocols.Registry.from root in
+    let* _ =
+      List.fold_left
+        (fun registered (name, handle) ->
+          let* _ = registered in
+          Protocols.Registry.update registry name None (Some handle) )
+        (Ok true) entries
+    in
+    Ok root
+
+  let expand_a_stored_program conn =
+    let projected =
+      begin
+        let open Utilities.Result in
+        let* employees = H.relation conn ["name"; "age"] [employee "Alaric" 42] in
+        let* view =
+          store conn
+            Rnt.Evaluators.FOL.(
+              Project (Base Kernel.Path.("employee" @/ this), BatFingerTree.singleton "name") )
+        in
+        let* root = namespace ["employee", employees; "view", view] in
+        let* plan =
+          Rnt.Evaluators.FOL.(
+            instantiate (Kernel.Path.lookup root) (Base Kernel.Path.("view" @/ this)) )
+        in
+        let* evaluator = Protocols.Evaluator.require (Rnt.Evaluators.FOL.make ()) in
+        let* result = Rnt.Evaluators.FOL.program plan |> Protocols.Evaluator.invoke evaluator in
+        drain result
+      end
+      |> Helpers.condition_as_failure
+    in
+    check
+      (list (list (pair string Helpers.value)))
+      "the stored program ran in place of its name"
+      [["name", Concepts.Value.String "Alaric"]]
+      (projected |> List.map (fun tuple -> BatMap.String.bindings tuple.Concepts.Tuple.attributes))
+
+  let refuse_a_program_that_reads_itself conn =
+    let expanded =
+      begin
+        let open Utilities.Result in
+        let* view = store conn Rnt.Evaluators.FOL.(Base Kernel.Path.("view" @/ this)) in
+        let* root = namespace ["view", view] in
+        Rnt.Evaluators.FOL.(
+          instantiate (Kernel.Path.lookup root) (Base Kernel.Path.("view" @/ this)) )
+      end
+    in
+    check bool "the expansion stopped at the cycle" true
+      ( match expanded with
+      | Error condition ->
+          BatString.starts_with (Concepts.Condition.to_string_hum condition) "cyclic-program"
+      | Ok _ -> false )
+
   let pull_one_tuple_at_a_time () =
     let produced = ref 0 and closed = ref false in
     let description =
@@ -102,7 +188,7 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
     in
     let source =
       Kernel.EphemeralRelation.instantiate description
-        {Kernel.EphemeralRelation.schematics= `Temporary description}
+        {Kernel.EphemeralRelation.name= None; schematics= `Temporary description; program= None}
         (fun () -> Ok (Kernel.Generator.cursor_of ~finally:(fun () -> closed := true) (count 0)))
     in
     let first =
@@ -130,6 +216,12 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
       [ test_case "scan-a-base-relation" `Quick (H.with_connection scan_a_base_relation "fol-test");
         test_case "project-away-an-attribute" `Quick
           (H.with_connection project_away_an_attribute "fol-test");
+        test_case "instantiate-a-program" `Quick
+          (H.with_connection instantiate_a_program "fol-test");
+        test_case "expand-a-stored-program" `Quick
+          (H.with_connection expand_a_stored_program "fol-test");
+        test_case "refuse-a-program-that-reads-itself" `Quick
+          (H.with_connection refuse_a_program_that_reads_itself "fol-test");
         test_case "pull-one-tuple-at-a-time" `Quick pull_one_tuple_at_a_time ] )
 end
 
