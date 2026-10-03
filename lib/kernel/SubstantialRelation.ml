@@ -74,9 +74,17 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     let* tuples = TupleSet.find tx relation.tuples in
     Option.to_result ~none:(Error.invalid_tuple_root relation.tuples) tuples
 
-  let schema_of tx relation =
+  let store_schema tx description =
+    Concepts.Encoding.Bencode.(
+      Dict
+        ( BatMap.String.bindings description
+        |> List.map (fun (name, {Protocols.Schematics.domain; _}) -> name, String domain) )
+      |> to_blob )
+    |> SI.store_blob tx
+
+  let schema_of tx schematics =
     let open Utilities.Result in
-    let* data = SI.get_req tx (S.Hash relation.schematics) in
+    let* data = SI.get_req tx (S.Hash schematics) in
     let* fields = Concepts.Encoding.Bencode.of_blob data in
     let* kvs = Concepts.Encoding.Bencode.as_dict fields in
     kvs
@@ -112,15 +120,17 @@ module Make (S : Abstract.Storage.STORAGE) = struct
       method enumerate = enumerate connection relation
 
       method protocols : Protocols.Handle.protocol list =
-        [ Protocols.Relation.make self;
+        [ Protocols.Addressable.make self;
+          Protocols.Relation.make self;
           Protocols.Enumerable.make self;
           Protocols.Schematics.make self ]
 
       method hash = encode relation |> Concepts.Hash.hash_of_blob
+      method address = self#hash
     end
 
   let load connection relation =
-    SI.with_read connection (fun tx -> schema_of tx relation)
+    SI.with_read connection (fun tx -> schema_of tx relation.schematics)
     |> Result.map (fun description ->
         new substantial_relation connection relation description |> Protocols.Handle.make )
 

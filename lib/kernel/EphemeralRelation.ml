@@ -1,13 +1,67 @@
+type program = {evaluator: string; code: Concepts.Hash.hash}
+
 type t =
-  { schematics:
+  { name: string option;
+    schematics:
       [ `Persisted of Concepts.Hash.hash
-      | `Temporary of Protocols.Schematics.attribute_description BatMap.String.t ] }
+      | `Temporary of Protocols.Schematics.attribute_description BatMap.String.t ];
+    program: program option }
+
+type Protocols.Handle.protocol += Stored of {evaluator: string; code: Concepts.Blob.t}
 
 module Error = struct
-  (* open Concepts.Condition *)
+  open Concepts.Condition
+
+  let malformed_relation () =
+    condition "malformed-ephemeral-relation"
+      "The on-disk representation of an ephemeral relation did not conform to what was expected. \
+       Is your database corrupted?"
+      empty
+
+  let unbound_program name =
+    condition "unbound-program"
+      "A stored relation has to be instantiated by its evaluator before it can be enumerated"
+      ("relation" |=| Concepts.Value.String name)
 end
 
-class ephemeral_relation description value enumerate inputs =
+module Persisted = struct
+  type nonrec t = {name: string; schematics: Concepts.Hash.hash; program: program}
+
+  module rec Representation : (Concepts.Encoding.Record.S with type t = t) =
+    Concepts.Encoding.Record.Make (Body)
+
+  and Body : Concepts.Encoding.Record.BODY = struct
+    type nonrec t = t
+
+    let tag = 'E'
+    let malformed = Error.malformed_relation
+
+    let fields {name; schematics; program= {evaluator; code}} =
+      let open Concepts.Encoding in
+      [ "name", Field.string name;
+        "schema", Value.bencode_of_hash schematics;
+        "evaluator", Field.string evaluator;
+        "program", Value.bencode_of_hash code ]
+
+    let of_fields fields =
+      let open Utilities.Result in
+      let open Concepts.Encoding in
+      let* name = Field.require_string "name" fields in
+      let* schematics = Bencode.field "schema" fields |> fmap Value.hash_of_bencode in
+      let* evaluator = Field.require_string "evaluator" fields in
+      let* code = Bencode.field "program" fields |> fmap Value.hash_of_bencode in
+      Ok {name; schematics; program= {evaluator; code}}
+  end
+end
+
+(* FIXME: Bring the Persisted/Temporary out to avoid using the
+   wildcard and optionals *)
+let persisted = function
+  | {name= Some name; schematics= `Persisted schematics; program= Some program} ->
+      Some {Persisted.name; schematics; program}
+  | _ -> None
+
+class ephemeral_relation ?code description value enumerate inputs =
   object (self)
     inherit Lifecycle.counted
     inherit Identity.of_id
@@ -17,6 +71,10 @@ class ephemeral_relation description value enumerate inputs =
     method enumerate : (Protocols.Handle.t, Concepts.Condition.condition) result = enumerate ()
     method describe () = Ok (Protocols.Schematics.Relation description)
 
+    (* TODO: We do not need to scan, but simply apply a membership
+       criteria (set of constraints. For now this works, but it's
+       inneficient and hurts data independence, as there is an
+       assymetry between ephemeral and substantial relations. *)
     method contains (tuple : Concepts.Tuple.t) =
       let open Utilities.Result in
       let* cursor = self#enumerate in
@@ -28,8 +86,47 @@ class ephemeral_relation description value enumerate inputs =
               Concepts.Hash.hash_equals (Concepts.Tuple.hash member) (Concepts.Tuple.hash tuple) ) )
 
     method protocols : Protocols.Handle.protocol list =
-      Protocols.[Relation.make self; Enumerable.make self; Schematics.make self]
+      let protocols = Protocols.[Relation.make self; Enumerable.make self; Schematics.make self] in
+      match persisted relation with
+      | None -> protocols
+      | Some record ->
+          let stored =
+            Option.fold ~none:protocols
+              ~some:(fun code -> Stored {evaluator= record.program.evaluator; code} :: protocols)
+              code
+          in
+          Protocols.Addressable.make
+            object
+              method address = Persisted.Representation.to_blob record |> Concepts.Hash.hash_of_blob
+            end
+          :: stored
   end
 
-let instantiate ?(inputs = []) description value enumerate =
-  new ephemeral_relation description value enumerate inputs |> Protocols.Handle.make
+let instantiate ?(inputs = []) ?code description value enumerate =
+  new ephemeral_relation ?code description value enumerate inputs |> Protocols.Handle.make
+
+module Make (S : Abstract.Storage.STORAGE) = struct
+  module SI = Storage.Make (S)
+  module R = SubstantialRelation.Make (S)
+
+  let restore ~code ({Persisted.name; schematics; program} : Persisted.t) description =
+    instantiate ~code description
+      {name= Some name; schematics= `Persisted schematics; program= Some program}
+      (fun () -> Error (Error.unbound_program name))
+
+  let load connection (record : Persisted.t) =
+    SI.with_read connection (fun tx ->
+        let open Utilities.Result in
+        let* description = R.schema_of tx record.schematics in
+        let* code = SI.get_req tx (S.Hash record.program.code) in
+        Ok (restore ~code record description) )
+
+  let persist connection ~name ~evaluator ~code description =
+    SI.with_transaction connection (fun tx ->
+        let open Utilities.Result in
+        let* schematics = R.store_schema tx description in
+        let* address = SI.store_blob tx code in
+        let record = {Persisted.name; schematics; program= {evaluator; code= address}} in
+        let* _ = SI.store_blob tx (Persisted.Representation.to_blob record) in
+        Ok (restore ~code record description) )
+end

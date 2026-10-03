@@ -2,6 +2,8 @@ type t
 
 val this : t
 val ( @/ ) : string -> t -> t
+val of_list : string list -> t
+val to_list : t -> string list
 val lookup : Protocols.Handle.t -> t -> (Protocols.Handle.t, Concepts.Condition.condition) result
 
 val update :

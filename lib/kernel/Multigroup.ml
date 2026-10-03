@@ -1,8 +1,35 @@
 module Make (S : Abstract.Storage.STORAGE) = struct
   module SI = Storage.Make (S)
   module R = SubstantialRelation.Make (S)
-  module RelationM = Merkle.Interface (S) (Merkle.StringKey) (R)
-  module RMDirectory = Prototype.Directory.OfTree (S) (Merkle.StringKey) (R)
+  module E = EphemeralRelation.Make (S)
+
+  module Entry = struct
+    module Stored = EphemeralRelation.Persisted.Representation
+
+    type t = Substantial of R.t | Ephemeral of EphemeralRelation.Persisted.t
+
+    let encode = function
+      | Substantial relation -> R.encode relation
+      | Ephemeral relation -> Stored.to_blob relation
+
+    let decode blob =
+      let open Utilities.Result in
+      let open Concepts.Encoding in
+      let* data = Bencode.of_blob blob in
+      match data with
+      | Bencode.Tagged (tag, _) when Char.equal tag Stored.tag ->
+          Stored.of_bencode data |> Result.map (fun relation -> Ephemeral relation)
+      | _ -> R.Representation.of_bencode data |> Result.map (fun relation -> Substantial relation)
+
+    let load storage = function
+      | Substantial relation -> R.load storage relation
+      | Ephemeral relation -> E.load storage relation
+  end
+
+  module RelationM = Merkle.Interface (S) (Merkle.StringKey) (Entry)
+  module RMAddressable = Prototype.Addressable.OfTree (S) (Merkle.StringKey)
+  module RMDirectory = Prototype.Directory.OfTree (S) (Merkle.StringKey) (Entry)
+  module RMAssociative = Prototype.Associative.OfTree (S) (Merkle.StringKey)
 
   type t = {relations: RelationM.address}
 
@@ -52,12 +79,38 @@ module Make (S : Abstract.Storage.STORAGE) = struct
       val storage = conn
       val node = node (* FIXME: see the comment on Branch.ml *)
 
+      (* TODO: Add later to the lifecycle management, accounting for
+         derived instances. Callers must release the previous handle
+         when done with it so its instance can be cleaned up after the
+         last reference is released. *)
+      method deriving multigroup' =
+        let open Utilities.Result in
+        let* node' =
+          SI.with_transaction storage (fun tx ->
+              let* _ = SI.store_blob tx (Representation.to_blob multigroup') in
+              RelationM.find tx multigroup'.relations
+              |> fmap (Option.to_result ~none:(Error.incomplete_multigroup multigroup'.relations)) )
+        in
+        new multigroup storage multigroup' node' |> Protocols.Handle.make |> Result.ok
+
       method protocols : Protocols.Handle.protocol list =
+        let open Utilities.Result in
         Protocols.
           [ Addressable.make self;
+            Prototype.Associative.(
+              of_properties
+                [ ( "relation",
+                    update_only (fun node' ->
+                        Handle.require Addressable.from node'
+                        |> Result.map Addressable.address
+                        |> fmap (fun addr -> self#deriving {relations= addr}) ) ) ] );
             Prototype.Directory.of_properties
               [ ( "relation",
-                  Prototype.mixture [RMDirectory.make ~storage ~node ~constructor:(R.load storage)]
+                  Prototype.mixture_of node (fun make node ->
+                      [ RMAddressable.make ~node:(RelationM.into node);
+                        RMDirectory.make ~storage ~node ~constructor:(Entry.load storage);
+                        RMAssociative.make ~storage ~node:(RelationM.into node)
+                          ~constructor:(fun node' -> RelationM.from node' |> make |> Result.ok ) ] )
                 ) ] ]
 
       method hash = Representation.to_blob multigroup |> Concepts.Hash.hash_of_blob

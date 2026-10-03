@@ -23,10 +23,89 @@ module Error = struct
   let released_relation name =
     condition "released-relation" "A plan named a relation that was already released"
       ("object" |=| Concepts.Value.String name)
+
+  let malformed_program () =
+    condition "malformed-fol-program"
+      "A stored FOL program did not conform to what was expected. Is your database corrupted?" empty
+
+  let foreign_program evaluator =
+    condition "foreign-program" "A plan named a relation stored by another evaluator"
+      ("evaluator" |=| Concepts.Value.String evaluator)
+
+  let cyclic_program code =
+    condition "cyclic-program" "A stored program reads itself"
+      ("program" |=| Concepts.Value.String (Concepts.Hash.to_hum_string code))
 end
 
-type plan = Base of Protocols.Handle.t | Project of plan * string BatFingerTree.t
+let name = "fol"
+
+type 'r term = Base of 'r | Project of 'r term * string BatFingerTree.t
+type plan = Protocols.Handle.t term
 type Protocols.Handle.protocol += Plan of plan
+
+module Bencode = Concepts.Encoding.Bencode
+
+let rec bencode_of_term =
+  let strings values = Bencode.List (List.map (fun value -> Bencode.String value) values) in
+  function
+  | Base path -> Bencode.Tagged ('b', strings (Kernel.Path.to_list path))
+  | Project (term, attributes) ->
+      Bencode.Tagged
+        ( 'p',
+          Bencode.Dict
+            ["term", bencode_of_term term; "attributes", strings (BatFingerTree.to_list attributes)]
+        )
+
+let rec term_of_bencode =
+  let open Utilities.Result in
+  let strings values =
+    let* values = Bencode.as_list values in
+    List.map Bencode.as_string values |> Utilities.List.sequence
+  in
+  function
+  | Bencode.Tagged ('b', segments) ->
+      strings segments |> Result.map (fun segments -> Base (Kernel.Path.of_list segments))
+  | Bencode.Tagged ('p', data) ->
+      let* term = Bencode.field "term" data |> fmap term_of_bencode in
+      let* attributes = Bencode.field "attributes" data |> fmap strings in
+      Ok (Project (term, BatFingerTree.of_list attributes))
+  | _ -> Error (Error.malformed_program ())
+
+let encode term = bencode_of_term term |> Bencode.to_blob
+let decode code = Bencode.of_blob code |> Utilities.Result.fmap term_of_bencode
+
+let stored relation =
+  Protocols.Handle.into relation (function
+    | Kernel.EphemeralRelation.Stored {evaluator; code} -> Some (evaluator, code)
+    | _ -> None )
+  |> Option.map (fun stored -> Protocols.Handle.invoke stored Fun.id)
+
+(* TODO: To strenghten our checks for self references, we need to
+   construct a graph and see raise a condition if there are self
+   references. We partially do that here with the program calling
+   self, but if the flow is alternated, say between program A and B,
+   where B calls A and A calls B, we also must check. *)
+let instantiate resolve =
+  let open Utilities.Result in
+  let rec bind expanding = function
+    | Base reference -> (
+        let* relation = resolve reference in
+        match stored relation with
+        | None -> Ok (Base relation)
+        | Some (evaluator, code) ->
+            Protocols.Handle.release relation;
+            let identity = Concepts.Hash.hash_of_blob code in
+            if not (String.equal evaluator name) then Error (Error.foreign_program evaluator)
+            else if List.exists (Concepts.Hash.hash_equals identity) expanding then
+              Error (Error.cyclic_program identity)
+            else
+              let* term = decode code in
+              bind (identity :: expanding) term )
+    | Project (term, attributes) ->
+        let* plan = bind expanding term in
+        Ok (Project (plan, attributes))
+  in
+  bind []
 
 class program plan =
   object
@@ -96,7 +175,7 @@ let project description relation =
 
 let derive relation description enumerate =
   Kernel.EphemeralRelation.instantiate ~inputs:[relation] description
-    {Kernel.EphemeralRelation.schematics= `Temporary description}
+    {Kernel.EphemeralRelation.name= None; schematics= `Temporary description; program= None}
     (fun () -> enumerate relation)
 
 let rec execute plan =
