@@ -5,6 +5,7 @@ let all_suites =
   @ Unit.Kernel.Merkle.suites ()
   @ Unit.Kernel.SubstantialRelation.suites ()
   @ Unit.Kernel.Session.suites ()
+  @ Unit.Kernel.Journal.suites ()
   @ Unit.Evaluators.FOL.suites ()
   @ Integration.Registration.suites ()
 
