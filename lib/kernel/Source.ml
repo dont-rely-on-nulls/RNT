@@ -34,25 +34,35 @@ let evaluator ~language run =
       method to_string = language ^ "-evaluator"
       method protocols : Protocols.Handle.protocol list = [Protocols.Evaluator.make self]
 
-      method invoke program =
+      method invoke program ~within =
         match text program with
         | None -> Error (Error.not_a_program language)
         | Some (given, _) when given <> language -> Error (Error.foreign language given)
-        | Some (_, source) -> run source
+        | Some (_, source) -> run ~within source
     end
 
-let run root ~language source =
+let evaluators = Path.("system" @/ "evaluator" @/ this)
+
+let bind directory ~within language program =
   let open Utilities.Result in
   let* evaluator =
-    Path.lookup root Path.("evaluator" @/ language @/ this)
+    Path.lookup directory Path.(language @/ this)
     |> Result.map_error (fun _ -> Error.no_evaluator language)
   in
-  let* evaluator = Protocols.Evaluator.require evaluator in
-  Protocols.Evaluator.invoke evaluator (program ~language source)
+  Fun.protect
+    ~finally:(fun () -> Protocols.Handle.release evaluator)
+    (fun () ->
+      let* evaluator = Protocols.Evaluator.require evaluator in
+      Protocols.Evaluator.invoke evaluator program ~within )
+
+let run root ~language ~within source =
+  let open Utilities.Result in
+  let* directory = Path.lookup root evaluators in
+  bind directory ~within language (program ~language source)
 
 let register root ~language evaluator =
   let open Utilities.Result in
-  let* evaluators = Path.lookup root Path.("evaluator" @/ this) in
-  let* registry = Protocols.Handle.require Protocols.Registry.from evaluators in
+  let* directory = Path.lookup root evaluators in
+  let* registry = Protocols.Handle.require Protocols.Registry.from directory in
   let* _ = Protocols.Registry.update registry language None (Some evaluator) in
   Ok ()

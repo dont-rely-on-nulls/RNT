@@ -21,9 +21,9 @@ module Make (S : Abstract.Storage.STORAGE) = struct
           Stored.of_bencode data |> Result.map (fun relation -> Ephemeral relation)
       | _ -> R.Representation.of_bencode data |> Result.map (fun relation -> Substantial relation)
 
-    let load storage = function
+    let load ?bind storage = function
       | Substantial relation -> R.load storage relation
-      | Ephemeral relation -> E.load storage relation
+      | Ephemeral relation -> E.load ?bind storage relation
   end
 
   module RelationM = Merkle.Interface (S) (Merkle.StringKey) (Entry)
@@ -71,7 +71,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
   let encode = Representation.to_blob
   let decode = Representation.of_blob
 
-  class multigroup conn value node =
+  class multigroup ?bind conn value node =
     object (self)
       inherit Lifecycle.null
       method to_string = "multigroup"
@@ -91,7 +91,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
               RelationM.find tx multigroup'.relations
               |> fmap (Option.to_result ~none:(Error.incomplete_multigroup multigroup'.relations)) )
         in
-        new multigroup storage multigroup' node' |> Protocols.Handle.make |> Result.ok
+        new multigroup ?bind storage multigroup' node' |> Protocols.Handle.make |> Result.ok
 
       method protocols : Protocols.Handle.protocol list =
         let open Utilities.Result in
@@ -108,7 +108,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
               [ ( "relation",
                   Prototype.mixture_of node (fun make node ->
                       [ RMAddressable.make ~node:(RelationM.into node);
-                        RMDirectory.make ~storage ~node ~constructor:(Entry.load storage);
+                        RMDirectory.make ~storage ~node ~constructor:(Entry.load ?bind storage);
                         RMAssociative.make ~storage ~node:(RelationM.into node)
                           ~constructor:(fun node' -> RelationM.from node' |> make |> Result.ok ) ] )
                 ) ] ]
@@ -117,13 +117,13 @@ module Make (S : Abstract.Storage.STORAGE) = struct
       method address = self#hash
     end
 
-  let wrap conn value =
+  let wrap ?bind conn value =
     let open Utilities.Result in
     let* node =
       SI.with_transaction conn (fun tx -> RelationM.find tx value.relations)
       |> fmap (Option.to_result ~none:(Error.incomplete_multigroup value.relations))
     in
-    new multigroup conn value node |> Protocols.Handle.make |> Result.ok
+    new multigroup ?bind conn value node |> Protocols.Handle.make |> Result.ok
 
   let make conn =
     let open Utilities.Result in

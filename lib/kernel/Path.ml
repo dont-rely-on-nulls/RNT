@@ -17,6 +17,11 @@ module Error = struct
   let path_not_found path =
     condition "path-not-found" "A given path was not found under the specified object"
       ("path" |=| Concepts.Value.String (to_string path))
+
+  let overlapping_change path =
+    condition "overlapping-change"
+      "A batch of changes both replaced an object and changed inside it"
+      ("path" |=| Concepts.Value.String (to_string path))
 end
 
 let walking f g handle path =
@@ -56,17 +61,100 @@ let update handle path key reference value =
       let* registry = Handle.require Registry.from target in
       Registry.update registry key reference value )
 
-let assoc handle path key value =
+(* Changes under the same name are applied to the child together, so
+   every object on the way is derived once however many changes reach
+   it: a batch of changes to a branch is one successor state. *)
+let assoc_all handle changes =
   let open Utilities.Result in
-  let open Utilities.Fun in
   let open Protocols in
-  let assoc_on handle key value =
-    let* a = Handle.require Associative.from handle in
+  let assoc_on node (key, value) =
+    let* a = Handle.require Associative.from node in
     let* a' = Associative.update a key value in
     Ok (Handle.from a')
   in
-  walking
-    (fun key dir f ->
-      releasing handle dir (fun () -> f () |> fmap (assoc_on dir key |.| Option.some)) )
-    (fun h -> releasing handle h (fun () -> assoc_on h key value))
-    handle path
+  let rec apply prefix node changes =
+    let here, below = List.partition (fun (path, _, _) -> path = []) changes in
+    let segments =
+      List.fold_left
+        (fun segments (path, _, _) ->
+          let x = List.hd path in
+          if List.mem x segments then segments else segments @ [x] )
+        [] below
+    in
+    let beneath x =
+      List.filter_map
+        (fun (path, key, value) ->
+          match path with y :: rest when y = x -> Some (rest, key, value) | _ -> None )
+        below
+    in
+    match List.find_opt (fun (_, key, _) -> List.mem key segments) here with
+    | Some (_, key, _) -> Error (Error.overlapping_change (prefix @ [key]))
+    | None ->
+        let* children =
+          List.map
+            (fun x ->
+              let* dir = Handle.require Directory.from node in
+              let* found = Directory.find dir x in
+              match found with
+              | None -> Error (Error.path_not_found (prefix @ [x]))
+              | Some child ->
+                  releasing handle child (fun () -> apply (prefix @ [x]) child (beneath x))
+                  |> Result.map (fun child' -> x, Some child') )
+            segments
+          |> Utilities.List.sequence
+        in
+        (* each step derives from the last; only the steps in between are
+           ours to release *)
+        List.fold_left
+          (fun current change ->
+            let* current = current in
+            let* next = assoc_on current change in
+            if current != node then Handle.release current;
+            Ok next )
+          (Ok node)
+          (children @ List.map (fun (_, key, value) -> key, value) here)
+  in
+  apply [] handle changes
+
+let assoc handle path key value = assoc_all handle [path, key, value]
+
+let diff a b =
+  let open Utilities.Result in
+  let open Protocols in
+  let address h = Option.map Addressable.address (Addressable.from h) in
+  let same x y =
+    match address x, address y with
+    | Some p, Some q -> Concepts.Hash.hash_equals p q
+    | _ -> Handle.equal x y
+  in
+  let names h =
+    let* dir = Handle.require Directory.from h in
+    let* names = Directory.list dir in
+    Ok (BatFingerTree.to_list names)
+  in
+  let find h name =
+    let* dir = Handle.require Directory.from h in
+    Directory.find dir name
+  in
+  let rec walk prefix a b =
+    let* left = names a in
+    let* right = names b in
+    List.sort_uniq String.compare (left @ right)
+    |> List.map (fun name ->
+        let path = prefix @ [name] in
+        let* x = find a name in
+        let* y = find b name in
+        Fun.protect
+          ~finally:(fun () -> List.iter Handle.release (Option.to_list x @ Option.to_list y))
+          (fun () ->
+            match x, y with
+            | None, None -> Ok []
+            | Some x, Some y when same x y -> Ok []
+            | Some x, Some y when Directory.from x <> None && Directory.from y <> None ->
+                let* below = walk path x y in
+                Ok (if below = [] then [path] else below)
+            | _ -> Ok [path] ) )
+    |> Utilities.List.sequence
+    |> Result.map List.concat
+  in
+  walk [] a b

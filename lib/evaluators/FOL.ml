@@ -198,10 +198,22 @@ class evaluator =
     inherit Kernel.Identity.of_id
     method to_string = "fol-evaluator"
 
-    method invoke program =
-      Protocols.Handle.into program (function Plan plan -> Some plan | _ -> None)
-      |> Option.to_result ~none:(Error.not_a_plan (Protocols.Handle.to_string program))
-      |> Utilities.Result.fmap (fun plan -> Protocols.Handle.invoke plan execute)
+    (* A plan comes resolved; stored source names its relations by path,
+       read against [within]. *)
+    method invoke program ~within =
+      let open Utilities.Result in
+      match
+        ( Protocols.Handle.into program (function Plan plan -> Some plan | _ -> None),
+          stored program )
+      with
+      | Some plan, _ -> Protocols.Handle.invoke plan execute
+      | None, Some (evaluator, _) when not (String.equal evaluator name) ->
+          Error (Error.foreign_program evaluator)
+      | None, Some (_, code) ->
+          let* term = decode code in
+          let* plan = instantiate (Kernel.Path.lookup within) term in
+          execute plan
+      | None, None -> Error (Error.not_a_plan (Protocols.Handle.to_string program))
 
     method protocols : Protocols.Handle.protocol list = [Protocols.Evaluator.make self]
   end

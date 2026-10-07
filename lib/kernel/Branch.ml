@@ -1,9 +1,9 @@
 module Make (S : Abstract.Storage.STORAGE) = struct
-  (* Branch has a name, a set of multigroups, and a backlink to the previous state
-     multigroup has a name and a set of schemas
-     schema has a name and a set of relations
+  (* A branch state holds its multigroups and a backlink to the state it
+     succeeded, each multigroup its relations:
 
-     \branch\master\multigroup\universe\schema\sky\relation\planet
+     \system\branch\master\multigroup\universe\relation\planet
+     \system\branch\master\previous\multigroup\universe\relation\planet
    *)
 
   module SI = Storage.Make (S)
@@ -70,7 +70,15 @@ module Make (S : Abstract.Storage.STORAGE) = struct
 
   let pointer_of hash = SI.Pointer.make Loader.load (S.Hash hash)
 
-  class branch storage value node =
+  let node_of tx branch =
+    let open Utilities.Result in
+    MultigroupM.find tx branch.multigroups
+    |> fmap (Option.to_result ~none:(Error.incomplete_branch branch.multigroups))
+
+  (* [evaluators] is the directory the stored programs of this state run
+     through; they read against this very state, so an earlier state
+     reads as it was. *)
+  class branch ?evaluators storage value node =
     object (self)
       inherit Lifecycle.null
       method to_string = "branch"
@@ -84,12 +92,33 @@ module Make (S : Abstract.Storage.STORAGE) = struct
         let* node' =
           SI.with_transaction storage (fun tx ->
               let* _ = SI.store_blob tx (Representation.to_blob branch'') in
-              MultigroupM.find tx branch'.multigroups
-              |> fmap (Option.to_result ~none:(Error.incomplete_branch branch'.multigroups)) )
+              node_of tx branch' )
         in
-        new branch storage branch'' node' |> Protocols.Handle.make |> Result.ok
+        new branch ?evaluators storage branch'' node' |> Protocols.Handle.make |> Result.ok
+
+      method private previous =
+        match branch.previous with
+        | None -> Ok None
+        | Some pointer ->
+            SI.with_read storage (fun tx ->
+                let open Utilities.Result in
+                let* previous = SI.Pointer.deref tx pointer in
+                let* node = node_of tx previous in
+                Ok (Some (Protocols.Handle.make {<branch = previous; node>})) )
 
       method protocols : Protocols.Handle.protocol list =
+        let bind =
+          Option.map
+            (fun evaluators -> Source.bind evaluators ~within:(Protocols.Handle.make {<>}))
+            evaluators
+        in
+        let multigroups =
+          Prototype.mixture_of node (fun make node ->
+              [ MMAddressable.make ~node:(MultigroupM.into node);
+                MMDirectory.make ~storage ~node ~constructor:(M.wrap ?bind storage);
+                MMAssociative.make ~storage ~node:(MultigroupM.into node) ~constructor:(fun node' ->
+                    MultigroupM.from node' |> make |> Result.ok ) ] )
+        in
         let open Utilities.Result in
         Protocols.
           [ Addressable.make self;
@@ -100,34 +129,37 @@ module Make (S : Abstract.Storage.STORAGE) = struct
                         Handle.require Addressable.from node'
                         |> Result.map Addressable.address
                         |> fmap (fun addr -> self#deriving {branch with multigroups= addr}) ) ) ] );
-            Prototype.Directory.of_properties
-              [ ( "multigroup",
-                  Prototype.mixture_of node (fun make node ->
-                      [ MMAddressable.make ~node:(MultigroupM.into node);
-                        MMDirectory.make ~storage ~node ~constructor:(M.wrap storage);
-                        MMAssociative.make ~storage ~node:(MultigroupM.into node)
-                          ~constructor:(fun node' -> MultigroupM.from node' |> make |> Result.ok )
-                      ] ) ) ] ]
+            Directory.make
+              object
+                method list =
+                  Ok
+                    (BatFingerTree.of_list
+                       ( "multigroup"
+                       :: Option.fold ~none:[] ~some:(fun _ -> ["previous"]) branch.previous ) )
+
+                method find =
+                  function
+                  | "multigroup" -> Ok (Some multigroups)
+                  | "previous" -> self#previous
+                  | _ -> Ok None
+              end ]
 
       method hash = Representation.to_blob branch |> Concepts.Hash.hash_of_blob
       method address = self#hash
     end
 
-  let load tx conn addr =
+  let load ?evaluators tx conn addr =
     let open Utilities.Result in
     let* data = SI.get_req tx (S.Hash addr) in
     let* branch = Representation.of_blob data in
-    let* node =
-      MultigroupM.find tx branch.multigroups
-      |> fmap (Option.to_result ~none:(Error.incomplete_branch branch.multigroups))
-    in
-    Ok (new branch conn branch node |> Protocols.Handle.make)
+    let* node = node_of tx branch in
+    Ok (new branch ?evaluators conn branch node |> Protocols.Handle.make)
 
-  let make conn =
+  let make ?evaluators conn =
     let open Utilities.Result in
     SI.with_transaction conn (fun tx ->
         let* empty = MultigroupM.empty_under tx in
         let branch = {multigroups= empty; previous= None} in
         let* _ = SI.store_blob tx (Representation.to_blob branch) in
-        Ok (new branch conn branch MultigroupM.empty |> Protocols.Handle.make) )
+        Ok (new branch ?evaluators conn branch MultigroupM.empty |> Protocols.Handle.make) )
 end

@@ -10,21 +10,36 @@ val program : language:string -> string -> Protocols.Handle.t
 val text : Protocols.Handle.t -> (string * string) option
 
 (** an evaluator for [language]: it runs the text of a program in that
-    language, and refuses anything else. *)
+    language against the directory it is given, and refuses anything
+    else. *)
 val evaluator :
   language:string ->
-  (string -> (Protocols.Handle.t, Concepts.Condition.condition) result) ->
+  (within:Protocols.Handle.t -> string -> (Protocols.Handle.t, Concepts.Condition.condition) result) ->
   Protocols.Handle.t
 
-(** look up the evaluator of [language] under [root]'s \evaluator and run
-    [text] with it. *)
+(** where the evaluators are registered, from the root: \system\evaluator. *)
+val evaluators : Path.t
+
+(** run [program] through the evaluator of [language] found in
+    [directory], against [within]. Usable as an
+    [EphemeralRelation.binding] once [directory] and [within] are given. *)
+val bind :
+  Protocols.Handle.t ->
+  within:Protocols.Handle.t ->
+  string ->
+  Protocols.Handle.t ->
+  (Protocols.Handle.t, Concepts.Condition.condition) result
+
+(** run [text] in [language] against [within], with the evaluator
+    registered under [root]. *)
 val run :
   Protocols.Handle.t ->
   language:string ->
+  within:Protocols.Handle.t ->
   string ->
   (Protocols.Handle.t, Concepts.Condition.condition) result
 
-(** register [evaluator] as \evaluator\[language] under [root]. *)
+(** register [evaluator] for [language] under [root]. *)
 val register :
   Protocols.Handle.t ->
   language:string ->

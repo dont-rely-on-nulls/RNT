@@ -105,21 +105,60 @@ class ephemeral_relation ?code description value enumerate inputs =
 let instantiate ?(inputs = []) ?code description value enumerate =
   new ephemeral_relation ?code description value enumerate inputs |> Protocols.Handle.make
 
+let literal description tuples =
+  instantiate description
+    {name= None; schematics= `Temporary description; program= None}
+    (fun () -> Ok (Generator.cursor_of (fun ~yield -> List.iter yield tuples; Ok ())))
+
+type binding =
+  string -> Protocols.Handle.t -> (Protocols.Handle.t, Concepts.Condition.condition) result
+
+(* The relation a program produced has to outlive the cursor over it. *)
+let enumerate_owned relation =
+  let open Utilities.Result in
+  let owner =
+    object
+      method reference = true
+      method release = Protocols.Handle.release relation
+    end
+  in
+  match
+    let* enumerable = Protocols.Enumerable.require relation in
+    Protocols.Enumerable.enumerate enumerable
+  with
+  | Error c -> Protocols.Handle.release relation; Error c
+  | Ok cursor ->
+      Ok
+        (Protocols.Handle.make
+           object
+             inherit Lifecycle.retaining cursor owner
+             method to_string = Protocols.Handle.to_string cursor
+           end )
+
 module Make (S : Abstract.Storage.STORAGE) = struct
   module SI = Storage.Make (S)
   module R = SubstantialRelation.Make (S)
 
-  let restore ~code ({Persisted.name; schematics; program} : Persisted.t) description =
+  (* Unbound, a stored program is only its source. Bound, enumerating
+     it runs the program through its evaluator, afresh each time. *)
+  let restore ?bind ~code ({Persisted.name; schematics; program} : Persisted.t) description =
+    let enumerate () =
+      match bind with
+      | None -> Error (Error.unbound_program name)
+      | Some bind ->
+          let source = Prototype.mixture [Stored {evaluator= program.evaluator; code}] in
+          Result.bind (bind program.evaluator source) enumerate_owned
+    in
     instantiate ~code description
       {name= Some name; schematics= `Persisted schematics; program= Some program}
-      (fun () -> Error (Error.unbound_program name))
+      enumerate
 
-  let load connection (record : Persisted.t) =
+  let load ?bind connection (record : Persisted.t) =
     SI.with_read connection (fun tx ->
         let open Utilities.Result in
         let* description = R.schema_of tx record.schematics in
         let* code = SI.get_req tx (S.Hash record.program.code) in
-        Ok (restore ~code record description) )
+        Ok (restore ?bind ~code record description) )
 
   let persist connection ~name ~evaluator ~code description =
     SI.with_transaction connection (fun tx ->
