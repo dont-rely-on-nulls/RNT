@@ -23,6 +23,9 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
         BatMap.String.of_list ["name", Concepts.Value.String name; "age", Concepts.Value.Integer age]
     }
 
+  (* a plan comes resolved, so it reads nothing through [within] *)
+  let nowhere = Kernel.Prototype.mixture []
+
   let drain result =
     let open Utilities.Result in
     let* enumerable = Protocols.Enumerable.require result in
@@ -50,7 +53,8 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
         let* evaluator = Option.to_result ~none:(missing "fol") found in
         let* evaluator = Protocols.Evaluator.require evaluator in
         let* result =
-          Rnt.Evaluators.FOL.(program (Base employee)) |> Protocols.Evaluator.invoke evaluator
+          Rnt.Evaluators.FOL.(program (Base employee))
+          |> Protocols.Evaluator.invoke evaluator ~within:nowhere
         in
         drain result
       end
@@ -74,7 +78,7 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
         let* evaluator = Protocols.Evaluator.require (Rnt.Evaluators.FOL.make ()) in
         let* result =
           Rnt.Evaluators.FOL.(program (Project (Base employees, BatFingerTree.singleton "name")))
-          |> Protocols.Evaluator.invoke evaluator
+          |> Protocols.Evaluator.invoke evaluator ~within:nowhere
         in
         drain result
       end
@@ -100,7 +104,9 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
               (Project (Base Kernel.Path.("employee" @/ this), BatFingerTree.singleton "name")) )
         in
         let* evaluator = Protocols.Evaluator.require (Rnt.Evaluators.FOL.make ()) in
-        let* result = Rnt.Evaluators.FOL.program plan |> Protocols.Evaluator.invoke evaluator in
+        let* result =
+          Rnt.Evaluators.FOL.program plan |> Protocols.Evaluator.invoke evaluator ~within:nowhere
+        in
         drain result
       end
       |> Helpers.condition_as_failure
@@ -147,7 +153,9 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
             instantiate (Kernel.Path.lookup root) (Base Kernel.Path.("view" @/ this)) )
         in
         let* evaluator = Protocols.Evaluator.require (Rnt.Evaluators.FOL.make ()) in
-        let* result = Rnt.Evaluators.FOL.program plan |> Protocols.Evaluator.invoke evaluator in
+        let* result =
+          Rnt.Evaluators.FOL.program plan |> Protocols.Evaluator.invoke evaluator ~within:nowhere
+        in
         drain result
       end
       |> Helpers.condition_as_failure
@@ -155,6 +163,29 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
     check
       (list (list (pair string Helpers.value)))
       "the stored program ran in place of its name"
+      [["name", Concepts.Value.String "Alaric"]]
+      (projected |> List.map (fun tuple -> BatMap.String.bindings tuple.Concepts.Tuple.attributes))
+
+  let run_a_stored_program_within conn =
+    let projected =
+      begin
+        let open Utilities.Result in
+        let* employees = H.relation conn ["name"; "age"] [employee "Alaric" 42] in
+        let* view =
+          store conn
+            Rnt.Evaluators.FOL.(
+              Project (Base Kernel.Path.("employee" @/ this), BatFingerTree.singleton "name") )
+        in
+        let* root = namespace ["employee", employees] in
+        let* evaluator = Protocols.Evaluator.require (Rnt.Evaluators.FOL.make ()) in
+        let* result = Protocols.Evaluator.invoke evaluator view ~within:root in
+        drain result
+      end
+      |> Helpers.condition_as_failure
+    in
+    check
+      (list (list (pair string Helpers.value)))
+      "the stored source read its relations where it was told to"
       [["name", Concepts.Value.String "Alaric"]]
       (projected |> List.map (fun tuple -> BatMap.String.bindings tuple.Concepts.Tuple.attributes))
 
@@ -197,7 +228,7 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
         let* evaluator = Protocols.Evaluator.require (Rnt.Evaluators.FOL.make ()) in
         let* result =
           Rnt.Evaluators.FOL.(program (Project (Base source, BatFingerTree.singleton "value")))
-          |> Protocols.Evaluator.invoke evaluator
+          |> Protocols.Evaluator.invoke evaluator ~within:nowhere
         in
         let* enumerable = Protocols.Enumerable.require result in
         let* cursor = Protocols.Enumerable.enumerate enumerable in
@@ -220,6 +251,8 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
           (H.with_connection instantiate_a_program "fol-test");
         test_case "expand-a-stored-program" `Quick
           (H.with_connection expand_a_stored_program "fol-test");
+        test_case "run-a-stored-program-within" `Quick
+          (H.with_connection run_a_stored_program_within "fol-test");
         test_case "refuse-a-program-that-reads-itself" `Quick
           (H.with_connection refuse_a_program_that_reads_itself "fol-test");
         test_case "pull-one-tuple-at-a-time" `Quick pull_one_tuple_at_a_time ] )

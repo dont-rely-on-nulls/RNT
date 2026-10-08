@@ -18,6 +18,15 @@ let condition_as_failure = function
 let pp_value ppf v = Format.pp_print_string ppf (Concepts.Value.to_string v)
 let value = Alcotest.testable pp_value Concepts.Value.equal
 
+(* the titles a relation of books holds, in order *)
+let titles relation =
+  let open Utilities.Result in
+  let* _, tuples = Protocols.Relation.read relation in
+  Ok
+    ( tuples
+    |> List.map (fun tuple -> BatMap.String.find "title" tuple.Concepts.Tuple.attributes)
+    |> List.sort compare )
+
 module Storage = struct
   module type CONFIGURATOR = sig
     val configure : string -> Rnt.Concepts.Configuration.term
@@ -40,21 +49,13 @@ module Storage = struct
 
     let relation conn attributes tuples =
       let open Utilities.Result in
-      let* value =
-        SI.with_transaction conn (fun tx ->
-            let* schematics = store_schema tx attributes in
-            let* _ = SR.TupleSet.empty_under tx in
-            let* node =
-              List.fold_left
-                (fun node tuple ->
-                  let* node = node in
-                  SR.TupleSet.insert tx (Concepts.Tuple.hash tuple) tuple node )
-                (Ok SR.TupleSet.empty) tuples
-            in
-            let relation = {SR.schematics; tuples= SR.TupleSet.hash_of node} in
-            let* _ = SI.store_blob tx (SR.encode relation) in
-            Ok relation )
+      let description =
+        BatMap.String.of_list
+          (List.map
+             (fun a -> a, {Protocols.Schematics.domain= "string"; provenance= []})
+             attributes )
       in
+      let* value = SI.with_transaction conn (fun tx -> SR.store tx description tuples) in
       SR.load conn value
 
     let with_connection f dir () =

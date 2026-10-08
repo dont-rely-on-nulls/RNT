@@ -22,21 +22,25 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
         let open Rnt.Kernel.Path in
         let* root = I.initialize conn in
         let* branch = B.make conn in
-        let* _ = update root ("branch" @/ this) "master" None (Some branch) in
+        let* _ = update root ("system" @/ "branch" @/ this) "client" None (Some branch) in
         let* tip = address branch in
         let session = Session.make conn {Protocols.Session.snapshot= tip} in
-        let* _ = update root ("session" @/ this) "client" None (Some session) in
-        let library = "session" @/ "client" @/ "branch" @/ "multigroup" @/ "library" @/ this in
+        let* _ = update root ("system" @/ "session" @/ this) "client" None (Some session) in
+        let library =
+          "system" @/ "session" @/ "client" @/ "branch" @/ "multigroup" @/ "library" @/ this
+        in
         let before = finds root library in
         let* multigroup = M.make conn in
         let* branch' = assoc branch ("multigroup" @/ this) "library" (Some multigroup) in
-        let* _ = update root ("branch" @/ this) "master" (Some branch) (Some branch') in
+        let* _ = update root ("system" @/ "branch" @/ this) "client" (Some branch) (Some branch') in
         let unchanged = finds root library in
         let* tip' = address branch' in
         let* interface = Protocols.Handle.require Protocols.Session.from session in
         Protocols.Session.pin interface {Protocols.Session.snapshot= tip'};
         let after = finds root library in
-        let* pinned = lookup root ("session" @/ "client" @/ "branch" @/ this) |> fmap address in
+        let* pinned =
+          lookup root ("system" @/ "session" @/ "client" @/ "branch" @/ this) |> fmap address
+        in
         let refused =
           assoc session ("branch" @/ "multigroup" @/ this) "other" (Some multigroup)
           |> Result.is_error
@@ -60,9 +64,9 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
         let* branch = B.make conn in
         let* tip = address branch in
         let session = Session.make conn {Protocols.Session.snapshot= tip} in
-        let* _ = update root ("session" @/ this) "client" None (Some session) in
-        let client = "session" @/ "client" @/ this in
-        let* _ = lookup root ("session" @/ "client" @/ "branch" @/ this) in
+        let* _ = update root ("system" @/ "session" @/ this) "client" None (Some session) in
+        let client = "system" @/ "session" @/ "client" @/ this in
+        let* _ = lookup root ("system" @/ "session" @/ "client" @/ "branch" @/ this) in
         let* held = lookup root client in
         let refused = finds root client in
         Protocols.Handle.release held;

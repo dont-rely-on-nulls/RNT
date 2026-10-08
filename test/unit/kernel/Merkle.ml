@@ -126,12 +126,42 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
   (* let determinism _conn = *)
   (*   () *)
 
+  (* Enough keys for the tree to grow trunks, so removal reaches through
+     them and empties whole leaves. *)
+  let removal conn =
+    let kept, gone, keys, emptied =
+      begin
+        let open Utilities.Result in
+        let* tx = S.start conn in
+        let key i = Printf.sprintf "k%03d" i in
+        let all = List.init 300 key in
+        let* full = List.fold_left (fun node k -> fmap (T.insert tx k k) node) (Ok T.empty) all in
+        let evens = List.filteri (fun i _ -> i mod 2 = 0) all in
+        let* half = List.fold_left (fun node k -> fmap (T.remove tx k) node) (Ok full) evens in
+        let* kept = T.lookup tx (key 1) half in
+        let* gone = T.lookup tx (key 2) half in
+        let* keys = T.keys tx half in
+        let* none = List.fold_left (fun node k -> fmap (T.remove tx k) node) (Ok half) all in
+        let* () = S.abort tx in
+        Ok (kept, gone, BatFingerTree.to_list keys, T.hash_of none)
+      end
+      |> Helpers.condition_as_failure
+    in
+    check (option string) "a key not removed stays" (Some "k001") kept;
+    check (option string) "a removed key is gone" None gone;
+    check (list string) "exactly the odd keys remain"
+      (List.init 150 (fun i -> Printf.sprintf "k%03d" ((2 * i) + 1)))
+      keys;
+    check bool "removing every key leaves the empty tree" true
+      (Concepts.Hash.hash_equals emptied (T.hash_of T.empty))
+
   let suite =
     ( "kernel/merkle",
       [ test_case "insert-and-lookup" `Quick (H.with_connection insert_and_lookup "merkle-test");
         test_case "batching" `Quick (H.with_connection batching "merkle-test");
         test_case "persistence" `Quick (H.with_connection persistence "merkle-test");
-        test_case "iteration" `Quick (H.with_connection iteration "merkle-test") ] )
+        test_case "iteration" `Quick (H.with_connection iteration "merkle-test");
+        test_case "removal" `Quick (H.with_connection removal "merkle-test") ] )
 end
 
 module LMDB = Make (Rnt.Backend.Storage.LMDB) (Helpers.Storage.LMDB_Configurator)
