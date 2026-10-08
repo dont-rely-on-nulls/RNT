@@ -40,7 +40,7 @@ let copy handle =
 let equal h1 h2 = Concepts.Hash.hash_equals (object_of h1)#hash (object_of h2)#hash
 let hash h = (object_of h)#hash
 let protocols h = (object_of h)#protocols
-let to_string h = (object_of h)#to_string
+let to_string h = let o = (object_of h) in "#<" ^ o#to_string ^ " " ^ (Concepts.Hash.to_hum_string o#hash) ^ ">"
 
 let release ({valid; _} as handle) =
   let o = object_of handle in
