@@ -74,11 +74,12 @@ let rec term_of_bencode =
 let encode term = bencode_of_term term |> Bencode.to_blob
 let decode code = Bencode.of_blob code |> Utilities.Result.fmap term_of_bencode
 
+(* a program is FOL's if its evaluator's language is, as Source has it *)
+let ours evaluator = snd (Kernel.Source.reference evaluator) = name
+
 let stored relation =
-  Protocols.Handle.into relation (function
-    | Kernel.EphemeralRelation.Stored {evaluator; code} -> Some (evaluator, code)
-    | _ -> None )
-  |> Option.map (fun stored -> Protocols.Handle.invoke stored Fun.id)
+  Kernel.EphemeralRelation.stored relation
+  |> Option.map (fun (evaluator, code, _) -> evaluator, code)
 
 (* TODO: To strenghten our checks for self references, we need to
    construct a graph and see raise a condition if there are self
@@ -95,7 +96,7 @@ let instantiate resolve =
         | Some (evaluator, code) ->
             Protocols.Handle.release relation;
             let identity = Concepts.Hash.hash_of_blob code in
-            if not (String.equal evaluator name) then Error (Error.foreign_program evaluator)
+            if not (ours evaluator) then Error (Error.foreign_program evaluator)
             else if List.exists (Concepts.Hash.hash_equals identity) expanding then
               Error (Error.cyclic_program identity)
             else
@@ -207,7 +208,7 @@ class evaluator =
           stored program )
       with
       | Some plan, _ -> Protocols.Handle.invoke plan execute
-      | None, Some (evaluator, _) when not (String.equal evaluator name) ->
+      | None, Some (evaluator, _) when not (ours evaluator) ->
           Error (Error.foreign_program evaluator)
       | None, Some (_, code) ->
           let* term = decode code in
