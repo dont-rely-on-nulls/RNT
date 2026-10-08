@@ -24,7 +24,7 @@ module Error = struct
       ("path" |=| Concepts.Value.String (to_string path))
 end
 
-let walking f g handle path =
+let walking ?missing f g handle path =
   let rec walk handle = function
     | [] -> g handle
     | x :: xs -> (
@@ -37,7 +37,8 @@ let walking f g handle path =
         in
         let* elem = Directory.find dir x in
         match elem with
-        | None -> Error (Error.path_not_found path)
+        | None -> (
+          match missing with Some m -> m () | None -> Error (Error.path_not_found path) )
         | Some elem -> f x handle (fun () -> walk elem xs) )
   in
   walk handle path
@@ -53,6 +54,13 @@ let releasing root handle f =
 
 let lookup handle path = walking (fun _ parent -> releasing handle parent) Result.ok handle path
 
+let find handle path =
+  walking
+    ~missing:(fun () -> Ok None)
+    (fun _ parent -> releasing handle parent)
+    (fun h -> Ok (Some h))
+    handle path
+
 let update handle path key reference value =
   let open Utilities.Result in
   let open Protocols in
@@ -60,6 +68,36 @@ let update handle path key reference value =
   releasing handle target (fun () ->
       let* registry = Handle.require Registry.from target in
       Registry.update registry key reference value )
+
+(* The changes at this object, and those beneath each child they reach. *)
+let split changes =
+  let here, below = List.partition (fun (path, _, _) -> path = []) changes in
+  let segments =
+    List.fold_left
+      (fun segments (path, _, _) ->
+        let x = List.hd path in
+        if List.mem x segments then segments else segments @ [x] )
+      [] below
+  in
+  let beneath x =
+    List.filter_map
+      (fun (path, key, value) ->
+        match path with y :: rest when y = x -> Some (rest, key, value) | _ -> None )
+      below
+  in
+  here, List.map (fun x -> x, beneath x) segments
+
+(* What is not there yet is handed over as a directory of what the
+   changes put in it, for its parent to store. *)
+let rec fresh changes =
+  let here, children = split changes in
+  Prototype.(
+    mixture
+      [ Directory.of_properties
+          ( List.filter_map (fun (_, key, value) -> Option.map (fun v -> key, v) value) here
+          @ List.map (fun (x, beneath) -> x, fresh beneath) children ) ] )
+
+let binds changes = List.exists (fun (_, _, value) -> Option.is_some value) changes
 
 (* Changes under the same name are applied to the child together, so
    every object on the way is derived once however many changes reach
@@ -73,35 +111,25 @@ let assoc_all handle changes =
     Ok (Handle.from a')
   in
   let rec apply prefix node changes =
-    let here, below = List.partition (fun (path, _, _) -> path = []) changes in
-    let segments =
-      List.fold_left
-        (fun segments (path, _, _) ->
-          let x = List.hd path in
-          if List.mem x segments then segments else segments @ [x] )
-        [] below
-    in
-    let beneath x =
-      List.filter_map
-        (fun (path, key, value) ->
-          match path with y :: rest when y = x -> Some (rest, key, value) | _ -> None )
-        below
-    in
+    let here, below = split changes in
+    let segments = List.map fst below in
     match List.find_opt (fun (_, key, _) -> List.mem key segments) here with
     | Some (_, key, _) -> Error (Error.overlapping_change (prefix @ [key]))
     | None ->
         let* children =
           List.map
-            (fun x ->
+            (fun (x, beneath) ->
               let* dir = Handle.require Directory.from node in
               let* found = Directory.find dir x in
               match found with
-              | None -> Error (Error.path_not_found (prefix @ [x]))
+              | None when binds beneath -> Ok [x, Some (fresh beneath)]
+              | None -> Ok []
               | Some child ->
-                  releasing handle child (fun () -> apply (prefix @ [x]) child (beneath x))
-                  |> Result.map (fun child' -> x, Some child') )
-            segments
+                  releasing handle child (fun () -> apply (prefix @ [x]) child beneath)
+                  |> Result.map (fun child' -> [x, Some child']) )
+            below
           |> Utilities.List.sequence
+          |> Result.map List.concat
         in
         (* each step derives from the last; only the steps in between are
            ours to release *)

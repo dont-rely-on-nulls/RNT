@@ -2,7 +2,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
   module SI = Storage.Make (S)
   module B = Branch.Make (S)
 
-  class session ?evaluators storage state =
+  class session storage state =
     object (self)
       inherit Lifecycle.exclusive
       inherit Identity.of_id
@@ -18,11 +18,10 @@ module Make (S : Abstract.Storage.STORAGE) = struct
         function
         | "branch" ->
             SI.with_read storage (fun tx ->
-                B.load ?evaluators tx storage (Atomic.get state).Protocols.Session.snapshot )
+                B.load tx storage (Atomic.get state).Protocols.Session.snapshot )
             |> Result.map Option.some
         | _ -> Ok None
     end
 
-  let make ?evaluators storage state =
-    new session ?evaluators storage state |> Protocols.Handle.make
+  let make storage state = new session storage state |> Protocols.Handle.make
 end

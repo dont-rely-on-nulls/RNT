@@ -47,24 +47,38 @@ module Associative = struct
 
   let update_only f = function None -> Error (Error.deletion_not_supported ()) | Some x -> f x
 
+  type 'tx admission = 'tx -> (Concepts.Hash.hash, Concepts.Condition.condition) result
+
   module OfTree (S : Abstract.Storage.STORAGE) (K : Merkle.KEY with type t = string) = struct
     module Tree = Merkle.Make (S) (K)
     module SI = Storage.Make (S)
 
-    let make ~storage ~constructor ~node =
+    (* A value with no address yet is [admit]ted: it is read here, before
+       the write begins, since reading it may itself need storage, and
+       stored by the write. *)
+    let make ?admit ~storage ~constructor ~node () =
       Protocols.Associative.make
       @@ object
            method update key value =
-             (* TODO: read-only transactions *)
+             let open Utilities.Result in
+             let open Protocols in
+             let* store =
+               match value with
+               | None -> Ok None
+               | Some h -> (
+                 match Addressable.from h, admit with
+                 | None, Some admit -> admit key h |> Result.map Option.some
+                 | _ ->
+                     let* addressable = Handle.require Addressable.from h in
+                     let addr = Addressable.address addressable in
+                     Ok (Some (fun _ -> Ok addr)) )
+             in
              SI.with_transaction storage (fun tx ->
-                 let open Utilities.Result in
-                 let open Protocols in
                  let* node' =
-                   match value with
+                   match store with
                    | None -> Tree.remove tx key node
-                   | Some h ->
-                       let* addressable = Handle.require Addressable.from h in
-                       let addr = Addressable.address addressable in
+                   | Some store ->
+                       let* addr = store tx in
                        Tree.insert tx key addr node
                  in
                  constructor node' )
@@ -92,10 +106,10 @@ module Directory = struct
     let make ~storage ~constructor ~node =
       Protocols.Directory.make
       @@ object
-           method list = SI.with_transaction storage (Fun.flip Tree.keys node)
+           method list = SI.with_read storage (Fun.flip Tree.keys node)
 
            method find k =
-             SI.with_transaction storage (fun tx -> Tree.lookup tx k node)
+             SI.with_read storage (fun tx -> Tree.lookup tx k node)
              |> Utilities.Result.fmap (function
                | None -> Ok None
                | Some x -> constructor x |> Result.map Option.some )

@@ -7,6 +7,10 @@ val to_list : t -> string list
 val to_string : t -> string
 val lookup : Protocols.Handle.t -> t -> (Protocols.Handle.t, Concepts.Condition.condition) result
 
+(** what [path] reaches, or [None] when some part of it is not there. *)
+val find :
+  Protocols.Handle.t -> t -> (Protocols.Handle.t option, Concepts.Condition.condition) result
+
 val update :
   Protocols.Handle.t ->
   t ->
@@ -25,7 +29,9 @@ val assoc :
   (Protocols.Handle.t, Concepts.Condition.condition) result
 
 (** every change of [assoc] at once: each object on the way is derived
-    once, so the changes to a branch land as one successor state. *)
+    once, so the changes to a branch land as one successor state. An
+    object on the way that is not there yet is handed to its parent as a
+    directory of what the changes put in it. *)
 val assoc_all :
   Protocols.Handle.t ->
   (t * string * Protocols.Handle.t option) list ->

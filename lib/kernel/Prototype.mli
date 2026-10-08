@@ -32,13 +32,23 @@ module Associative : sig
     Protocols.Handle.t option ->
     (Protocols.Handle.t, Concepts.Condition.condition) result
 
+  (** how a value is stored once a write has begun, giving its address. *)
+  type 'tx admission = 'tx -> (Concepts.Hash.hash, Concepts.Condition.condition) result
+
   module OfTree (S : Abstract.Storage.STORAGE) (K : Merkle.KEY with type t = string) : sig
     module Tree : module type of Merkle.Make (S) (K)
 
+    (** a value bound under a key must have an address, unless [admit]
+        can read it, before the write begins, into an admission. *)
     val make :
+      ?admit:
+        (string ->
+        Protocols.Handle.t ->
+        (S.transaction admission, Concepts.Condition.condition) result ) ->
       storage:S.connection ->
       constructor:(Tree.node -> (Protocols.Handle.t, Concepts.Condition.condition) result) ->
       node:Tree.node ->
+      unit ->
       Protocols.Handle.protocol
   end
 end

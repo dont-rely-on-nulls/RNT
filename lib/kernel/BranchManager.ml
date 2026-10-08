@@ -28,7 +28,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     let data = Concepts.Hash.blob_of_hash addr in
     S.put tx (S.Label label) data
 
-  class manager ?evaluators storage label head =
+  class manager ?root storage label head =
     object (self)
       inherit Lifecycle.null
       inherit Identity.of_id
@@ -51,7 +51,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
             let* head = Atomic.get head |> M.lookup tx key in
             match head with
             | None -> Ok None
-            | Some head -> B.load ?evaluators tx storage head |> Result.map Option.some )
+            | Some head -> B.load ?root tx storage head |> Result.map Option.some )
 
       method update key reference value =
         let open Utilities.Result in
@@ -92,14 +92,14 @@ module Make (S : Abstract.Storage.STORAGE) = struct
             | Error (Some e) -> Error e )
     end
 
-  let make ?evaluators storage label =
+  let make ?root storage label =
     let open Utilities.Result in
     SI.with_transaction storage (fun tx ->
         let* addr = root_for tx label in
         match addr with
-        | None -> Ok (new manager ?evaluators storage label M.empty |> Protocols.Handle.make)
+        | None -> Ok (new manager ?root storage label M.empty |> Protocols.Handle.make)
         | Some addr ->
             let* head = M.find tx addr in
             let* head = Option.to_result ~none:(Error.invalid_root addr) head in
-            Ok (new manager ?evaluators storage label head |> Protocols.Handle.make) )
+            Ok (new manager ?root storage label head |> Protocols.Handle.make) )
 end

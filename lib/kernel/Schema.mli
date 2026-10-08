@@ -1,4 +1,5 @@
-(** A multigroup: its schemas, \multigroup\[m]\schema\[s]. *)
+(** A schema: its relations, \schema\[s]\relation\[r]. For now only a
+    namespace for them. *)
 module Make (S : Abstract.Storage.STORAGE) : sig
   include Merkle.VALUE
 
@@ -8,8 +9,10 @@ module Make (S : Abstract.Storage.STORAGE) : sig
     t ->
     (Protocols.Handle.t, Concepts.Condition.condition) result
 
-  (** a multigroup handed over with no address, as a directory holding its
-      schemas under \schema, to store once the write has begun. *)
+  (** a schema handed over with no address, as a directory holding its
+      relations under \relation, to store once the write has begun. A
+      relation with no address is stored as a program if it is one, and
+      as the tuples it holds if not. *)
   val admit :
     string ->
     Protocols.Handle.t ->

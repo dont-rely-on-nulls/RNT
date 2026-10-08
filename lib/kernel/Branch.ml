@@ -75,10 +75,10 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     MultigroupM.find tx branch.multigroups
     |> fmap (Option.to_result ~none:(Error.incomplete_branch branch.multigroups))
 
-  (* [evaluators] is the directory the stored programs of this state run
-     through; they read against this very state, so an earlier state
-     reads as it was. *)
-  class branch ?evaluators storage value node =
+  (* Given [root], the stored programs of this state run through the
+     evaluators registered under it, against this very state, so an
+     earlier state reads as it was. *)
+  class branch ?root storage value node =
     object (self)
       inherit Lifecycle.null
       method to_string = "branch"
@@ -94,7 +94,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
               let* _ = SI.store_blob tx (Representation.to_blob branch'') in
               node_of tx branch' )
         in
-        new branch ?evaluators storage branch'' node' |> Protocols.Handle.make |> Result.ok
+        new branch ?root storage branch'' node' |> Protocols.Handle.make |> Result.ok
 
       method private previous =
         match branch.previous with
@@ -108,16 +108,15 @@ module Make (S : Abstract.Storage.STORAGE) = struct
 
       method protocols : Protocols.Handle.protocol list =
         let bind =
-          Option.map
-            (fun evaluators -> Source.bind evaluators ~within:(Protocols.Handle.make {<>}))
-            evaluators
+          Option.map (fun root -> Source.bind root ~within:(Protocols.Handle.make {<>})) root
         in
         let multigroups =
           Prototype.mixture_of node (fun make node ->
               [ MMAddressable.make ~node:(MultigroupM.into node);
-                MMDirectory.make ~storage ~node ~constructor:(M.wrap ?bind storage);
-                MMAssociative.make ~storage ~node:(MultigroupM.into node) ~constructor:(fun node' ->
-                    MultigroupM.from node' |> make |> Result.ok ) ] )
+                MMDirectory.make ~storage ~node ~constructor:(M.load ?bind storage);
+                MMAssociative.make ~admit:M.admit ~storage ~node:(MultigroupM.into node)
+                  ~constructor:(fun node' -> MultigroupM.from node' |> make |> Result.ok)
+                  () ] )
         in
         let open Utilities.Result in
         Protocols.
@@ -148,18 +147,18 @@ module Make (S : Abstract.Storage.STORAGE) = struct
       method address = self#hash
     end
 
-  let load ?evaluators tx conn addr =
+  let load ?root tx conn addr =
     let open Utilities.Result in
     let* data = SI.get_req tx (S.Hash addr) in
     let* branch = Representation.of_blob data in
     let* node = node_of tx branch in
-    Ok (new branch ?evaluators conn branch node |> Protocols.Handle.make)
+    Ok (new branch ?root conn branch node |> Protocols.Handle.make)
 
-  let make ?evaluators conn =
+  let make conn =
     let open Utilities.Result in
     SI.with_transaction conn (fun tx ->
         let* empty = MultigroupM.empty_under tx in
         let branch = {multigroups= empty; previous= None} in
         let* _ = SI.store_blob tx (Representation.to_blob branch) in
-        Ok (new branch ?evaluators conn branch MultigroupM.empty |> Protocols.Handle.make) )
+        Ok (new branch conn branch MultigroupM.empty |> Protocols.Handle.make) )
 end
