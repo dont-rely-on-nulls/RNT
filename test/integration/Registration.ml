@@ -6,7 +6,6 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
   module I = Kernel.Initialization.Make (S)
   module B = Kernel.Branch.Make (S)
   module M = Kernel.Multigroup.Make (S)
-  module Sc = Kernel.Schema.Make (S)
   module E = Kernel.EphemeralRelation.Make (S)
 
   let book =
@@ -27,20 +26,18 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
     let open Utilities.Result in
     begin
       let* root = I.initialize ~evaluators:["fol", Evaluators.FOL.make ()] conn in
-      let* schema = Sc.make conn in
       let* relation = H.relation conn ["title"; "author"] [titled "SQL and Relational Theory"] in
       let* view =
         E.persist conn ~name:"shelf" ~evaluator:Evaluators.FOL.name
           ~code:Evaluators.FOL.(encode (Project (Base book, BatFingerTree.singleton "title")))
           (BatMap.String.singleton "title" {Protocols.Schematics.domain= "string"; provenance= []})
       in
-      let* schema =
-        Kernel.Path.(
-          assoc_all schema
-            ["relation" @/ this, "book", Some relation; "relation" @/ this, "shelf", Some view] )
-      in
       let* multigroup = M.make conn in
-      let* multigroup = Kernel.Path.(assoc multigroup ("schema" @/ this) "default" (Some schema)) in
+      let relations = Kernel.Path.("schema" @/ "default" @/ "relation" @/ this) in
+      let* multigroup =
+        Kernel.Path.assoc_all multigroup
+          [relations, "book", Some relation; relations, "shelf", Some view]
+      in
       let* branch = B.make conn in
       let* branch' =
         Kernel.Path.(assoc branch ("multigroup" @/ this) "library" (Some multigroup))

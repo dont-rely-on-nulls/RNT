@@ -102,7 +102,8 @@ let a_scope_reads_names_from_its_home () =
   check (option (list Helpers.value)) "what is not there is not found" None (found "stock");
   check
     (option (list Helpers.value))
-    "four parts name an attribute, not a relation" None (found "library:default:book:title");
+    "four parts name an attribute, not a relation" None
+    (found "library:default:book:title");
   let catalog = ok (K.Scope.catalog (ok (K.Scope.require scope))) in
   check (list string) "the catalog is every relation of the state"
     ["library:default:book"; "library:default:shelf"; "store:archive:old"; "store:default:stock"]
@@ -134,6 +135,26 @@ let a_stored_relation_is_viewed_and_a_program_run () =
   check bool "an unqualified name is the system's" true
     (Result.is_error (K.Source.run root ~language:"toy" ~within:root "that"))
 
+(* shelf, stored as a denial, says no book may be shelved *)
+let a_head_moves_only_to_a_valid_state () =
+  let root = fresh [] in
+  publish root ["denial:no-books", Some shelved];
+  let head = ok (K.Path.lookup root master) in
+  let proposed =
+    ok
+      (K.Path.assoc_all head
+         [ ( K.Path.("multigroup" @/ "library" @/ "schema" @/ "default" @/ "relation" @/ this),
+             "book",
+             Some (books ["Codd"]) ) ] )
+  in
+  check bool "a state with a book is judged invalid without landing" true
+    (Result.is_error (K.Denial.check proposed));
+  check bool "publishing it is refused" true
+    (Result.is_error
+       (K.Scope.publish root ~branch:"master" ~home:library ["book", Some (books ["Codd"])]) );
+  check bool "and the head stays" true
+    (C.Hash.hash_equals (address head) (address (ok (K.Path.lookup root master))))
+
 let suites () =
   [ ( "kernel/branch",
       [ test_case "reads-as-of-each-state" `Quick reads_as_of_each_state;
@@ -141,4 +162,6 @@ let suites () =
         test_case "unbinding-removes-a-relation" `Quick unbinding_removes_a_relation;
         test_case "a-scope-reads-names-from-its-home" `Quick a_scope_reads_names_from_its_home;
         test_case "a-stored-relation-is-viewed-and-a-program-run" `Quick
-          a_stored_relation_is_viewed_and_a_program_run ] ) ]
+          a_stored_relation_is_viewed_and_a_program_run;
+        test_case "a-head-moves-only-to-a-valid-state" `Quick a_head_moves_only_to_a_valid_state ] )
+  ]

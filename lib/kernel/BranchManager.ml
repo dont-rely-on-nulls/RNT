@@ -53,9 +53,12 @@ module Make (S : Abstract.Storage.STORAGE) = struct
             | None -> Ok None
             | Some head -> B.load ?root tx storage head |> Result.map Option.some )
 
+      (* a head moves only to a valid state, judged before the head is
+         taken, since judging may run stored programs that read storage *)
       method update key reference value =
         let open Utilities.Result in
         let open Protocols in
+        let* () = Option.fold ~none:(Ok ()) ~some:Denial.check value in
         SI.with_transaction storage (fun tx ->
             match
               Utilities.Atomic.mswap head (fun head ->
