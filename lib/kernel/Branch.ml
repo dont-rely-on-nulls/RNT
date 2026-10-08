@@ -115,8 +115,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
               [ MMAddressable.make ~node:(MultigroupM.into node);
                 MMDirectory.make ~storage ~node ~constructor:(M.load ?bind storage);
                 MMAssociative.make ~admit:M.admit ~storage ~node:(MultigroupM.into node)
-                  ~constructor:(fun node' -> MultigroupM.from node' |> make |> Result.ok)
-                  () ] )
+                  ~constructor:(fun node' -> MultigroupM.from node' |> make |> Result.ok ) ] )
         in
         let open Utilities.Result in
         Protocols.

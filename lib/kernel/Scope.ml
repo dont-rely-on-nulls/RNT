@@ -40,18 +40,6 @@ let attribute home relation text =
       Some a
   | _ -> None
 
-(* the names a directory lists, and what each reaches *)
-let children directory =
-  let open Utilities.Result in
-  let* listing = Protocols.Handle.require Protocols.Directory.from directory in
-  let* names = Protocols.Directory.list listing in
-  BatFingerTree.to_list names
-  |> List.map (fun name ->
-      let* found = Protocols.Directory.find listing name in
-      Ok (Option.map (fun child -> name, child) found) )
-  |> Utilities.List.sequence
-  |> Result.map (List.filter_map Fun.id)
-
 (* every relation of a branch state, as multigroup:schema:relation *)
 let catalog_of branch =
   let open Utilities.Result in
@@ -65,7 +53,7 @@ let catalog_of branch =
         let* names = Protocols.Directory.list listing in
         Ok (List.map (name prefix) (BatFingerTree.to_list names))
     | Some level, rest ->
-        let* named = children level in
+        let* named = Prototype.Directory.children level in
         List.map (fun (n, child) -> down (n :: prefix) child rest) named
         |> Utilities.List.sequence
         |> Result.map List.concat

@@ -1,12 +1,60 @@
 module Make (S : Abstract.Storage.STORAGE) = struct
   module SI = Storage.Make (S)
-  module Sc = Schema.Make (S)
-  module SchemaM = Merkle.Interface (S) (Merkle.StringKey) (Sc)
-  module SMAddressable = Prototype.Addressable.OfTree (S) (Merkle.StringKey)
-  module SMDirectory = Prototype.Directory.OfTree (S) (Merkle.StringKey) (Sc)
-  module SMAssociative = Prototype.Associative.OfTree (S) (Merkle.StringKey)
+  module R = SubstantialRelation.Make (S)
+  module E = EphemeralRelation.Make (S)
 
-  type t = {schemas: SchemaM.address}
+  (* A relation as a multigroup holds it. *)
+  module Entry = struct
+    module Stored = EphemeralRelation.Persisted.Representation
+
+    type t = Substantial of R.t | Ephemeral of EphemeralRelation.Persisted.t
+
+    let encode = function
+      | Substantial relation -> R.encode relation
+      | Ephemeral relation -> Stored.to_blob relation
+
+    let decode blob =
+      let open Utilities.Result in
+      let open Concepts.Encoding in
+      let* data = Bencode.of_blob blob in
+      match data with
+      | Bencode.Tagged (tag, _) when Char.equal tag Stored.tag ->
+          Stored.of_bencode data |> Result.map (fun relation -> Ephemeral relation)
+      | _ -> R.Representation.of_bencode data |> Result.map (fun relation -> Substantial relation)
+
+    let load ?bind storage = function
+      | Substantial relation -> R.load storage relation
+      | Ephemeral relation -> E.load ?bind storage relation
+
+    (* A program is stored as itself, to run whenever it is read; any
+       other relation is stored as the tuples it holds now. *)
+    let admit name h =
+      let open Utilities.Result in
+      let address entry = Concepts.Hash.hash_of_blob (encode entry) in
+      match EphemeralRelation.stored h with
+      | Some (evaluator, code, _) ->
+          let* description = Protocols.Relation.heading h in
+          Ok
+            (fun tx ->
+              let* record = E.store tx ~name ~evaluator ~code description in
+              Ok (address (Ephemeral record)) )
+      | None ->
+          let* description, tuples = Protocols.Relation.read h in
+          Ok
+            (fun tx ->
+              let* relation = R.store tx description tuples in
+              Ok (address (Substantial relation)) )
+  end
+
+  (* A schema is only a name: \schema\[s] is the tree of its relations,
+     with no record of its own. *)
+  module T = Merkle.Make (S) (Merkle.StringKey)
+  module RelationM = Merkle.Interface (S) (Merkle.StringKey) (Entry)
+  module TAddressable = Prototype.Addressable.OfTree (S) (Merkle.StringKey)
+  module TAssociative = Prototype.Associative.OfTree (S) (Merkle.StringKey)
+  module RMDirectory = Prototype.Directory.OfTree (S) (Merkle.StringKey) (Entry)
+
+  type t = {schemas: T.address}
 
   module Error = struct
     open Concepts.Condition
@@ -17,16 +65,13 @@ module Make (S : Abstract.Storage.STORAGE) = struct
          database corrupted?"
         empty
 
-    let incomplete_multigroup addr =
+    let incomplete addr =
       condition "incomplete-multigroup"
         "A stored multigroup is missing part of its expected structure. Is your storage corrupted?"
         ("address" |=| Concepts.Value.String (Concepts.Hash.to_hum_string addr))
   end
 
-  module rec Representation : (Concepts.Encoding.Record.S with type t = t) =
-    Concepts.Encoding.Record.Make (Body)
-
-  and Body : Concepts.Encoding.Record.BODY = struct
+  module Representation = Concepts.Encoding.Record.Make (struct
     type nonrec t = t
 
     let tag = '*'
@@ -41,15 +86,86 @@ module Make (S : Abstract.Storage.STORAGE) = struct
       let open Concepts.Encoding in
       let* schemas = Bencode.field "schemas" fields |> fmap Value.hash_of_bencode in
       Ok {schemas}
-  end
+  end)
 
   let encode = Representation.to_blob
   let decode = Representation.of_blob
 
-  let node_of tx multigroup =
+  let node_of tx addr =
     let open Utilities.Result in
-    SchemaM.find tx multigroup.schemas
-    |> fmap (Option.to_result ~none:(Error.incomplete_multigroup multigroup.schemas))
+    T.find tx addr |> fmap (Option.to_result ~none:(Error.incomplete addr))
+
+  (* What [h] holds under [property], each to store once the write has
+     begun, and the tree they make when it has. *)
+  let admissions property admit h =
+    let open Utilities.Result in
+    let* listing = Protocols.Handle.require Protocols.Directory.from h in
+    let* found = Protocols.Directory.find listing property in
+    let* children = Option.fold ~none:(Ok []) ~some:Prototype.Directory.children found in
+    List.map
+      (fun (name, child) ->
+        Prototype.Associative.admission admit name child |> Result.map (fun p -> name, p) )
+      children
+    |> Utilities.List.sequence
+
+  let tree_of tx admissions =
+    let open Utilities.Result in
+    let* _ = T.empty_under tx in
+    T.with_batch tx (fun () ->
+        List.fold_left
+          (fun node (name, store) ->
+            let* node = node in
+            let* addr = store tx in
+            T.insert tx name addr node )
+          (Ok T.empty) admissions )
+
+  let admit_schema _ h =
+    let open Utilities.Result in
+    let* relations = admissions "relation" Entry.admit h in
+    Ok (fun tx -> Result.map T.hash_of (tree_of tx relations))
+
+  let relations ?bind storage node =
+    Prototype.mixture_of node (fun make node ->
+        [ TAddressable.make ~node;
+          RMDirectory.make ~storage ~node:(RelationM.from node)
+            ~constructor:(Entry.load ?bind storage);
+          TAssociative.make ~admit:Entry.admit ~storage ~node ~constructor:(fun node' ->
+              Ok (make node') ) ] )
+
+  let rec schema ?bind storage node =
+    let open Utilities.Result in
+    Prototype.mixture
+      [ TAddressable.make ~node;
+        Prototype.Directory.of_properties ["relation", relations ?bind storage node];
+        Prototype.Associative.(
+          of_properties
+            [ ( "relation",
+                update_only (fun relations' ->
+                    let* a = Protocols.Handle.require Protocols.Addressable.from relations' in
+                    let* node' =
+                      SI.with_read storage (fun tx -> node_of tx (Protocols.Addressable.address a))
+                    in
+                    Ok (schema ?bind storage node') ) ) ] ) ]
+
+  let schemas ?bind storage node =
+    Prototype.mixture_of node (fun make node ->
+        [ TAddressable.make ~node;
+          Protocols.Directory.make
+            object
+              method list = SI.with_read storage (Fun.flip T.keys node)
+
+              method find name =
+                let open Utilities.Result in
+                SI.with_read storage (fun tx ->
+                    let* found = T.lookup tx name node in
+                    match found with
+                    | None -> Ok None
+                    | Some addr ->
+                        let* relations = node_of tx addr in
+                        Ok (Some (schema ?bind storage relations)) )
+            end;
+          TAssociative.make ~admit:admit_schema ~storage ~node ~constructor:(fun node' ->
+              Ok (make node') ) ] )
 
   class multigroup ?bind conn value node =
     object (self)
@@ -67,8 +183,8 @@ module Make (S : Abstract.Storage.STORAGE) = struct
         let open Utilities.Result in
         let* node' =
           SI.with_transaction storage (fun tx ->
-              let* _ = SI.store_blob tx (Representation.to_blob multigroup') in
-              node_of tx multigroup' )
+              let* _ = SI.store_blob tx (encode multigroup') in
+              node_of tx multigroup'.schemas )
         in
         new multigroup ?bind storage multigroup' node' |> Protocols.Handle.make |> Result.ok
 
@@ -83,68 +199,32 @@ module Make (S : Abstract.Storage.STORAGE) = struct
                         Handle.require Addressable.from node'
                         |> Result.map Addressable.address
                         |> fmap (fun addr -> self#deriving {schemas= addr}) ) ) ] );
-            Prototype.Directory.of_properties
-              [ ( "schema",
-                  Prototype.mixture_of node (fun make node ->
-                      [ SMAddressable.make ~node:(SchemaM.into node);
-                        SMDirectory.make ~storage ~node ~constructor:(Sc.load ?bind storage);
-                        SMAssociative.make ~admit:Sc.admit ~storage ~node:(SchemaM.into node)
-                          ~constructor:(fun node' -> SchemaM.from node' |> make |> Result.ok)
-                          () ] ) ) ] ]
+            Prototype.Directory.of_properties ["schema", schemas ?bind storage node] ]
 
-      method hash = Representation.to_blob multigroup |> Concepts.Hash.hash_of_blob
+      method hash = encode multigroup |> Concepts.Hash.hash_of_blob
       method address = self#hash
     end
 
   let load ?bind conn value =
     let open Utilities.Result in
-    let* node = SI.with_read conn (fun tx -> node_of tx value) in
+    let* node = SI.with_read conn (fun tx -> node_of tx value.schemas) in
     new multigroup ?bind conn value node |> Protocols.Handle.make |> Result.ok
 
   let make conn =
     let open Utilities.Result in
     SI.with_transaction conn (fun tx ->
-        let* empty = SchemaM.empty_under tx in
+        let* empty = T.empty_under tx in
         let multigroup = {schemas= empty} in
-        let* _ = SI.store_blob tx (Representation.to_blob multigroup) in
-        new multigroup conn multigroup SchemaM.empty |> Protocols.Handle.make |> Result.ok )
+        let* _ = SI.store_blob tx (encode multigroup) in
+        new multigroup conn multigroup T.empty |> Protocols.Handle.make |> Result.ok )
 
   (* Handed over as the tree shows one, a directory holding its schemas
      under \schema, a multigroup not stored yet is stored with them. *)
   let admit _ h =
     let open Utilities.Result in
-    let* listing = Protocols.Handle.require Protocols.Directory.from h in
-    let* schemas = Protocols.Directory.find listing "schema" in
-    let* schemas =
-      match schemas with
-      | None -> Ok []
-      | Some schemas ->
-          let* listing = Protocols.Handle.require Protocols.Directory.from schemas in
-          let* names = Protocols.Directory.list listing in
-          BatFingerTree.to_list names
-          |> List.filter_map (fun name ->
-              match Protocols.Directory.find listing name with
-              | Ok None -> None
-              | Error c -> Some (Error c)
-              | Ok (Some schema) -> (
-                match Protocols.Addressable.from schema with
-                | Some a ->
-                    let addr = Protocols.Addressable.address a in
-                    Some (Ok (name, fun _ -> Ok addr))
-                | None -> Some (Sc.admit name schema |> Result.map (fun p -> name, p)) ) )
-          |> Utilities.List.sequence
-    in
+    let* schemas = admissions "schema" admit_schema h in
     Ok
       (fun tx ->
-        let* _ = SchemaM.empty_under tx in
-        let* node =
-          SchemaM.with_batch tx (fun () ->
-              List.fold_left
-                (fun node (name, store) ->
-                  let* node = node in
-                  let* addr = store tx in
-                  SchemaM.Tree.insert tx name addr (SchemaM.into node) |> Result.map SchemaM.from )
-                (Ok SchemaM.empty) schemas )
-        in
-        SI.store_blob tx (Representation.to_blob {schemas= SchemaM.hash_of node}) )
+        let* node = tree_of tx schemas in
+        SI.store_blob tx (encode {schemas= T.hash_of node}) )
 end

@@ -49,29 +49,29 @@ module Associative = struct
 
   type 'tx admission = 'tx -> (Concepts.Hash.hash, Concepts.Condition.condition) result
 
+  (* A value with no address yet is [admit]ted: it is read here, before
+     the write begins, since reading it may itself need storage, and
+     stored by the write. *)
+  let admission admit key h =
+    match Protocols.Addressable.from h with
+    | Some a ->
+        let addr = Protocols.Addressable.address a in
+        Ok (fun _ -> Ok addr)
+    | None -> admit key h
+
   module OfTree (S : Abstract.Storage.STORAGE) (K : Merkle.KEY with type t = string) = struct
     module Tree = Merkle.Make (S) (K)
     module SI = Storage.Make (S)
 
-    (* A value with no address yet is [admit]ted: it is read here, before
-       the write begins, since reading it may itself need storage, and
-       stored by the write. *)
-    let make ?admit ~storage ~constructor ~node () =
+    let make ~admit ~storage ~constructor ~node =
       Protocols.Associative.make
       @@ object
            method update key value =
              let open Utilities.Result in
-             let open Protocols in
              let* store =
                match value with
                | None -> Ok None
-               | Some h -> (
-                 match Addressable.from h, admit with
-                 | None, Some admit -> admit key h |> Result.map Option.some
-                 | _ ->
-                     let* addressable = Handle.require Addressable.from h in
-                     let addr = Addressable.address addressable in
-                     Ok (Some (fun _ -> Ok addr)) )
+               | Some h -> admission admit key h |> Result.map Option.some
              in
              SI.with_transaction storage (fun tx ->
                  let* node' =
@@ -94,6 +94,17 @@ module Directory = struct
          method list = Ok (BatMap.keys props |> BatFingerTree.of_enum)
          method find k = Ok (BatMap.find_opt k props)
        end
+
+  let children directory =
+    let open Utilities.Result in
+    let* listing = Protocols.Handle.require Protocols.Directory.from directory in
+    let* names = Protocols.Directory.list listing in
+    BatFingerTree.to_list names
+    |> List.map (fun name ->
+        let* found = Protocols.Directory.find listing name in
+        Ok (Option.map (fun child -> name, child) found) )
+    |> Utilities.List.sequence
+    |> Result.map (List.filter_map Fun.id)
 
   module OfTree
       (S : Abstract.Storage.STORAGE)

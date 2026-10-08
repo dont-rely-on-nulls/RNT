@@ -77,10 +77,6 @@ let decode code = Bencode.of_blob code |> Utilities.Result.fmap term_of_bencode
 (* a program is FOL's if its evaluator's language is, as Source has it *)
 let ours evaluator = snd (Kernel.Source.reference evaluator) = name
 
-let stored relation =
-  Kernel.EphemeralRelation.stored relation
-  |> Option.map (fun (evaluator, code, _) -> evaluator, code)
-
 (* TODO: To strenghten our checks for self references, we need to
    construct a graph and see raise a condition if there are self
    references. We partially do that here with the program calling
@@ -91,9 +87,9 @@ let instantiate resolve =
   let rec bind expanding = function
     | Base reference -> (
         let* relation = resolve reference in
-        match stored relation with
+        match Kernel.EphemeralRelation.stored relation with
         | None -> Ok (Base relation)
-        | Some (evaluator, code) ->
+        | Some (evaluator, code, _) ->
             Protocols.Handle.release relation;
             let identity = Concepts.Hash.hash_of_blob code in
             if not (ours evaluator) then Error (Error.foreign_program evaluator)
@@ -205,12 +201,12 @@ class evaluator =
       let open Utilities.Result in
       match
         ( Protocols.Handle.into program (function Plan plan -> Some plan | _ -> None),
-          stored program )
+          Kernel.EphemeralRelation.stored program )
       with
       | Some plan, _ -> Protocols.Handle.invoke plan execute
-      | None, Some (evaluator, _) when not (ours evaluator) ->
+      | None, Some (evaluator, _, _) when not (ours evaluator) ->
           Error (Error.foreign_program evaluator)
-      | None, Some (_, code) ->
+      | None, Some (_, code, _) ->
           let* term = decode code in
           let* plan = instantiate (Kernel.Path.lookup within) term in
           execute plan

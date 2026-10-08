@@ -73,11 +73,7 @@ let update handle path key reference value =
 let split changes =
   let here, below = List.partition (fun (path, _, _) -> path = []) changes in
   let segments =
-    List.fold_left
-      (fun segments (path, _, _) ->
-        let x = List.hd path in
-        if List.mem x segments then segments else segments @ [x] )
-      [] below
+    List.sort_uniq String.compare (List.map (fun (path, _, _) -> List.hd path) below)
   in
   let beneath x =
     List.filter_map

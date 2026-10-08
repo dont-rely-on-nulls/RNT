@@ -6,6 +6,10 @@ val mixture : Protocols.Handle.protocol list -> Protocols.Handle.t
 module Directory : sig
   val of_properties : (string * Protocols.Handle.t) list -> Protocols.Handle.protocol
 
+  (** the names a directory lists, and what each reaches. *)
+  val children :
+    Protocols.Handle.t -> ((string * Protocols.Handle.t) list, Concepts.Condition.condition) result
+
   module OfTree
       (S : Abstract.Storage.STORAGE)
       (K : Merkle.KEY with type t = string)
@@ -35,20 +39,26 @@ module Associative : sig
   (** how a value is stored once a write has begun, giving its address. *)
   type 'tx admission = 'tx -> (Concepts.Hash.hash, Concepts.Condition.condition) result
 
+  (** a value with an address is stored as that address; [admit] reads
+      one with none, before the write begins, into an admission. *)
+  val admission :
+    (string -> Protocols.Handle.t -> ('tx admission, Concepts.Condition.condition) result) ->
+    string ->
+    Protocols.Handle.t ->
+    ('tx admission, Concepts.Condition.condition) result
+
   module OfTree (S : Abstract.Storage.STORAGE) (K : Merkle.KEY with type t = string) : sig
     module Tree : module type of Merkle.Make (S) (K)
 
-    (** a value bound under a key must have an address, unless [admit]
-        can read it, before the write begins, into an admission. *)
+    (** a value bound under a key is stored as its [admission]. *)
     val make :
-      ?admit:
+      admit:
         (string ->
         Protocols.Handle.t ->
         (S.transaction admission, Concepts.Condition.condition) result ) ->
       storage:S.connection ->
       constructor:(Tree.node -> (Protocols.Handle.t, Concepts.Condition.condition) result) ->
       node:Tree.node ->
-      unit ->
       Protocols.Handle.protocol
   end
 end

@@ -142,8 +142,6 @@ type connection = {env: C.mdb_env_ptr; dbi: C.mdb_dbi}
 type transaction = {tx: C.mdb_txn_ptr; dbi: C.mdb_dbi; mutable active: bool}
 type address = Label of string | Hash of Concepts.Hash.hash
 
-let mapsize = 1 lsl 30
-
 let parse (c : Concepts.Configuration.term) =
   let open Concepts.Configuration in
   let open Utilities.Result in
@@ -171,7 +169,7 @@ let connect (c : Concepts.Configuration.term) =
   let* () = ensure_directory path (directory_mode mode) in
   begin
     let* env = C.mdb_env_create' () in
-    let* () = C.mdb_env_set_mapsize env (Unsigned.Size_t.of_int mapsize) in
+    let* () = C.mdb_env_set_mapsize env (Unsigned.Size_t.of_int (1 lsl 30)) in
     (* NOTLS ties readers to transactions rather than threads, so one
        thread can hold several read transactions (nested cursors). *)
     match C.mdb_env_open env path C.Flags.mdb_notls (PosixTypes.Mode.of_int mode) with
