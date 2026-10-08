@@ -17,14 +17,14 @@ class type obj = object
   method protocols : protocol list
 end
 
-type t = {valid: bool ref; refers_to: obj}
+type t = {valid: bool Atomic.t; refers_to: obj}
 type 'a interface = {handle: t; interface: 'a}
 
 let object_of {valid; refers_to} =
-  if !valid then refers_to else failwith "Attempt to dereference an invalid handle!"
+  if (Atomic.get valid) then refers_to else failwith "Attempt to dereference an invalid handle!"
 
 let interface_of handle interface = {handle; interface}
-let make o = {valid= ref true; refers_to= (o :> obj)}
+let make o = {valid= Atomic.make true; refers_to= (o :> obj)}
 let into handle f = List.find_map f (object_of handle)#protocols |> Option.map (interface_of handle)
 
 let invoke {handle; interface} f =
@@ -44,7 +44,7 @@ let to_string h = let o = (object_of h) in "#<" ^ o#to_string ^ " " ^ (Concepts.
 
 let release ({valid; _} as handle) =
   let o = object_of handle in
-  valid := false;
-  o#release
+  if Atomic.compare_and_set valid true false then
+    o#release
 
 let require f h = Option.to_result ~none:(Error.unimplemented_protocol (to_string h)) (f h)
