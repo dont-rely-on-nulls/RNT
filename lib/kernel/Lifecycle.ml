@@ -1,6 +1,7 @@
 class type lifecycle = object
   method reference : bool
   method release : unit
+  method is_managed : bool
 end
 
 class type virtual controlled_lifecycle = object
@@ -12,6 +13,7 @@ class null =
   object
     method reference = true
     method release = ()
+    method is_managed = false
   end
 
 class exclusive =
@@ -19,6 +21,7 @@ class exclusive =
     val taken = Atomic.make false
     method reference = Atomic.compare_and_set taken false true
     method release = Atomic.set taken false
+    method is_managed = true
   end
 
 class virtual counted =
@@ -27,6 +30,7 @@ class virtual counted =
     method virtual destroy : unit
     method reference = Atomic.incr references; true
     method release = if Atomic.fetch_and_add references (-1) = 1 then self#destroy
+    method is_managed = true
   end
 
 class retaining inner (owner : lifecycle) =

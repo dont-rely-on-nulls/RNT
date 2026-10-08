@@ -12,19 +12,37 @@ end
 class type obj = object
   method reference : bool
   method release : unit
+  method is_managed : bool
   method hash : Concepts.Hash.hash
   method to_string : string
   method protocols : protocol list
 end
 
-type t = {valid: bool Atomic.t; refers_to: obj}
+type t = {valid: bool Atomic.t; refers_to: obj; allocated_at: Printexc.raw_backtrace}
 type 'a interface = {handle: t; interface: 'a}
 
-let object_of {valid; refers_to} =
+let object_of {valid; refers_to; _} =
   if (Atomic.get valid) then refers_to else failwith "Attempt to dereference an invalid handle!"
 
+let to_string h = let o = (object_of h) in "#<" ^ o#to_string ^ " " ^ (Concepts.Hash.to_hum_string o#hash) ^ ">"
+
+let on_gc ({valid; refers_to; allocated_at} as h) =
+  (* TODO: get rid of this on release builds *)
+  if refers_to#is_managed && (Atomic.get valid) then begin
+      Logger.(log Warn ("Leaking handle to managed object " ^ (to_string h)));
+      Logger.(log Warn (BatString.nreplace
+                          (* bleh *)
+                          ~str:(Printexc.raw_backtrace_to_string allocated_at)
+                          ~sub:"Raised by primitive operation"
+                          ~by:"Allocated"))
+    end
+
 let interface_of handle interface = {handle; interface}
-let make o = {valid= Atomic.make true; refers_to= (o :> obj)}
+let make o =
+  let h = {valid= Atomic.make true; refers_to= (o :> obj); allocated_at= Printexc.get_callstack 256} in
+  Gc.finalise on_gc h;
+  h
+
 let into handle f = List.find_map f (object_of handle)#protocols |> Option.map (interface_of handle)
 
 let invoke {handle; interface} f =
@@ -40,7 +58,6 @@ let copy handle =
 let equal h1 h2 = Concepts.Hash.hash_equals (object_of h1)#hash (object_of h2)#hash
 let hash h = (object_of h)#hash
 let protocols h = (object_of h)#protocols
-let to_string h = let o = (object_of h) in "#<" ^ o#to_string ^ " " ^ (Concepts.Hash.to_hum_string o#hash) ^ ">"
 
 let release ({valid; _} as handle) =
   let o = object_of handle in

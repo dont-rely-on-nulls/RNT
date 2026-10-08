@@ -5,6 +5,7 @@ type protocol = ..
 class type obj = object
   method reference : bool
   method release : unit
+  method is_managed : bool
   method hash : Concepts.Hash.hash
   method to_string : string
   method protocols : protocol list

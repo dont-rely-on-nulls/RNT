@@ -1,6 +1,7 @@
 class type lifecycle = object
   method reference : bool
   method release : unit
+  method is_managed : bool
 end
 
 class type virtual controlled_lifecycle = object

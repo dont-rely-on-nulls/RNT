@@ -97,9 +97,9 @@ let releasing_releases_its_inputs () =
   let released = ref false in
   let input =
     object
-      method reference = true
-      method release = released := true
-      method hash = Concepts.Hash.hash_of_int 0
+      inherit Rnt.Kernel.Lifecycle.null
+      inherit Rnt.Kernel.Identity.of_id
+      method! release = released := true
       method to_string = "input"
       method protocols : Protocols.Handle.protocol list = []
     end
