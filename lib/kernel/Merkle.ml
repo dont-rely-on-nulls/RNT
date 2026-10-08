@@ -323,8 +323,6 @@ functor
           let* _ = persist tx new_root in
           Ok new_root
 
-    let remove tx key node = failwith "TODO" [@@warning "-27"]
-
     let rec fold_left tx f acc =
       let open Utilities.Result in
       function
@@ -342,6 +340,53 @@ functor
 
     let keys tx node =
       fold_left tx (fun acc k _ -> BatFingerTree.snoc acc k) BatFingerTree.empty node
+
+    let excise i ft =
+      let fl, fr = BatFingerTree.split_at ft i in
+      BatFingerTree.append fl (BatFingerTree.tail_exn fr)
+
+    (* Like an insert, produces a new tree where the path to the key
+       is copied without it, and a node it leaves empty goes from its
+       parent with the key that separated it. *)
+    let rec remove' tx key node =
+      let open Utilities.Result in
+      match node with
+      | Leaf {keys; values} ->
+          let i, _ = lookup1 keys key in
+          if BatFingerTree.size keys = 1 then Ok None
+          else
+            let leaf = Leaf {keys= excise i keys; values= excise i values} in
+            let* _ = persist tx leaf in
+            Ok (Some leaf)
+      | Trunk {keys; children} ->
+          let i, found = lookup1 keys key in
+          let i = if found then i + 1 else i in
+          let* child = BatFingerTree.get children i |> find' tx in
+          let* child = remove' tx key child in
+          let trunk =
+            match child with
+            | Some child -> Trunk {keys; children= BatFingerTree.set children i (hash_of child)}
+            | None -> Trunk {keys= excise (max 0 (i - 1)) keys; children= excise i children}
+          in
+          let* _ = persist tx trunk in
+          Ok (Some trunk)
+
+    let rec shrink tx = function
+      | Trunk {children; _} when BatFingerTree.size children = 1 ->
+          Utilities.Result.fmap (shrink tx) (find' tx (BatFingerTree.get children 0))
+      | node -> Ok node
+
+    let remove tx key node =
+      let open Utilities.Result in
+      let* present = lookup tx key node in
+      if Option.is_none present then Ok node
+      else
+        let* node = remove' tx key node in
+        match node with
+        | None ->
+            let* _ = persist tx empty in
+            Ok empty
+        | Some node -> shrink tx node
   end
 
 module type INTERFACE = functor (S : Abstract.Storage.STORAGE) (K : KEY) (V : VALUE) -> sig
