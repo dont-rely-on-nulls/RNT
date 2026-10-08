@@ -12,7 +12,7 @@ let resume k = Effect.Deep.continue k ()
 
 class producer_cursor produce finally =
   object (self)
-    inherit Lifecycle.null
+    inherit Lifecycle.counted
     inherit Identity.of_id
     method to_string = "producer-cursor"
     val mutable state : [`Fresh | `Live of (unit, step) Effect.Deep.continuation | `Done] = `Fresh
@@ -49,7 +49,7 @@ class producer_cursor produce finally =
       if limit <= 0 then Ok Protocols.Cursor.{tuples= BatFingerTree.empty; exhausted= state = `Done}
       else fill 0 BatFingerTree.empty
 
-    method! release = match state with `Fresh | `Live _ -> self#finish | `Done -> ()
+    method destroy = match state with `Fresh | `Live _ -> self#finish | `Done -> ()
   end
 
 let cursor_of ?finally produce = new producer_cursor produce finally |> Protocols.Handle.make
