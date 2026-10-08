@@ -37,10 +37,34 @@ let on_gc ({valid; refers_to; allocated_at} as h) =
                           ~by:"Allocated"))
     end
 
+let release ({valid; _} as handle) =
+  let o = object_of handle in
+  if Atomic.compare_and_set valid true false then
+    o#release
+
+type _ Effect.t += Autorelease: t -> unit Effect.t
+
+let with_autorelease f =
+  let hs = Atomic.make BatFingerTree.empty in
+  Fun.protect
+    ~finally:(fun () -> Atomic.get hs |> BatFingerTree.iter release)
+    (fun () ->
+      try f ()
+      with
+      | effect (Autorelease h), k ->
+         Utilities.Atomic.swap hs (fun ft -> BatFingerTree.snoc ft h)
+         |> ignore;
+         Effect.Deep.continue k ())
+
+let autorelease h =
+  try Effect.perform (Autorelease h)
+  with _ -> ()
+
 let interface_of handle interface = {handle; interface}
 let make o =
   let h = {valid= Atomic.make true; refers_to= (o :> obj); allocated_at= Printexc.get_callstack 256} in
   Gc.finalise on_gc h;
+  if o#is_managed then autorelease h;
   h
 
 let into handle f = List.find_map f (object_of handle)#protocols |> Option.map (interface_of handle)
@@ -58,10 +82,5 @@ let copy handle =
 let equal h1 h2 = Concepts.Hash.hash_equals (object_of h1)#hash (object_of h2)#hash
 let hash h = (object_of h)#hash
 let protocols h = (object_of h)#protocols
-
-let release ({valid; _} as handle) =
-  let o = object_of handle in
-  if Atomic.compare_and_set valid true false then
-    o#release
 
 let require f h = Option.to_result ~none:(Error.unimplemented_protocol (to_string h)) (f h)
