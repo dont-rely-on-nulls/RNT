@@ -134,6 +134,22 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     |> Result.map (fun description ->
         new substantial_relation connection relation description |> Protocols.Handle.make )
 
+  let store tx description tuples =
+    let open Utilities.Result in
+    let* schematics = store_schema tx description in
+    let* _ = TupleSet.empty_under tx in
+    let* node =
+      TupleSet.with_batch tx (fun () ->
+          List.fold_left
+            (fun node tuple ->
+              let* node = node in
+              TupleSet.insert tx (Concepts.Tuple.hash tuple) tuple node )
+            (Ok TupleSet.empty) tuples )
+    in
+    let relation = {schematics; tuples= TupleSet.hash_of node} in
+    let* _ = SI.store_blob tx (encode relation) in
+    Ok relation
+
   let instantiate connection ~schematics =
     let open Utilities.Result in
     let* relation =

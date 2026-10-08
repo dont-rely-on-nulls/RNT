@@ -18,15 +18,17 @@ let from handle = Handle.into handle (function Relation impl -> Some impl | _ ->
 let require handle = from handle |> Option.to_result ~none:(Error.not_a_relation ())
 let contains i tuple = Handle.invoke i (fun o -> o#contains tuple)
 
-let read relation =
+let heading relation =
   let open Utilities.Result in
   let* schematics = Handle.require Schematics.from relation in
   let* description = Schematics.describe schematics in
-  let* heading =
-    match description with
-    | Schematics.Relation heading -> Ok heading
-    | _ -> Error (Error.not_a_relation ())
-  in
+  match description with
+  | Schematics.Relation heading -> Ok heading
+  | _ -> Error (Error.not_a_relation ())
+
+let read relation =
+  let open Utilities.Result in
+  let* heading = heading relation in
   let* enumerable = Enumerable.require relation in
   let* cursor = Enumerable.enumerate enumerable in
   Fun.protect

@@ -7,7 +7,16 @@ type t =
       | `Temporary of Protocols.Schematics.attribute_description BatMap.String.t ];
     program: program option }
 
-type Protocols.Handle.protocol += Stored of {evaluator: string; code: Concepts.Blob.t}
+(* [name] is the relation a stored program defines, once it is read from
+   where it was stored under that name. *)
+type Protocols.Handle.protocol +=
+  | Stored of {evaluator: string; code: Concepts.Blob.t; name: string option}
+
+let stored handle =
+  Protocols.Handle.into handle (function
+    | Stored {evaluator; code; name} -> Some (evaluator, code, name)
+    | _ -> None )
+  |> Option.map (fun i -> Protocols.Handle.invoke i Fun.id)
 
 module Error = struct
   open Concepts.Condition
@@ -92,7 +101,9 @@ class ephemeral_relation ?code description value enumerate inputs =
       | Some record ->
           let stored =
             Option.fold ~none:protocols
-              ~some:(fun code -> Stored {evaluator= record.program.evaluator; code} :: protocols)
+              ~some:(fun code ->
+                Stored {evaluator= record.program.evaluator; code; name= Some record.name}
+                :: protocols )
               code
           in
           Protocols.Addressable.make
@@ -146,7 +157,9 @@ module Make (S : Abstract.Storage.STORAGE) = struct
       match bind with
       | None -> Error (Error.unbound_program name)
       | Some bind ->
-          let source = Prototype.mixture [Stored {evaluator= program.evaluator; code}] in
+          let source =
+            Prototype.mixture [Stored {evaluator= program.evaluator; code; name= Some name}]
+          in
           Result.bind (bind program.evaluator source) enumerate_owned
     in
     instantiate ~code description
@@ -160,12 +173,17 @@ module Make (S : Abstract.Storage.STORAGE) = struct
         let* code = SI.get_req tx (S.Hash record.program.code) in
         Ok (restore ?bind ~code record description) )
 
+  let store tx ~name ~evaluator ~code description =
+    let open Utilities.Result in
+    let* schematics = R.store_schema tx description in
+    let* address = SI.store_blob tx code in
+    let record = {Persisted.name; schematics; program= {evaluator; code= address}} in
+    let* _ = SI.store_blob tx (Persisted.Representation.to_blob record) in
+    Ok record
+
   let persist connection ~name ~evaluator ~code description =
     SI.with_transaction connection (fun tx ->
         let open Utilities.Result in
-        let* schematics = R.store_schema tx description in
-        let* address = SI.store_blob tx code in
-        let record = {Persisted.name; schematics; program= {evaluator; code= address}} in
-        let* _ = SI.store_blob tx (Persisted.Representation.to_blob record) in
+        let* record = store tx ~name ~evaluator ~code description in
         Ok (restore ~code record description) )
 end
