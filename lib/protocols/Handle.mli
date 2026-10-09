@@ -17,6 +17,7 @@ val invoke : 'a interface -> ('a -> 'b) -> 'b
 val copy : t -> t option
 val equal : t -> t -> bool
 val release : t -> unit
+val releasing : t -> (unit -> 'a) -> 'a
 val hash : t -> Concepts.Hash.hash
 val protocols : t -> protocol list
 val to_string : t -> string

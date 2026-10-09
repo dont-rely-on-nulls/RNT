@@ -54,7 +54,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
   module TAssociative = Prototype.Associative.OfTree (S) (Merkle.StringKey)
   module RMDirectory = Prototype.Directory.OfTree (S) (Merkle.StringKey) (Entry)
 
-  type t = {schemas: T.address}
+  type t = {schemas: T.address; denials: T.address}
 
   module Error = struct
     open Concepts.Condition
@@ -77,15 +77,16 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     let tag = '*'
     let malformed = Error.malformed_multigroup
 
-    let fields {schemas} =
+    let fields {schemas; denials} =
       let open Concepts.Encoding in
-      ["schemas", Value.bencode_of_hash schemas]
+      ["schemas", Value.bencode_of_hash schemas; "denials", Value.bencode_of_hash denials]
 
     let of_fields fields =
       let open Utilities.Result in
       let open Concepts.Encoding in
       let* schemas = Bencode.field "schemas" fields |> fmap Value.hash_of_bencode in
-      Ok {schemas}
+      let* denials = Bencode.field "denials" fields |> fmap Value.hash_of_bencode in
+      Ok {schemas; denials}
   end)
 
   let encode = Representation.to_blob
@@ -167,13 +168,34 @@ module Make (S : Abstract.Storage.STORAGE) = struct
           TAssociative.make ~admit:admit_schema ~storage ~node ~constructor:(fun node' ->
               Ok (make node') ) ] )
 
-  class multigroup ?bind conn value node =
+  let trees tx {schemas; denials} =
+    let open Utilities.Result in
+    let* schemas = node_of tx schemas in
+    let* denials = node_of tx denials in
+    Ok (schemas, denials)
+
+  let held (name, relation) =
+    let open Utilities.Result in
+    Protocols.Handle.releasing relation (fun () ->
+        let* enumerable = Protocols.Enumerable.require relation in
+        let* cursor = Protocols.Enumerable.enumerate enumerable in
+        Protocols.Handle.releasing cursor (fun () ->
+            let* scan = Protocols.Cursor.require cursor in
+            let* first = Protocols.Cursor.next scan in
+            match first with
+            | None -> Ok []
+            | Some tuple ->
+                let* rest = Protocols.Cursor.drain scan () in
+                Ok [name, tuple :: BatFingerTree.to_list rest] ) )
+
+  class multigroup ?bind conn value schema_tree denial_tree =
     object (self)
       inherit Lifecycle.null
       method to_string = "multigroup"
       val multigroup = value
       val storage = conn
-      val node = node (* FIXME: see the comment on Branch.ml *)
+      val schema_tree = schema_tree (* FIXME: see the comment on Branch.ml *)
+      val denial_tree = denial_tree
 
       (* TODO: Add later to the lifecycle management, accounting for
          derived instances. Callers must release the previous handle
@@ -181,25 +203,37 @@ module Make (S : Abstract.Storage.STORAGE) = struct
          last reference is released. *)
       method deriving multigroup' =
         let open Utilities.Result in
-        let* node' =
+        let* schemas', denials' =
           SI.with_transaction storage (fun tx ->
               let* _ = SI.store_blob tx (encode multigroup') in
-              node_of tx multigroup'.schemas )
+              trees tx multigroup' )
         in
-        new multigroup ?bind storage multigroup' node' |> Protocols.Handle.make |> Result.ok
+        new multigroup ?bind storage multigroup' schemas' denials'
+        |> Protocols.Handle.make
+        |> Result.ok
+
+      method check =
+        let open Utilities.Result in
+        let* named = Prototype.Directory.children (relations ?bind storage denial_tree) in
+        List.map held named |> Utilities.List.sequence |> Result.map List.concat
 
       method protocols : Protocols.Handle.protocol list =
         let open Utilities.Result in
+        let derive f node' =
+          Protocols.Handle.require Protocols.Addressable.from node'
+          |> Result.map Protocols.Addressable.address
+          |> fmap (fun addr -> self#deriving (f addr))
+        in
         Protocols.
           [ Addressable.make self;
+            Admission.make self;
             Prototype.Associative.(
               of_properties
-                [ ( "schema",
-                    update_only (fun node' ->
-                        Handle.require Addressable.from node'
-                        |> Result.map Addressable.address
-                        |> fmap (fun addr -> self#deriving {schemas= addr}) ) ) ] );
-            Prototype.Directory.of_properties ["schema", schemas ?bind storage node] ]
+                [ "schema", update_only (derive (fun addr -> {multigroup with schemas= addr}));
+                  "denial", update_only (derive (fun addr -> {multigroup with denials= addr})) ] );
+            Prototype.Directory.of_properties
+              [ "schema", schemas ?bind storage schema_tree;
+                "denial", relations ?bind storage denial_tree ] ]
 
       method hash = encode multigroup |> Concepts.Hash.hash_of_blob
       method address = self#hash
@@ -207,24 +241,27 @@ module Make (S : Abstract.Storage.STORAGE) = struct
 
   let load ?bind conn value =
     let open Utilities.Result in
-    let* node = SI.with_read conn (fun tx -> node_of tx value.schemas) in
-    new multigroup ?bind conn value node |> Protocols.Handle.make |> Result.ok
+    let* schemas, denials = SI.with_read conn (fun tx -> trees tx value) in
+    new multigroup ?bind conn value schemas denials |> Protocols.Handle.make |> Result.ok
 
   let make conn =
     let open Utilities.Result in
     SI.with_transaction conn (fun tx ->
         let* empty = T.empty_under tx in
-        let multigroup = {schemas= empty} in
+        let multigroup = {schemas= empty; denials= empty} in
         let* _ = SI.store_blob tx (encode multigroup) in
-        new multigroup conn multigroup T.empty |> Protocols.Handle.make |> Result.ok )
+        new multigroup conn multigroup T.empty T.empty |> Protocols.Handle.make |> Result.ok )
 
   (* Handed over as the tree shows one, a directory holding its schemas
-     under \schema, a multigroup not stored yet is stored with them. *)
+     under \schema and its denials under \denial, a multigroup not stored
+     yet is stored with them. *)
   let admit _ h =
     let open Utilities.Result in
     let* schemas = admissions "schema" admit_schema h in
+    let* denials = admissions "denial" Entry.admit h in
     Ok
       (fun tx ->
-        let* node = tree_of tx schemas in
-        SI.store_blob tx (encode {schemas= T.hash_of node}) )
+        let* schemas = tree_of tx schemas in
+        let* denials = tree_of tx denials in
+        SI.store_blob tx (encode {schemas= T.hash_of schemas; denials= T.hash_of denials}) )
 end

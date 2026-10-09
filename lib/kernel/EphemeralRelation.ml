@@ -87,9 +87,7 @@ class ephemeral_relation ?code description value enumerate inputs =
     method contains (tuple : Concepts.Tuple.t) =
       let open Utilities.Result in
       let* cursor = self#enumerate in
-      Fun.protect
-        ~finally:(fun () -> Protocols.Handle.release cursor)
-        (fun () ->
+      Protocols.Handle.releasing cursor (fun () ->
           let* scan = Protocols.Cursor.require cursor in
           Protocols.Cursor.exists scan (fun member ->
               Concepts.Hash.hash_equals (Concepts.Tuple.hash member) (Concepts.Tuple.hash tuple) ) )

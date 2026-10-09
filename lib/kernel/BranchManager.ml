@@ -6,7 +6,23 @@ module Error = struct
       "The root hash for the database state is missing from the backend. Either your storage is \
        corrupted, or this is a bug in RNT!"
       ("hash" |=| Concepts.Value.String (Concepts.Hash.to_hum_string head))
+
+  let refused violations =
+    condition "refused" "The state is not admitted: a denial in it holds tuples"
+      (List.fold_left
+         (fun ps (path, tuples) ->
+           ps
+           & path
+             |=| Concepts.Value.String
+                   (String.concat "; " (List.map Concepts.Tuple.to_string tuples)) )
+         empty violations )
 end
+
+let admitted state =
+  let open Utilities.Result in
+  let* admission = Protocols.Admission.require state in
+  let* violations = Protocols.Admission.check admission in
+  if violations = [] then Ok () else Error (Error.refused violations)
 
 module Make (S : Abstract.Storage.STORAGE) = struct
   module M = Merkle.Make (S) (Merkle.StringKey)
@@ -53,12 +69,12 @@ module Make (S : Abstract.Storage.STORAGE) = struct
             | None -> Ok None
             | Some head -> B.load ?root tx storage head |> Result.map Option.some )
 
-      (* a head moves only to a valid state, judged before the head is
+      (* a head moves only to an admitted state, judged before the head is
          taken, since judging may run stored programs that read storage *)
       method update key reference value =
         let open Utilities.Result in
         let open Protocols in
-        let* () = Option.fold ~none:(Ok ()) ~some:Denial.check value in
+        let* () = Option.fold ~none:(Ok ()) ~some:admitted value in
         SI.with_transaction storage (fun tx ->
             match
               Utilities.Atomic.mswap head (fun head ->

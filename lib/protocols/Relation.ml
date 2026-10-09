@@ -31,9 +31,7 @@ let read relation =
   let* heading = heading relation in
   let* enumerable = Enumerable.require relation in
   let* cursor = Enumerable.enumerate enumerable in
-  Fun.protect
-    ~finally:(fun () -> Handle.release cursor)
-    (fun () ->
+  Handle.releasing cursor (fun () ->
       let* scan = Cursor.require cursor in
       let* tuples = Cursor.drain scan () in
       Ok (heading, BatFingerTree.to_list tuples) )

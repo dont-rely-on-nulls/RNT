@@ -74,9 +74,7 @@ let bind root ~within evaluator program =
       (fun directory -> Path.lookup directory Path.(language @/ this))
     |> Result.map_error (fun _ -> Error.no_evaluator evaluator)
   in
-  Fun.protect
-    ~finally:(fun () -> Protocols.Handle.release found)
-    (fun () ->
+  Protocols.Handle.releasing found (fun () ->
       let* found = Protocols.Evaluator.require found in
       Protocols.Evaluator.invoke found program ~within )
 

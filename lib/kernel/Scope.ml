@@ -21,6 +21,7 @@ let relations {multigroup; schema} =
   Path.("multigroup" @/ multigroup @/ "schema" @/ schema @/ "relation" @/ this)
 
 let path home relation = Path.(of_list (to_list (relations home) @ [relation]))
+let denial multigroup = Path.("multigroup" @/ multigroup @/ "denial" @/ this)
 
 (* A name leaves out, from the left, what it shares with its home. *)
 let resolve home text =
@@ -112,12 +113,16 @@ module Error = struct
       "A relation is named relation, schema:relation or multigroup:schema:relation"
       ("name" |=| Concepts.Value.String name)
 
+  let malformed_denial name =
+    condition "malformed-name" "A denial is named denial or multigroup:denial"
+      ("name" |=| Concepts.Value.String name)
+
   let moved branch =
     condition "serialization-conflict" "The branch moved on while this commit was made; retry it"
       ("branch" |=| Concepts.Value.String branch)
 end
 
-let publish root ~branch ~home bindings =
+let publish ?(denials = []) root ~branch ~home bindings =
   let open Utilities.Result in
   let* changes =
     List.map
@@ -128,6 +133,17 @@ let publish root ~branch ~home bindings =
       bindings
     |> Utilities.List.sequence
   in
+  let* denied =
+    List.map
+      (fun (name, v) ->
+        match String.split_on_char ':' name with
+        | [d] when d <> "" -> Ok (denial home.multigroup, d, v)
+        | [m; d] when m <> "" && d <> "" -> Ok (denial m, d, v)
+        | _ -> Error (Error.malformed_denial name) )
+      denials
+    |> Utilities.List.sequence
+  in
+  let changes = changes @ denied in
   if List.is_empty changes then Ok ()
   else
     let* state = Path.lookup root Path.("system" @/ "branch" @/ branch @/ this) in

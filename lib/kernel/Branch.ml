@@ -118,8 +118,24 @@ module Make (S : Abstract.Storage.STORAGE) = struct
                   ~constructor:(fun node' -> MultigroupM.from node' |> make |> Result.ok ) ] )
         in
         let open Utilities.Result in
+        let admits (m, multigroup) =
+          Protocols.Handle.releasing multigroup (fun () ->
+              let* admission = Protocols.Admission.require multigroup in
+              let* violations = Protocols.Admission.check admission in
+              Ok
+                (List.map
+                   (fun (d, tuples) ->
+                     Path.(to_string ("multigroup" @/ m @/ "denial" @/ d @/ this)), tuples )
+                   violations ) )
+        in
         Protocols.
           [ Addressable.make self;
+            Admission.make
+              object
+                method check =
+                  let* named = Prototype.Directory.children multigroups in
+                  List.map admits named |> Utilities.List.sequence |> Result.map List.concat
+              end;
             Prototype.Associative.(
               of_properties
                 [ ( "multigroup",

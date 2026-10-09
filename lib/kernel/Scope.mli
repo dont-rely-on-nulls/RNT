@@ -42,6 +42,9 @@ val previous :
 val catalog :
   implementation Protocols.Handle.interface -> (string list, Concepts.Condition.condition) result
 
+(** \multigroup\[m]\schema\[s]\relation, from a branch state. *)
+val relations : home -> Path.t
+
 (** \multigroup\[m]\schema\[s]\relation\[relation], from a branch state. *)
 val path : home -> string -> Path.t
 
@@ -56,8 +59,11 @@ val attribute : home -> string -> string -> string option
     head of \system\branch\[branch], as one successor state. A multigroup
     or schema not there yet is made, and a value with no address is
     stored as a schema stores it: a program as itself, a relation as its
-    tuples. If the head moved meanwhile nothing changes, and it fails. *)
+    tuples. [denials] are named [d], in
+    \denial of the home multigroup, or [m:d], in that of [m]. If the head moved meanwhile, or a multigroup does not
+    admit the state, nothing changes, and it fails. *)
 val publish :
+  ?denials:(string * Protocols.Handle.t option) list ->
   Protocols.Handle.t ->
   branch:string ->
   home:home ->

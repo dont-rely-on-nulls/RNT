@@ -39,3 +39,8 @@ and Body : Encoding.Record.BODY = struct
 end
 
 let hash tuple = Representation.to_blob tuple |> Hash.hash_of_blob
+
+let to_string {attributes; _} =
+  BatMap.String.bindings attributes
+  |> List.map (fun (a, v) -> a ^ "=" ^ Value.to_string v)
+  |> String.concat " "

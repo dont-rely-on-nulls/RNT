@@ -47,4 +47,5 @@ let release ({valid; _} as handle) =
   valid := false;
   o#release
 
+let releasing handle f = Fun.protect ~finally:(fun () -> release handle) f
 let require f h = Option.to_result ~none:(Error.unimplemented_protocol (to_string h)) (f h)

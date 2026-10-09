@@ -49,9 +49,7 @@ let walking ?missing f g handle path =
    done with them, but never the caller's root.  If you leak one and
    its refcount never drops, nothing under that path gets collected,
    and an exclusive object, like a session, stays locked forever. *)
-let releasing root handle f =
-  Fun.protect ~finally:(fun () -> if handle != root then Protocols.Handle.release handle) f
-
+let releasing root handle f = if handle == root then f () else Protocols.Handle.releasing handle f
 let lookup handle path = walking (fun _ parent -> releasing handle parent) Result.ok handle path
 
 let find handle path =
