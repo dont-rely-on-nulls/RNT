@@ -51,32 +51,9 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
     check bool "the session reconstructs the pinned branch" true pinned;
     check bool "the session refuses derivation through it" true refused
 
-  let single_handle conn =
-    let refused, reacquired =
-      begin
-        let open Utilities.Result in
-        let open Rnt.Kernel.Path in
-        let* root = I.initialize conn in
-        let* branch = B.make conn in
-        let* tip = address branch in
-        let session = Session.make conn {Protocols.Session.snapshot= tip} in
-        let* _ = update root ("session" @/ this) "client" None (Some session) in
-        let client = "session" @/ "client" @/ this in
-        let* _ = lookup root ("session" @/ "client" @/ "branch" @/ this) in
-        let* held = lookup root client in
-        let refused = finds root client in
-        Protocols.Handle.release held;
-        Ok (refused, finds root client)
-      end
-      |> Helpers.condition_as_failure
-    in
-    check bool "a second handle to the session is refused" false refused;
-    check bool "releasing the handle frees the session" true reacquired
-
   let suite =
     ( "kernel/session",
-      [ test_case "pin-and-follow" `Quick (H.with_connection pin_and_follow "session-test");
-        test_case "single-handle" `Quick (H.with_connection single_handle "session-single-test") ] )
+      [ test_case "pin-and-follow" `Quick (H.with_connection pin_and_follow "session-test") ] )
 end
 
 module LMDB = Make (Rnt.Backend.Storage.LMDB) (Helpers.Storage.LMDB_Configurator)

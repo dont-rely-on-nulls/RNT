@@ -4,7 +4,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
 
   class session storage state =
     object (self)
-      inherit Lifecycle.exclusive
+      inherit Lifecycle.counted
       inherit Identity.of_id
       method to_string = "session"
       val storage : S.connection = storage
@@ -13,6 +13,8 @@ module Make (S : Abstract.Storage.STORAGE) = struct
       method pin state' = Atomic.set state state'
       method protocols = Protocols.[Directory.make self; Session.make self]
       method list = Ok (BatFingerTree.singleton "branch")
+
+      method destroy = ()
 
       method find =
         function
