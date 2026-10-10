@@ -8,9 +8,8 @@ module Error = struct
   let cancelled () =
     condition "evaluation-cancelled" "An evaluation was stopped before it produced its result" empty
 
-  let not_a_plan name =
-    condition "not-a-fol-program" "The evaluator was given an object that carries no FOL plan"
-      ("object" |=| Concepts.Value.String name)
+  let not_a_plan () =
+    condition "not-a-fol-program" "The evaluator was given a program of another kind" empty
 
   let not_a_relation name =
     condition "not-a-relation" "A plan named an object that does not describe itself as a relation"
@@ -41,6 +40,7 @@ let name = "fol"
 
 type 'r term = Base of 'r | Project of 'r term * string BatFingerTree.t
 type plan = Protocols.Handle.t term
+type Kernel.Program.kind += Fol of Kernel.Path.t term
 
 module Bencode = Concepts.Encoding.Bencode
 
@@ -70,8 +70,8 @@ let rec term_of_bencode =
       Ok (Project (term, BatFingerTree.of_list attributes))
   | _ -> Error (Error.malformed_program ())
 
-let encode term = bencode_of_term term |> Bencode.to_blob
-let decode code = Bencode.of_blob code |> Utilities.Result.fmap term_of_bencode
+let encode term = bencode_of_term term |> Bencode.to_bytes |> Bytes.to_string
+let decode source = Bencode.of_bytes (Bytes.of_string source) |> Utilities.Result.fmap term_of_bencode
 
 (* TODO: To strenghten our checks for self references, we need to
    construct a graph and see raise a condition if there are self
@@ -79,32 +79,29 @@ let decode code = Bencode.of_blob code |> Utilities.Result.fmap term_of_bencode
    self, but if the flow is alternated, say between program A and B,
    where B calls A and A calls B, we also must check. *)
 let instantiate resolve =
-  (*
   let open Utilities.Result in
   let rec bind expanding = function
     | Base reference -> (
         let* relation = resolve reference in
-        match Kernel.EphemeralRelation.stored relation with
+        match Kernel.Program.image relation with
         | None -> Ok (Base relation)
-        | Some (evaluator, code, _) ->
+        | Some {kind= Fol term; source; _} ->
             Protocols.Handle.release relation;
-            let identity = Concepts.Hash.hash_of_blob code in
-            if not (ours evaluator) then Error (Error.foreign_program evaluator)
-            else if List.exists (Concepts.Hash.hash_equals identity) expanding then
+            let identity = Concepts.Hash.hash_of_bytes (Bytes.of_string source) in
+            if List.exists (Concepts.Hash.hash_equals identity) expanding then
               Error (Error.cyclic_program identity)
-            else
-              let* term = decode code in
-              bind (identity :: expanding) term )
+            else bind (identity :: expanding) term
+        | Some {evaluator; _} ->
+            Protocols.Handle.release relation;
+            Error (Error.foreign_program evaluator) )
     | Project (term, attributes) ->
         let* plan = bind expanding term in
         Ok (Project (plan, attributes))
   in
   bind []
-   *)
-  failwith "NOT IMPLEMENT"
 
 let restrict attributes description =
-  (*let open Utilities.Result in
+  let open Utilities.Result in
   BatFingerTree.fold_left
     (fun restricted name ->
       let* restricted = restricted in
@@ -113,9 +110,7 @@ let restrict attributes description =
         |> Option.to_result ~none:(Error.unknown_attribute name)
       in
       Ok (BatMap.String.add name attribute restricted) )
-      (Ok BatMap.String.empty) attributes
-   *)
-  failwith "NOT IMPLEMENT"
+    (Ok BatMap.String.empty) attributes
 
 let rec describe =
   let open Utilities.Result in
@@ -185,25 +180,18 @@ class evaluator =
     inherit Kernel.Lifecycle.null
     inherit Kernel.Identity.of_id
     method to_string = "fol-evaluator"
+    method parse source = decode source |> Result.map (fun term -> Fol term)
 
-    (* A plan comes resolved; stored source names its relations by path,
-       read against [within]. *)
-    method invoke program ~within =
+    method eval kind _inputs ~within =
       let open Utilities.Result in
-      match
-        ( Protocols.Handle.into program (function Program plan -> Some plan_program | _ -> None),
-          Kernel.EphemeralRelation.stored program )
-      with
-      | Some plan, _ -> Protocols.Handle.invoke plan execute
-      | None, Some (evaluator, _, _) when not (ours evaluator) ->
-          Error (Error.foreign_program evaluator)
-      | None, Some (_, code, _) ->
-          let* term = decode code in
+      match kind with
+      | Fol term ->
           let* plan = instantiate (Kernel.Path.lookup within) term in
           execute plan
-      | None, None -> Error (Error.not_a_plan (Protocols.Handle.to_string program))
+      | _ -> Error (Error.not_a_plan ())
 
     method protocols : Protocols.Handle.protocol list = [Protocols.Evaluator.make self]
   end
 
 let make () = new evaluator |> Protocols.Handle.make
+let program ?root term = Kernel.Program.make ?root ~evaluator:name ~source:(encode term) (Fol term)
