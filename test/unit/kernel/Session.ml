@@ -53,7 +53,7 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
 
   let suite =
     ( "kernel/session",
-      [ test_case "pin-and-follow" `Quick (H.with_connection pin_and_follow "session-test") ] )
+      [test_case "pin-and-follow" `Quick (H.with_connection pin_and_follow "session-test")] )
 end
 
 module LMDB = Make (Rnt.Backend.Storage.LMDB) (Helpers.Storage.LMDB_Configurator)

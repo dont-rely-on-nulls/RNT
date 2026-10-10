@@ -23,8 +23,7 @@ let walking f g handle path =
   let open Protocols in
   let open Utilities.Result in
   let rec walk handle = function
-    | [] ->
-       g (Handle.keep handle)
+    | [] -> g (Handle.keep handle)
     | x :: xs -> (
         let* dir =
           Handle.require Directory.from handle
@@ -36,11 +35,10 @@ let walking f g handle path =
         | None -> Error (Error.path_not_found path)
         | Some elem -> f x handle (fun () -> walk elem xs) )
   in
-  Handle.with_autorelease
-    (fun () ->
+  Handle.with_autorelease (fun () ->
       walk handle path
       |> Result.map_error
-           Concepts.Condition.(complement ("path" |=| Concepts.Value.String (to_string path))))
+           Concepts.Condition.(complement ("path" |=| Concepts.Value.String (to_string path))) )
 
 let lookup handle path = walking (fun _ _ f -> f ()) Result.ok handle path
 

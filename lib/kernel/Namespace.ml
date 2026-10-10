@@ -5,7 +5,6 @@ class namespace =
     method to_string = "namespace"
     val entries : (string, Protocols.Handle.t) BatMap.t Atomic.t = Atomic.make BatMap.empty
     method protocols = Protocols.[Directory.make self; Registry.make self]
-
     method destroy = Atomic.get entries |> BatMap.values |> BatEnum.iter Protocols.Handle.release
 
     method update key reference value =
@@ -13,11 +12,11 @@ class namespace =
         Utilities.Atomic.mswap entries (fun e ->
             let existing = BatMap.find_opt key e in
             if existing = reference then begin
-                Option.map Protocols.Handle.release existing |> ignore;
-                match value with
-                | Some v -> Ok (BatMap.add key (Protocols.Handle.move v) e)
-                | None -> Ok (BatMap.remove key e)
-              end
+              Option.map Protocols.Handle.release existing |> ignore;
+              match value with
+              | Some v -> Ok (BatMap.add key (Protocols.Handle.move v) e)
+              | None -> Ok (BatMap.remove key e)
+            end
             else Error () )
       with
       | Ok _ -> Ok true

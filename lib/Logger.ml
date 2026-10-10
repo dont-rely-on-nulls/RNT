@@ -1,5 +1,4 @@
 type level = Debug | Info | Warn | Error | Fatal
-
 type colors = Foreground | Blue | Yellow | Red | Purple
 
 let reset = "\027[0m"
@@ -13,10 +12,7 @@ let color_for = function
   | Purple -> "\027[35m"
 
 let colored color text = Printf.sprintf "%s%s%s%s" (color_for color) bold text reset
-
-let channel_for = function
-  | Warn | Error | Fatal -> stderr
-  | _ -> stdout
+let channel_for = function Warn | Error | Fatal -> stderr | _ -> stdout
 
 let prefix_for = function
   | Debug -> colored Foreground "[DEBUG]"
@@ -25,5 +21,4 @@ let prefix_for = function
   | Error -> colored Red "[ERROR]"
   | Fatal -> colored Purple "[FATAL]"
 
-let log level message =
-  Printf.fprintf (channel_for level) "%s %s\n" (prefix_for level) message
+let log level message = Printf.fprintf (channel_for level) "%s %s\n" (prefix_for level) message
