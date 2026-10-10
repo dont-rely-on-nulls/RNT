@@ -26,6 +26,11 @@ let object_of {valid; refers_to; _} =
 
 let to_string h = let o = (object_of h) in "#<" ^ o#to_string ^ " " ^ (Concepts.Hash.to_hum_string o#hash) ^ ">"
 
+let release ({valid; _} as handle) =
+  let o = object_of handle in
+  if Atomic.compare_and_set valid true false then
+    o#release
+
 let on_gc ({valid; refers_to; allocated_at} as h) =
   (* TODO: get rid of this on release builds *)
   if refers_to#is_managed && (Atomic.get valid) then begin
@@ -34,13 +39,9 @@ let on_gc ({valid; refers_to; allocated_at} as h) =
                           (* bleh *)
                           ~str:(Printexc.raw_backtrace_to_string allocated_at)
                           ~sub:"Raised by primitive operation"
-                          ~by:"Allocated"))
+                          ~by:"Allocated"));
+      release h
     end
-
-let release ({valid; _} as handle) =
-  let o = object_of handle in
-  if Atomic.compare_and_set valid true false then
-    o#release
 
 type _ Effect.t += Autorelease: t -> unit Effect.t
 
