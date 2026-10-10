@@ -23,3 +23,5 @@ val protocols : t -> protocol list
 val to_string : t -> string
 val require : (t -> 'a interface option) -> t -> ('a interface, Concepts.Condition.condition) result
 val with_autorelease : (unit -> 'a) -> 'a
+val without_autorelease : (unit -> 'a) -> 'a
+val keep : t -> unit

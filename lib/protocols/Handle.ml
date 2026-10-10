@@ -43,23 +43,37 @@ let on_gc ({valid; refers_to; allocated_at} as h) =
       release h
     end
 
-type _ Effect.t += Autorelease: t -> unit Effect.t
+type _ Effect.t += Autorelease: t -> unit Effect.t | Keep: t -> unit Effect.t
 
 let with_autorelease f =
-  let hs = Atomic.make BatFingerTree.empty in
+  let hs = Atomic.make BatSet.empty in
   Fun.protect
-    ~finally:(fun () -> Atomic.get hs |> BatFingerTree.iter release)
+    ~finally:(fun () -> Atomic.get hs |> BatSet.iter release)
     (fun () ->
       try f ()
       with
       | effect (Autorelease h), k ->
-         Utilities.Atomic.swap hs (fun ft -> BatFingerTree.snoc ft h)
+         Utilities.Atomic.swap hs (fun ft -> BatSet.add h ft)
+         |> ignore;
+         Effect.Deep.continue k ()
+      | effect (Keep h), k ->
+         Utilities.Atomic.swap hs (fun ft -> BatSet.remove h ft)
          |> ignore;
          Effect.Deep.continue k ())
 
+let without_autorelease f =
+  try f ()
+  with
+  | effect (Autorelease _), k -> Effect.Deep.continue k ()
+  | effect (Keep _), k -> Effect.Deep.continue k ()
+
+let keep h =
+  try Effect.perform (Keep h)
+  with Effect.Unhandled _ -> ()
+
 let autorelease h =
   try Effect.perform (Autorelease h)
-  with _ -> ()
+  with Effect.Unhandled _ -> ()
 
 let interface_of handle interface = {handle; interface}
 let make o =
