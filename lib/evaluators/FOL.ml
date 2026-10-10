@@ -27,10 +27,6 @@ module Error = struct
     condition "malformed-fol-program"
       "A stored FOL program did not conform to what was expected. Is your database corrupted?" empty
 
-  let foreign_program evaluator =
-    condition "foreign-program" "A plan named a relation stored by another evaluator"
-      ("evaluator" |=| Concepts.Value.String evaluator)
-
   let cyclic_program code =
     condition "cyclic-program" "A stored program reads itself"
       ("program" |=| Concepts.Value.String (Concepts.Hash.to_hum_string code))
@@ -78,11 +74,11 @@ let decode source = Bencode.of_bytes (Bytes.of_string source) |> Utilities.Resul
    references. We partially do that here with the program calling
    self, but if the flow is alternated, say between program A and B,
    where B calls A and A calls B, we also must check. *)
-let instantiate resolve =
+let instantiate within =
   let open Utilities.Result in
   let rec bind expanding = function
     | Base reference -> (
-        let* relation = resolve reference in
+        let* relation = Kernel.Path.lookup within reference in
         match Kernel.Program.image relation with
         | None -> Ok (Base relation)
         | Some {kind= Fol term; source; _} ->
@@ -91,9 +87,11 @@ let instantiate resolve =
             if List.exists (Concepts.Hash.hash_equals identity) expanding then
               Error (Error.cyclic_program identity)
             else bind (identity :: expanding) term
-        | Some {evaluator; _} ->
-            Protocols.Handle.release relation;
-            Error (Error.foreign_program evaluator) )
+        | Some _ ->
+            Protocols.Handle.releasing relation (fun () ->
+                let* program = Protocols.Executable.require relation in
+                let* result = Protocols.Executable.invoke program [] ~within in
+                Ok (Base result) ) )
     | Project (term, attributes) ->
         let* plan = bind expanding term in
         Ok (Project (plan, attributes))
@@ -186,7 +184,7 @@ class evaluator =
       let open Utilities.Result in
       match kind with
       | Fol term ->
-          let* plan = instantiate (Kernel.Path.lookup within) term in
+          let* plan = instantiate within term in
           execute plan
       | _ -> Error (Error.not_a_plan ())
 
