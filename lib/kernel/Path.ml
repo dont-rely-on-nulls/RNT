@@ -21,18 +21,17 @@ end
 
 let walking f g handle path =
   let open Protocols in
+  let open Utilities.Result in
   let rec walk handle = function
     | [] ->
-       Handle.keep handle;
-       g handle
+       g (Handle.keep handle)
     | x :: xs -> (
-        let open Utilities.Result in
         let* dir =
           Handle.require Directory.from handle
           |> Result.map_error
                Concepts.Condition.(complement ("before-segment" |=| Concepts.Value.String x))
         in
-        let* elem = Directory.find dir x in
+        let* elem = Directory.find dir x |> Result.map (Option.map Handle.autorelease) in
         match elem with
         | None -> Error (Error.path_not_found path)
         | Some elem -> f x handle (fun () -> walk elem xs) )

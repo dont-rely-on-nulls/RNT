@@ -63,25 +63,14 @@ let with_autorelease f =
          |> ignore;
          Effect.Deep.continue k ())
 
-let without_autorelease f =
-  try f ()
-  with
-  | effect (Autorelease _), k -> Effect.Deep.continue k ()
-  | effect (Keep _), k -> Effect.Deep.continue k ()
+let keep h = Effect.perform (Keep h); h
 
-let keep h =
-  try Effect.perform (Keep h)
-  with Effect.Unhandled _ -> ()
-
-let autorelease h =
-  try Effect.perform (Autorelease h)
-  with Effect.Unhandled _ -> ()
+let autorelease h = Effect.perform (Autorelease h); h
 
 let interface_of handle interface = {handle; interface}
 let make o =
   let h = {valid= Atomic.make true; refers_to= (o :> obj); allocated_at= Printexc.get_callstack 256} in
   Gc.finalise on_gc h;
-  if o#is_managed then autorelease h;
   h
 
 let into handle f = List.find_map f (object_of handle)#protocols |> Option.map (interface_of handle)
