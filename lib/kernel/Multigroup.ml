@@ -31,12 +31,12 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     let admit name h =
       let open Utilities.Result in
       let address entry = Concepts.Hash.hash_of_blob (encode entry) in
-      match EphemeralRelation.stored h with
-      | Some (evaluator, code, _) ->
+      match Program.image h with
+      | Some {evaluator; source; _} ->
           let* description = Protocols.Relation.heading h in
           Ok
             (fun tx ->
-              let* record = E.store tx ~name ~evaluator ~code description in
+              let* record = E.store tx ~name ~evaluator ~source description in
               Ok (address (Ephemeral record)) )
       | None ->
           let* description, tuples = Protocols.Relation.read h in

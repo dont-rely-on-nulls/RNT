@@ -17,6 +17,10 @@ module Error = struct
   let no_evaluator evaluator =
     condition "no-evaluator" "No evaluator is registered under that name"
       ("evaluator" |=| Concepts.Value.String evaluator)
+
+  let not_a_program name =
+    condition "not-a-program" "A handle was expected to carry a program and did not"
+      ("object" |=| Concepts.Value.String name)
 end
 
 type kind = Protocols.Evaluator.kind = ..
@@ -33,10 +37,17 @@ let reference evaluator =
   | Some i ->
       String.sub evaluator 0 i, String.sub evaluator (i + 1) (String.length evaluator - i - 1)
 
-let lookup root evaluator =
+let require handle =
+  image handle |> Option.to_result ~none:(Error.not_a_program (Protocols.Handle.to_string handle))
+
+let with_evaluator root evaluator f =
+  let open Utilities.Result in
   let scope, language = reference evaluator in
-  Path.lookup root Path.(scope @/ "evaluator" @/ language @/ this)
-  |> Result.map_error (fun _ -> Error.no_evaluator evaluator)
+  let* found =
+    Path.lookup root Path.(scope @/ "evaluator" @/ language @/ this)
+    |> Result.map_error (fun _ -> Error.no_evaluator evaluator)
+  in
+  Protocols.Handle.releasing found (fun () -> Result.bind (Protocols.Evaluator.require found) f)
 
 class program ?root image =
   object (self)
@@ -47,9 +58,7 @@ class program ?root image =
     method invoke inputs ~within =
       let open Utilities.Result in
       let* root = Option.to_result ~none:(Error.unloaded image.evaluator) root in
-      let* found = lookup root image.evaluator in
-      Protocols.Handle.releasing found (fun () ->
-          let* evaluator = Protocols.Evaluator.require found in
+      with_evaluator root image.evaluator (fun evaluator ->
           Protocols.Evaluator.eval evaluator image.kind inputs ~within )
 
     method protocols : Protocols.Handle.protocol list =
@@ -58,3 +67,8 @@ class program ?root image =
 
 let make ?root ~evaluator ~source kind =
   new program ?root {evaluator; kind; source} |> Protocols.Handle.make
+
+let load root ~evaluator ~source =
+  with_evaluator root evaluator (fun found ->
+      Protocols.Evaluator.parse found source
+      |> Result.map (make ~root ~evaluator ~source) )

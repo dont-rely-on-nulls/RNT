@@ -108,7 +108,9 @@ module Make (S : Abstract.Storage.STORAGE) = struct
 
       method protocols : Protocols.Handle.protocol list =
         let bind =
-          Option.map (fun root -> Source.bind root ~within:(Protocols.Handle.make {<>})) root
+          Option.map
+            (fun root -> {EphemeralRelation.root; within= Protocols.Handle.make {<>}})
+            root
         in
         let multigroups =
           Prototype.mixture_of node (fun make node ->

@@ -7,17 +7,6 @@ type t =
       | `Temporary of Protocols.Schematics.attribute_description BatMap.String.t ];
     program: program option }
 
-(* [name] is the relation a stored program defines, once it is read from
-   where it was stored under that name. *)
-type Protocols.Handle.protocol +=
-  | Stored of {evaluator: string; code: Concepts.Blob.t; name: string option}
-
-let stored handle =
-  Protocols.Handle.into handle (function
-    | Stored {evaluator; code; name} -> Some (evaluator, code, name)
-    | _ -> None )
-  |> Option.map (fun i -> Protocols.Handle.invoke i Fun.id)
-
 module Error = struct
   open Concepts.Condition
 
@@ -70,7 +59,7 @@ let persisted = function
       Some {Persisted.name; schematics; program}
   | _ -> None
 
-class ephemeral_relation ?code description value enumerate inputs =
+class ephemeral_relation ?program description value enumerate inputs =
   object (self)
     inherit Lifecycle.counted
     inherit Identity.of_id
@@ -93,34 +82,29 @@ class ephemeral_relation ?code description value enumerate inputs =
               Concepts.Hash.hash_equals (Concepts.Tuple.hash member) (Concepts.Tuple.hash tuple) ) )
 
     method protocols : Protocols.Handle.protocol list =
-      let protocols = Protocols.[Relation.make self; Enumerable.make self; Schematics.make self] in
+      let protocols =
+        Protocols.[Relation.make self; Enumerable.make self; Schematics.make self]
+        @ Option.fold ~none:[] ~some:Protocols.Handle.protocols program
+      in
       match persisted relation with
       | None -> protocols
       | Some record ->
-          let stored =
-            Option.fold ~none:protocols
-              ~some:(fun code ->
-                Stored {evaluator= record.program.evaluator; code; name= Some record.name}
-                :: protocols )
-              code
-          in
           Protocols.Addressable.make
             object
               method address = Persisted.Representation.to_blob record |> Concepts.Hash.hash_of_blob
             end
-          :: stored
+          :: protocols
   end
 
-let instantiate ?(inputs = []) ?code description value enumerate =
-  new ephemeral_relation ?code description value enumerate inputs |> Protocols.Handle.make
+let instantiate ?(inputs = []) ?program description value enumerate =
+  new ephemeral_relation ?program description value enumerate inputs |> Protocols.Handle.make
 
 let literal description tuples =
   instantiate description
     {name= None; schematics= `Temporary description; program= None}
     (fun () -> Ok (Generator.cursor_of (fun ~yield -> List.iter yield tuples; Ok ())))
 
-type binding =
-  string -> Protocols.Handle.t -> (Protocols.Handle.t, Concepts.Condition.condition) result
+type binding = {root: Protocols.Handle.t; within: Protocols.Handle.t}
 
 (* The relation a program produced has to outlive the cursor over it. *)
 let enumerate_owned relation =
@@ -144,44 +128,55 @@ let enumerate_owned relation =
              method to_string = Protocols.Handle.to_string cursor
            end )
 
+let run name program within () =
+  let open Utilities.Result in
+  match program, within with
+  | Some program, Some within ->
+      let* executable = Protocols.Executable.require program in
+      Result.bind (Protocols.Executable.invoke executable [] ~within) enumerate_owned
+  | _ -> Error (Error.unbound_program name)
+
+let view ?within description program =
+  instantiate ~program description
+    {name= None; schematics= `Temporary description; program= None}
+    (run (Protocols.Handle.to_string program) (Some program) within)
+
 module Make (S : Abstract.Storage.STORAGE) = struct
   module SI = Storage.Make (S)
   module R = SubstantialRelation.Make (S)
 
-  (* Unbound, a stored program is only its source. Bound, enumerating
-     it runs the program through its evaluator, afresh each time. *)
-  let restore ?bind ~code ({Persisted.name; schematics; program} : Persisted.t) description =
-    let enumerate () =
-      match bind with
-      | None -> Error (Error.unbound_program name)
-      | Some bind ->
-          let source =
-            Prototype.mixture [Stored {evaluator= program.evaluator; code; name= Some name}]
-          in
-          Result.bind (bind program.evaluator source) enumerate_owned
-    in
-    instantiate ~code description
-      {name= Some name; schematics= `Persisted schematics; program= Some program}
-      enumerate
+  let restore ?program ?within ({Persisted.name; schematics; program= pointer} : Persisted.t)
+      description =
+    instantiate ?program description
+      {name= Some name; schematics= `Persisted schematics; program= Some pointer}
+      (run name program within)
 
   let load ?bind connection (record : Persisted.t) =
-    SI.with_read connection (fun tx ->
-        let open Utilities.Result in
-        let* description = R.schema_of tx record.schematics in
-        let* code = SI.get_req tx (S.Hash record.program.code) in
-        Ok (restore ?bind ~code record description) )
+    let open Utilities.Result in
+    let* description, source =
+      SI.with_read connection (fun tx ->
+          let* description = R.schema_of tx record.schematics in
+          let* code = SI.get_req tx (S.Hash record.program.code) in
+          Ok (description, Bytes.to_string (Concepts.Blob.bytes_of_blob code)) )
+    in
+    match bind with
+    | None -> Ok (restore record description)
+    | Some {root; within} ->
+        let* program = Program.load root ~evaluator:record.program.evaluator ~source in
+        Ok (restore ~program ~within record description)
 
-  let store tx ~name ~evaluator ~code description =
+  let store tx ~name ~evaluator ~source description =
     let open Utilities.Result in
     let* schematics = R.store_schema tx description in
-    let* address = SI.store_blob tx code in
+    let* address = SI.store_blob tx (Concepts.Blob.blob_of_bytes (Bytes.of_string source)) in
     let record = {Persisted.name; schematics; program= {evaluator; code= address}} in
     let* _ = SI.store_blob tx (Persisted.Representation.to_blob record) in
     Ok record
 
-  let persist connection ~name ~evaluator ~code description =
+  let persist connection ~name program description =
+    let open Utilities.Result in
+    let* {Program.evaluator; source; _} = Program.require program in
     SI.with_transaction connection (fun tx ->
-        let open Utilities.Result in
-        let* record = store tx ~name ~evaluator ~code description in
-        Ok (restore ~code record description) )
+        let* record = store tx ~name ~evaluator ~source description in
+        Ok (restore ~program record description) )
 end
