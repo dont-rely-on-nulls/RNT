@@ -41,7 +41,6 @@ let name = "fol"
 
 type 'r term = Base of 'r | Project of 'r term * string BatFingerTree.t
 type plan = Protocols.Handle.t term
-type Protocols.Handle.protocol += Plan of plan
 
 module Bencode = Concepts.Encoding.Bencode
 
@@ -74,15 +73,13 @@ let rec term_of_bencode =
 let encode term = bencode_of_term term |> Bencode.to_blob
 let decode code = Bencode.of_blob code |> Utilities.Result.fmap term_of_bencode
 
-(* a program is FOL's if its evaluator's language is, as Source has it *)
-let ours evaluator = snd (Kernel.Source.reference evaluator) = name
-
 (* TODO: To strenghten our checks for self references, we need to
    construct a graph and see raise a condition if there are self
    references. We partially do that here with the program calling
    self, but if the flow is alternated, say between program A and B,
    where B calls A and A calls B, we also must check. *)
 let instantiate resolve =
+  (*
   let open Utilities.Result in
   let rec bind expanding = function
     | Base reference -> (
@@ -103,19 +100,11 @@ let instantiate resolve =
         Ok (Project (plan, attributes))
   in
   bind []
-
-class program plan =
-  object
-    inherit Kernel.Lifecycle.null
-    inherit Kernel.Identity.of_id
-    method to_string = "fol-program"
-    method protocols : Protocols.Handle.protocol list = [Plan plan]
-  end
-
-let program plan = new program plan |> Protocols.Handle.make
+   *)
+  failwith "NOT IMPLEMENT"
 
 let restrict attributes description =
-  let open Utilities.Result in
+  (*let open Utilities.Result in
   BatFingerTree.fold_left
     (fun restricted name ->
       let* restricted = restricted in
@@ -124,7 +113,9 @@ let restrict attributes description =
         |> Option.to_result ~none:(Error.unknown_attribute name)
       in
       Ok (BatMap.String.add name attribute restricted) )
-    (Ok BatMap.String.empty) attributes
+      (Ok BatMap.String.empty) attributes
+   *)
+  failwith "NOT IMPLEMENT"
 
 let rec describe =
   let open Utilities.Result in
@@ -200,7 +191,7 @@ class evaluator =
     method invoke program ~within =
       let open Utilities.Result in
       match
-        ( Protocols.Handle.into program (function Plan plan -> Some plan | _ -> None),
+        ( Protocols.Handle.into program (function Program plan -> Some plan_program | _ -> None),
           Kernel.EphemeralRelation.stored program )
       with
       | Some plan, _ -> Protocols.Handle.invoke plan execute
