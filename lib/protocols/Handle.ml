@@ -26,9 +26,11 @@ let object_of {valid; refers_to; _} =
 
 let to_string h = let o = (object_of h) in "#<" ^ o#to_string ^ " " ^ (Concepts.Hash.to_hum_string o#hash) ^ ">"
 
-let release ({valid; _} as handle) =
+let invalidate {valid; _} = Atomic.compare_and_set valid true false
+
+let release handle =
   let o = object_of handle in
-  if Atomic.compare_and_set valid true false then
+  if invalidate handle then
     o#release
 
 let on_gc ({valid; refers_to; allocated_at} as h) =
@@ -93,6 +95,11 @@ let from {handle; _} = handle
 let copy handle =
   let o = object_of handle in
   if o#reference then Some (make o) else None
+
+let move handle =
+  let o = object_of handle in
+  invalidate handle |> ignore;
+  make o
 
 let equal h1 h2 = Concepts.Hash.hash_equals (object_of h1)#hash (object_of h2)#hash
 let hash h = (object_of h)#hash
