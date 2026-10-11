@@ -1,0 +1,194 @@
+#+TITLE: Denials
+
+* Purpose
+A denial is a relation that must be empty. Each tuple it holds is one
+breach of a rule, so a state where every denial is empty is a state
+where every rule holds. RNT knows no rule language. It knows only that
+denials must be empty, and it refuses to move a branch head to a state
+where one is not. Constraints across relations, the assertions SQL
+names but rarely implements, become relations like any other.
+
+The idea is the denial form of integrity constraints, from Sadri and
+Kowalski ("A theorem-proving approach to database integrity", 1988),
+where a rule is written as a query for its own counterexamples.
+
+* Where denials live
+Each multigroup holds its denials beside its schemas.
+
+#+begin_example
+\system\branch\master\multigroup\library\schema\default\relation\book
+\system\branch\master\multigroup\library\denial\no-books
+#+end_example
+
+A multigroup stores a denial the way a schema stores a relation. An
+[[file:../lib/kernel/EphemeralRelation.ml][ephemeral relation]] that wraps a [[file:../lib/kernel/Program.ml][program]] becomes the program's
+evaluator name and source, and any other relation becomes its tuples. A
+program is the usual case, because a rule has to be computed against
+the state it judges. When a branch reads the denial back, the
+[[file:evaluators.org][evaluator]] registered under that name parses the source, and reading
+the denial invokes the program =within= the branch state it was read
+through. The same denial therefore reads one state through the head
+and another through =previous=.
+
+* Judging a state
+[[file:../lib/protocols/Admission.mli][Admission]] is the protocol that judges a state.
+
+#+begin_src ocaml
+type violations = (string * Concepts.Tuple.t) list
+
+class type implementation = object
+  method check : (violations, Concepts.Condition.condition) result
+end
+#+end_src
+
+=check= names every denial that holds a tuple, with one such tuple as
+its witness. An empty list means the state is admitted. An error means
+the state could not be judged, and an unjudged state is not admitted
+either.
+
+A multigroup judges each of its denials in two steps.
+
+1. It asks the denial for its [[file:modes.org][modes]]. If the denial is not
+   exhaustible with nothing bound, the multigroup fails with
+   =unjudgeable-denial= and reads nothing.
+2. Otherwise it reads the denial up to its first tuple. No tuple means
+   the denial holds. A first tuple is the witness, and the multigroup
+   reads no further.
+
+For a denial that wraps a program, the multigroup invokes the program
+once, within the branch state it judges, and asks both questions of the
+relation the program returns.
+
+A branch state asks each of its multigroups and names every violation
+by its path, =\multigroup\[m]\denial\[d]=. Judging belongs to the
+multigroup, the universe its relations describe. The branch only
+versions states and collects the answers. A rule may still read
+relations of any multigroup, because the branch asks all of them.
+
+One witness is enough to refuse a state, and asking for more would cost
+a read of the whole denial, which never ends for a =Countable= one.
+
+* Trust
+The guard rests on what a denial declares. A FOL denial over stored
+relations derives its modes from theirs, so its claim to be finite
+holds. A denial written in another language declares whatever its
+evaluator returns. A program that declares =Finite= and then never ends
+still hangs the check, and RNT cannot tell. The same holds when FOL
+reads a relation from another evaluator, since FOL takes that
+relation's modes as given. A cycle of programs across languages also
+recurses without end.
+
+* Moving a head
+=BranchManager= asks the proposed state for its admission before it
+moves a head. If the state is not admitted, it refuses the move with a
+=refused= condition that names each denial and its witness, and the
+head stays where it was. It asks before taking the head, since a denial
+may run a program that reads storage.
+
+#+begin_src plantuml :file ../images/denial-admission.svg
+@startuml
+participant "Scope.publish" as Publish
+participant BranchManager
+participant "proposed\nbranch state" as Branch
+participant Multigroup
+participant Denial
+
+Publish -> BranchManager : move the head
+BranchManager -> Branch : check
+loop each multigroup
+  Branch -> Multigroup : check
+  loop each denial
+    Multigroup -> Denial : modes
+    alt not exhaustible with nothing bound
+      Multigroup --> BranchManager : unjudgeable-denial
+    else exhaustible
+      Multigroup -> Denial : enumerate, read the first tuple
+      Denial --> Multigroup : a witness, or nothing
+    end
+  end
+  Multigroup --> Branch : violations
+end
+Branch --> BranchManager : violations, named by path
+alt none
+  BranchManager -> BranchManager : move the head
+else some
+  BranchManager --> Publish : refused, one witness per denial
+end
+@enduml
+#+end_src
+
+#+RESULTS:
+[[file:../images/denial-admission.svg]]
+
+The check judges the state itself, not a change to it. Every commit
+lands only if the whole state it makes is admitted, whichever subsystem
+made it, so a rule written in one language guards data written from
+all of them.
+
+* Publishing denials
+[[file:../lib/kernel/Scope.mli][Scope.publish]] binds denials with its relations, in the same state.
+
+#+begin_src ocaml
+Scope.publish root ~branch:"master" ~home:library
+  ~denials:["no-books", Some no_books; "audit:shelved-twice", Some twice]
+  ["book", Some books]
+#+end_src
+
+A name =d= binds in the home multigroup, and =m:d= binds in multigroup
+=m=. A commit can install a rule and the data it guards together, and
+the rule is judged with the data. If the state it makes already breaks
+the rule, the commit is refused. A denial that cannot be judged cannot
+be installed either, since the state that holds it cannot be admitted.
+
+* Judging a state without landing it
+A subsystem that wants to know whether a change would be admitted builds
+the state with [[file:../lib/kernel/Path.mli][Path.assoc_all]] and asks it.
+
+#+begin_src ocaml
+let* next = Path.assoc_all head [Scope.relations library, "book", Some books] in
+let* admission = Protocols.Admission.require next in
+Protocols.Admission.check admission
+#+end_src
+
+Nothing lands. A host can use this to preview a form, a move or an
+import, and show which rule would refuse it.
+
+* Open problems
+** Incremental checking
+Every commit judges every denial of every multigroup over the whole
+state. Decker ("Translating Advanced Integrity Checking Technology to
+SQL", 2002) shows how to check only what a change can break. Take the
+denial of a book shelved twice.
+
+#+begin_example
+{(title, s1, s2) | shelved(title, s1) ∧ shelved(title, s2) ∧ s1 ≠ s2}
+#+end_example
+
+A commit that inserts =shelved("Codd", "A")= can only add violations
+where =title = "Codd"= and one shelf is ="A"=. Asking the denial for
+those tuples, with the other shelf free, is the whole incremental check.
+It is the insertion-only case of [[file:maintenance.org][incremental maintenance]], which covers
+the delta rules it reuses.
+
+RNT cannot ask that today. The question binds some attributes of the
+denial and leaves others free, and no operation produces the tuples of
+a relation under a partial binding. This is the gap that [[file:modes.org::*Reachable bindings][reachable
+bindings]] describes. Closing it takes three pieces.
+
+1. A binding-aware read, which every relation implements and FOL passes
+   through its plans.
+2. Indexes, so that a substantial relation answers such a read by
+   lookup rather than by filtering a scan.
+3. Read sets, so that RNT knows which relations a denial reads and how
+   their attributes line up with the denial's, and can turn an inserted
+   tuple into bindings on each denial it touches.
+
+** Denials do not protect themselves
+A commit that removes a denial and breaks its rule is judged on the
+state it makes, where the denial is gone, so it lands. Guarding
+=\denial= needs the access checks the [[file:../README.org][README]] plans to keep apart
+from lookup.
+
+** Multigroups from before denials
+A multigroup stored before denials existed has no =denials= field and
+does not load.

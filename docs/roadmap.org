@@ -1,0 +1,137 @@
+#+TITLE: Roadmap
+
+The work after the [[file:denial.org][denial]] rework, in the order it can be built. Each step
+says why it comes where it does and what has to hold before the next
+one starts. The design behind the steps is in [[file:modes.org][modes]], [[file:denial.org][denials]] and
+[[file:maintenance.org][incremental maintenance]]. Each step lands with its own tests.
+
+* Done
+- Programs are images that name their evaluator, and evaluators
+  =parse= and =eval= their own kinds. See [[file:evaluators.org][programs and evaluators]].
+- Ephemeral relations wrap programs, and storage keeps a program as its
+  evaluator name and source.
+- Every relation declares its modes, and =contains= decides by a test
+  or by reading, never by reading without end.
+- Admission refuses to judge a denial that does not end, and stops at
+  one witness per denial.
+
+* 1. Binding-aware read
+Incremental checking and maintenance both ask a relation for the tuples
+that agree with a partial binding, and no operation can ask that today.
+A mode such as ={title; Finite}= can be declared, and nothing can act on
+it. This is the [[file:modes.org::*Reachable bindings][reachable bindings]] gap, and every later step depends
+on closing it.
+
+The step adds an operation that produces the tuples of a relation under
+a binding of some of its attributes, implemented by every relation.
+
+- A substantial relation filters a scan until it has indexes.
+- FOL passes a binding through a projection to its input when the
+  projection keeps the bound attributes.
+- A relation that wraps a program passes the binding to the relation
+  the program returns.
+
+Membership becomes the case where every attribute is bound.
+
+It is done when a mode with a partial =bound= is usable, and the read
+does what =Mode.generation= says it can. Two questions are open: how a
+binding is represented, and what a relation does when no mode covers
+the binding. Filtering a read under a smaller binding works when that
+read ends, and failing as undecidable is the only other honest answer.
+
+* 2. Indexes
+Without an index, a binding-aware read on a substantial relation still
+reads the whole relation and filters it. It is correct and no faster,
+and a projection still loses the lookup by hash.
+
+The step adds one index per attribute, a prolly tree keyed by the value
+of the attribute and the hash of the tuple, written in the same
+transaction as the tuple set. Each index adds the mode ={a; Finite}=, and
+a projection that keeps =a= keeps it, so membership in a projection
+becomes a lookup.
+
+It is done when a read bound on an indexed attribute reads only the
+matching tuples. Two questions are open: whether indexes on combinations
+of attributes are needed, and whether an index takes part in the
+relation's address. It should not, since an index is derived from the
+tuples.
+
+* 3. Read sets
+RNT cannot tell which denials a commit can break, because a relation
+does not say what it reads. It also cannot turn an inserted tuple into
+bindings on a denial, because it does not know how the denial's
+attributes line up with those of the relations it reads.
+
+The step has every derived relation state the relations it reads and
+where each of its attributes comes from. The =provenance= field of an
+attribute description is the natural place to start.
+
+It is done when, given the relations a commit changed, RNT lists the
+denials that read them, and for each one the binding an inserted tuple
+puts on it.
+
+* 4. Tuple deltas
+The checks in the next steps start from the tuples a commit inserted and
+deleted. [[file:../lib/kernel/Path.mli][Path.diff]] names the relations that changed between two states,
+and stops at subtrees with equal addresses. The same walk over the two
+tuple sets of a relation finds the tuples that changed inside it, since
+a prolly tree shares every unchanged subtree.
+
+It is done when RNT gives the inserted and deleted tuples of each
+relation a commit changed, at a cost proportional to the change.
+
+* 5. Incremental denial checking
+Every commit judges every denial over the whole state. With the four
+steps above, a commit can judge only what it can break. For each tuple
+it inserted, it asks each denial that reads that tuple's relation for
+its tuples under the binding the tuple implies, and the first tuple
+found refuses the commit. Deletions never matter, because every denial
+was empty before the commit.
+
+The full check stays for a commit that installs a denial, since a new
+denial has no earlier emptiness to rely on, and for denials that
+declare no usable mode for the binding.
+
+It is done when a commit that touches one relation reads only the bound
+instances of the denials that read it, and its verdict equals the full
+check's on the same states.
+
+* 6. Incremental maintenance
+A materialized ephemeral relation would cost what a substantial one
+costs to read, but every commit that changes its inputs has to change
+it as well. Incremental denial checking is the insertion half of that
+work. Maintenance adds the rest.
+
+- Materialization, so that a derived relation is stored with its tuples.
+- Deletion rules, and a count per tuple of how many input tuples
+  produce it.
+- An order for each commit: apply the change, maintain every
+  materialized relation that reads it, judge the denials, then move the
+  head.
+
+It is done when a maintained relation holds the same tuples as the same
+relation recomputed from scratch, after every commit in the tests.
+
+* Alongside
+These do not block the steps above.
+
+- =Relation.read= reads a relation whole, and a multigroup stores a
+  relation that wraps no program by reading it whole. Both hang on a
+  =Countable= relation and should check its modes first, as admission
+  does.
+- A relation that declares ={all; Bounded 1}= promises a membership
+  test, and nothing checks that it gives one. A program that declares
+  =Finite= and never ends still hangs any reader.
+- FOL detects cycles only among its own programs. A cycle across
+  languages recurses without end.
+- Denials do not protect themselves. Removing one is judged on a state
+  where it is gone. This needs the access checks the [[file:../README.org][README]] plans.
+- Evaluators should declare capability tags, such as =dml=, and the
+  registry should index them.
+- Programs that change state have no result protocol.
+- Once [[file:../lib/kernel/Merkle.ml][Merkle]] chunking depends only on the tuples a tree holds,
+  maintenance can be checked by comparing addresses instead of tuples.
+- =Path.update= keeps the target it looks up and never releases it, so
+  each call leaks one reference to a counted namespace. This came with
+  the lifecycle rework and needs a decision.
+- The signatures in [[file:object-system.org][the object system]] predate the code.

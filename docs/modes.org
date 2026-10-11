@@ -1,0 +1,171 @@
+#+TITLE: Modes
+
+* Extension and intension
+A relation can be known in two ways. Its [[https://en.wikipedia.org/wiki/Extensional_and_intensional_definitions][extension]] is the set of tuples it
+holds, and a tuple belongs to it if it is among them. Its intension is
+the predicate those tuples satisfy, and a tuple belongs to it if the
+predicate says so. A finite relation can be answered from either. A
+relation of [[https://en.wikipedia.org/wiki/Aleph_number][countably infinite]] cardinality can only be answered from
+its intension, since enumerating it never ends.
+
+A reader that waits for the end of an endless relation hangs, so RNT
+has to know before reading whether a read ends, and whether a relation
+can decide membership at all. Modes are how a relation says so. A mode
+states what a relation can answer under a given binding of its
+attributes, and says nothing of whether the answer comes from the
+extension or the intension. The idea comes from logic languages such
+as Mercury, where a predicate declares its [[https://mercurylang.org/information/doc-latest/mercury_ref/Modes.html][modes]], which arguments must
+be bound for a call, and its [[https://mercurylang.org/information/doc-latest/mercury_ref/Determinism.html][determinism]], how many solutions such a
+call has.
+
+* A mode
+[[file:../lib/concepts/Mode.mli][Mode]] describes one with two fields.
+
+#+begin_src ocaml
+type mode = {bound: attributes; yields: Cardinality.t}
+#+end_src
+
+Given values for the attributes in =bound=, the relation produces every
+tuple that agrees with them, and there are at most =yields= of them.
+[[file:../lib/concepts/Cardinality.mli][Cardinality]] has four classes, =Empty=, =Bounded n=, =Finite= and
+=Countable=. Every class but =Countable= is exhaustible, meaning that
+enumeration ends.
+
+A relation declares its modes through the [[file:../lib/protocols/Relation.mli][Relation]] protocol.
+
+#+begin_src ocaml
+method modes : (Concepts.Mode.t, Concepts.Condition.condition) result
+#+end_src
+
+* Generation under a binding
+A mode declared for =B= also serves any binding that includes =B=. The
+relation produces the tuples that agree with =B= and drops those that
+disagree with the extra values, so it produces no more than before.
+
+=Mode.generation modes bound= is therefore the tightest =yields= among
+the modes whose =bound= is a subset of the binding. It is =None= when
+no mode applies, and then the relation cannot be asked under that
+binding at all. This differs from =Countable=, where the relation can
+be asked but its answer never ends. =Mode.exhaustible= tells whether
+the generation ends.
+
+* Membership
+Deciding whether a tuple belongs to a relation means asking the
+relation with every attribute bound. A relation is a set, so at most
+one tuple agrees with a full binding, and a mode over every attribute
+yields =Bounded 1=. That mode is a direct test, an intension. A
+relation without one can still decide by producing the tuples under a
+smaller binding and comparing each, provided that production ends,
+which is deciding by extension. In principle, then, a relation decides
+membership exactly when it is exhaustible with every attribute bound,
+and extension and intension are the same question asked under
+different bindings.
+
+* Reachable bindings
+The principle above is wider than what RNT can do today. The
+[[file:../lib/protocols/Relation.mli][Relation]] and [[file:../lib/protocols/Enumerable.mli][Enumerable]] protocols reach exactly two bindings.
+
+- =enumerate= produces tuples with nothing bound, so it realizes the
+  modes whose =bound= is empty.
+- =contains= answers with every attribute bound, so it realizes the
+  modes whose =bound= is every attribute.
+
+No operation produces the tuples that agree with a partial binding. A
+relation may declare a mode such as ={title; Finite}=, and
+=Mode.generation= takes it into account, but nothing in RNT can act on
+it. In particular, a relation cannot decide membership through a mode
+with a partial binding. It decides only by its own test, or by
+enumerating with nothing bound. A partial mode becomes usable once
+there is an operation that produces tuples under a binding, which is
+also what [[*Indexes][indexes]] need.
+
+* How contains decides
+A substantial relation looks the tuple up by its hash.
+
+An ephemeral relation takes an optional membership test from whoever
+builds it, through =EphemeralRelation.instantiate ?decide=.
+
+- With a test, =contains= uses it.
+- Without one, =contains= enumerates the relation and compares, but
+  only when =Mode.exhaustible modes ∅= holds, meaning its generation
+  with nothing bound ends.
+- Otherwise it fails with =undecidable-membership= and does not
+  enumerate. This is the case when that generation is =Countable=, or
+  when no mode has an empty =bound=.
+
+A relation that declares ={all; Bounded 1}= promises a direct test, so
+whoever builds it must give it one. Nothing checks that promise yet.
+
+The evaluator protocol has no membership method. An ephemeral relation
+generated by a program answers =contains= the way it answers =modes=.
+It invokes the program, asks the relation the program returns, and
+releases it. That result is a relation the evaluator built, and the
+evaluator gave it whatever test it could.
+
+* What relations declare
+A substantial relation stores its tuples in a set keyed by the hash of
+each whole tuple. It declares ={∅; Finite}= for enumerating that set,
+and ={all; Bounded 1}= for the lookup by hash, which needs every
+attribute to compute the hash.
+
+An ephemeral relation that =EphemeralRelation.literal= builds from =n=
+tuples declares ={∅; Bounded n}=.
+
+An ephemeral relation generated by a [[file:../lib/kernel/Program.ml][program]] knows its modes only from
+the relation the program returns, so asking for them invokes the
+program and asks the result. Invoking is lazy. An [[file:evaluators.org][evaluator]] builds
+the result without reading tuples, and FOL reads tuples only when the
+result is enumerated. A program with no state to run within fails with
+=unbound-program=, just as reading its relation would.
+
+A relation that declares no modes cannot be asked under any binding.
+
+* Modes of a FOL plan
+[[file:../lib/evaluators/FOL.ml][FOL]] computes the modes of a plan alongside its heading, before it
+executes anything, and records them on each relation it derives.
+
+- =Base r= has the modes of =r=.
+- =Project (p, A)= keeps the modes of =p= whose =bound= lies within
+  =A=, with the same =yields=.
+
+A projection never yields more tuples than its input, so =yields=
+carries over. A mode that needs an attribute outside =A= no longer
+applies, because a tuple of the projection holds no value for it.
+
+Take =book(title, author)= as a substantial relation, projected on
+=title=. Asking whether ={title: "Codd"}= belongs to the projection
+asks whether some book has that title, by any author. The lookup by
+hash needs the author to hash the whole tuple, so the projection keeps
+only ={∅; Finite}=.
+
+FOL gives a membership test only where it has one. The relation it
+derives for =Base r= takes the =contains= of =r= as its test, so FOL
+over a substantial relation still looks tuples up by hash. The relation
+it derives for a projection has no test, so its =contains= enumerates
+the projection, which reads all of =book=, and compares. That ends
+because =book= is finite.
+
+A projection of a =Countable= relation stays =Countable=. FOL still
+streams it, since a projection reads one tuple at a time and never
+needs the end. Asking such a projection whether it holds a tuple fails
+with =undecidable-membership=.
+
+* Indexes
+An index on an attribute =a= would be a tree keyed by the value of =a=
+and the hash of the tuple, and would add the mode ={a; Finite}=. A
+projection that keeps =a= keeps that mode, so with one index per
+attribute every membership question could stay a lookup. That takes two
+things RNT does not have, the index trees and an operation that
+produces tuples under a partial binding, as [[*Reachable bindings][reachable bindings]]
+explains. Without the operation, the mode an index adds would be
+declared and never used.
+
+Modes carry no cost. A lookup and a full scan both appear as an
+exhaustible generation, and choosing between them belongs to whatever
+plans the query.
+
+* Where exhaustion matters
+Only a reader that runs a relation to its end needs it exhaustible.
+=Relation.read= drains a relation, and admission drains every [[file:denial.org][denial]]
+that holds a tuple, so both hang on a =Countable= relation. Neither
+checks modes yet. Denials will check them once they are reworked.

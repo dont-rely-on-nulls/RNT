@@ -7,6 +7,9 @@ operates purely on the object tree and never touches storage. "Collection"
 here means dropping the in-memory registry entry, not deleting anything on
 disk.
 
+The manager is a design and is not built. [[*What exists today][What exists today]] describes the
+mechanism the code has now.
+
 * Three independent facts per object
 
 Each registry entry keeps three separate pieces of state, deliberately not
@@ -42,12 +45,11 @@ the =reference_count= of each edge target; unregistration drops it. The edge
 set is a per-kind property and lives next to the registry, because the object
 knows its own shape.
 
-Only ephemeral relations carry edges today. An ephemeral relation is a stored
-plan that reads other relations, so those inputs must not be collected while
-the plan can still be replayed. The edges are branch-local symlink paths, not
-version-pinned paths: as the branch head advances the inputs move with it, and
-=Namespace.resolve= turns the symlink into whatever object is current on this
-branch hash. This is what lets an ephemeral relation behave like a view.
+Only ephemeral relations carry edges today. An ephemeral relation wraps a
+[[file:evaluators.org][program]] that reads other relations, so those inputs must not be collected
+while the program can still run. Its inputs are paths resolved in the branch
+state it is read through, not pinned versions. Read through the head, it reads
+the inputs as they are. Read through =previous=, it reads them as they were.
 
 * Teardown order
 
@@ -80,3 +82,39 @@ collectable like anything else.
 Separate from collection. An exclusive object with an open handle, such as a
 branch head being read, cannot be modified until the handle closes.
 =contention= reports this so writers can be gated.
+
+* What exists today
+Each object carries its own lifecycle, one of the classes in
+[[file:../lib/kernel/Lifecycle.mli][Lifecycle]], and every handle to it calls into that lifecycle when it is
+copied or released.
+
+- =null= is for objects with nothing to release, either because storage
+  can rebuild them or because they hold no resources. Substantial
+  relations, multigroups, branch states, programs and evaluators are
+  =null=.
+- =counted= is for objects that hold resources. It counts handles and runs
+  the object's destructor when the last one is released. Namespaces,
+  sessions, generated cursors and ephemeral relations are counted, and an
+  ephemeral relation releases its inputs when it is destroyed.
+- =exclusive= admits one handle at a time. Nothing uses it since sessions
+  became counted.
+- =retaining= stands in for a handle while it holds a reference to an
+  owner, so that what the handle reads outlives the object that produced
+  it. A cursor over a program's result keeps the result alive this way.
+
+A namespace owns the handles registered in it. =Namespace.update= moves the
+handle in, which invalidates the caller's handle, and releases the handle
+it replaces. A destroyed namespace releases every entry. A caller that
+still needs a handle after registering it registers a =Handle.copy=.
+
+Walking a path opens a handle at every step, and the walk has to release
+all of them except the last. [[file:../lib/kernel/Path.ml][Path]] does this with an autorelease pool,
+named after the [[https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/MemoryMgmt/Articles/mmAutoreleasePools.html][Cocoa]] mechanism. Each handle found along the way goes
+into the pool, and the pool releases them when the walk ends. =Handle.keep=
+takes the handle the walk returns back out of the pool, and the caller
+releases it. The pool is an OCaml [[https://ocaml.org/manual/effects.html][effect handler]], so the code inside the
+walk adds handles to it without being passed the pool.
+
+A handle to a managed object that the garbage collector reaches while it
+is still valid has leaked. Its finalizer logs a warning with the backtrace
+of where the handle was made, and releases it.

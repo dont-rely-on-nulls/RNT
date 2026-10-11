@@ -1,108 +1,215 @@
-#+TITLE: Evaluators
+#+TITLE: Programs and evaluators
 
-* Position
-RNT should supply objects, storage, and execution
-lifecycle, but not directly a sublanguage. That duty is then on the
-clients to implement one and register it, using the kernel's
-capabilities.
+* Why the kernel has no language
+RNT supplies objects, storage and the execution lifecycle, and leaves
+languages to its clients. SQL puts retrieval, data manipulation and data
+definition in one language, and the boundaries between them are hard to
+draw. In RNT, a language =A= may serve retrieval, =B= may serve
+manipulation and definition, and =C= may serve manipulation beside =B=.
+Nothing arbitrates between =B= and =C=, and a client picks either. The
+[[file:../lib/evaluators/FOL.ml][FOL]] evaluator is one such language, shipped with RNT for retrieval.
 
-In this context, an evaluator is an RNT object, registered and
-selected through the object interface, with a special "evaluator"
-protocol. Unlike SQL where the boundaries between execution contexts
-of the language is confusing and sometmes non-trivial, a sublanguage
-=A= may serve retrieval, =B= may serve DML and DDL while =C= may serve
-DML alongside =B=. Nothing arbitrates between B and C; making the
-client free to opt for one.
+That leaves the kernel two jobs. It has to run a program without
+knowing its language, and it has to let programs in different languages
+read each other's results. Programs and evaluators are how it does both.
 
-The FOL evaluator is therefore, one of such evaluators that is shipped
-alongside RNT for specifically Data Retrieval.
-
-* Capability tags
-An evaluator object declares a set of opaque labels — =drl=, =dml=,
-=ddl=, =vcs=, or anything a client invents. The registry stores and
-indexes them so a client can ask which evaluators declare =dml= and
-get back B and C.
-
-* Protocols
-An evaluator is an object like any other, that can be used to execute
-a program, exactly as an interpreter takes an expression and an
-environment. The plan tree should already bear every value and handle
-the program needs, so there is nothing left to bind. Each invocation
-carries independent state based atop of the handles it was given
-(being therefore hash dependent and isolated).
+* Programs
+The kernel holds, stores and runs programs whose structure it cannot
+know. A [[file:../lib/kernel/Program.ml][program]] is therefore an image, in the manner of a Windows
+[[https://en.wikipedia.org/wiki/Portable_Executable][Portable Executable]], whose header tells the loader which subsystem
+runs it.
 
 #+begin_src ocaml
-module Make (P : PROGRAM) : sig
-  class type implementation = object
-    method invoke : P.t -> (Handle.t, condition) result
-  end
-end
+type kind = ..
+type image = {evaluator: string; kind: kind; source: string}
 #+end_src
 
-The protocol is parameterized by the evaluator's own plan type, so a
-plan is never encoded into values only to be decoded again. Each
-application of the functor yields its own protocol constructor, which
-is what keeps one evaluator from answering another's programs: a
-client obtains the interface through the module of the evaluator it
-intends to speak to. The FOL evaluator, which lives under
-=lib/evaluators= alongside the evaluators shipped with RNT, currently
-understands a single node:
+=evaluator= names the evaluator that runs the program, as
+=scope:language=. =kind= is the program as that evaluator understands
+it. =source= is its text, for display and for storage.
+
+=kind= is an [[https://ocaml.org/manual/extensiblevariants.html][extensible variant]], extended the way [[file:object-system.org][protocols]] are. Each
+evaluator adds its own constructor, as FOL adds =Fol of Path.t term=.
+The tree keeps its OCaml type, and only the evaluator that defined the
+constructor can match on it, so the kernel passes programs around with
+no encoding in between. The evaluator name is the one string a program
+carries, because the kernel looks evaluators up by name and storage can
+keep a name but not a constructor.
+
+Every program speaks [[file:../lib/protocols/Executable.mli][Executable]], and a program built with a root can run.
 
 #+begin_src ocaml
-type plan = Base of Handle.t
+method invoke : Handle.t list -> within:Handle.t -> (Handle.t, condition) result
 #+end_src
 
-=Base= carries the handle of a relation, which is enumerated to
-exhaustion. The evaluator only invokes protocols on the handles it
-receives, which keeps it free of storage and of name resolution.
+Invoking a program looks up =\[scope]\evaluator\[language]= under its
+root, and hands that evaluator the kind, the inputs and =within=. A bare
+=language= names the =system= scope. The root is a capability, so a
+program reaches only the evaluators of the root it was given. A program
+built without a root can be stored but not run, and invoking it fails
+with =unloaded-program=. A name with nothing registered under it fails with
+=no-evaluator=.
 
-The returned handle carries a result protocol with =Protocols.Cursor=,
-giving it incremental consumption. Since executing a plan node yields
-a cursor, operators stack as cursors over cursors, in the manner of a
-volcano iterator, and no intermediate result is materialized. A
-successor state and a command completion are further result protocols,
-added for DML and DDL later. It's important to notice that the kernel
-enumerates result protocols; it thererfore does not enumerate
-sublanguages. That is not to say however that we cannot have a builtin
-catalog relation installed and configured by the client that
-enumerates them (that's a concern for the future).
-
-* Handles
-There is no evaluation context. Since we are a capability based
-system, holding a handle is what authorizes its use, so the caller
-obtains every handle a program needs beforehand (through the
-directories it was granted) and passes them in. Evaluators reach
-kernel resources *only* through those handles. A program that refers
-to things by name carries the directory they are resolved in, as the
-lambda evaluator does:
+* Evaluators
+An evaluator is an object with the [[file:../lib/protocols/Evaluator.mli][Evaluator]] protocol.
 
 #+begin_src ocaml
-type program = Program of term * Directory.t Handle.interface
+method parse : string -> (kind, condition) result
+method eval : kind -> Handle.t list -> within:Handle.t -> (Handle.t, condition) result
 #+end_src
 
-Since every object is content addressed and prolly trees do not
-depend on insertion order, equal state yields an equal hash, so the
-relation behind a handle does not change under a running evaluation.
-A successful evaluation and cursor exhaustion never commit. Commit
-should be an explicit host operation.
+=eval= runs a kind, and fails for a kind that is not its own. =parse=
+turns source back into a kind, which is how the kernel reloads a stored
+program. A program built in code skips parsing. =FOL.program term=
+builds one from a tree and prints the tree as its source, so a test can
+build a plan without a syntax. FOL has no text syntax yet, and its
+source is the [[https://en.wikipedia.org/wiki/Bencode][bencoded]] term.
 
-Cancellation, budgets, and resource accounting are not implemented.
+#+begin_src plantuml :file ../images/evaluators-classes.svg
+@startuml
+hide empty members
+skinparam classAttributeIconSize 0
+
+class Program <<image>> {
+  evaluator : string
+  kind : Program.kind
+  source : string
+}
+interface Executable {
+  invoke(inputs, within) : relation
+}
+interface Evaluator {
+  parse(source) : kind
+  eval(kind, inputs, within) : relation
+}
+class "FOL evaluator" as FOL
+class EphemeralRelation
+interface Relation {
+  contains(tuple) : bool
+  modes() : Mode.t
+}
+interface Enumerable {
+  enumerate() : cursor
+}
+interface Schematics {
+  describe() : heading
+}
+
+Program ..|> Executable : runs when given a root
+FOL ..|> Evaluator
+Program --> Evaluator : names it as\nscope:language
+EphemeralRelation ..|> Relation
+EphemeralRelation ..|> Enumerable
+EphemeralRelation ..|> Schematics
+EphemeralRelation o--> "0..1" Program : wraps
+Evaluator ..> EphemeralRelation : eval returns
+@enduml
+#+end_src
+
+#+RESULTS:
+[[file:../images/evaluators-classes.svg]]
+
+* Within
+In RNT, holding a handle is what authorizes its use, so an evaluator
+gets no context beyond one directory. A program names relations by
+path, and its evaluator resolves those paths in the directory the
+program is invoked =within=. It can reach nothing else.
+
+Resolving paths at each invocation is what lets one program run against
+any state. Read through
+=\system\branch\master\multigroup\m\schema\s\relation\r=, a stored
+program runs within that branch state. Read through
+=\system\branch\master\previous\...=, it runs within the previous state
+and reads what was there then. It can never read outside its branch.
+
+Evaluation never commits, and neither does exhausting a cursor.
+Committing is an explicit host operation. Cancellation, budgets and
+resource accounting are not implemented.
+
+* Results
+Programs in different languages can read each other's results only if
+those results share one interface. The result of every program is an
+[[file:../lib/kernel/EphemeralRelation.ml][ephemeral relation]]. It describes its heading, declares its [[file:modes.org][modes]] and
+answers membership. Enumerating it gives a cursor, so operators stack
+as cursors over cursors, as in Graefe's Volcano iterator model
+("Volcano, an Extensible and Parallel Query Evaluation System", 1994),
+and nothing in between is materialized.
+
+An ephemeral relation can wrap a program, through
+=EphemeralRelation.of_program=. Reading it invokes the program within
+the state it was given. Asking its modes, or whether it holds a tuple,
+invokes the program and asks the relation the program returns. For FOL
+this is cheap, because FOL builds its result without reading a tuple.
+
+Programs that change state have no result protocol yet.
+
+* Storage
+A multigroup stores an ephemeral relation that wraps a program as the
+program's evaluator name and source, beside its heading. It stores any
+other relation as its tuples. When a branch reads the relation back,
+the evaluator registered under that name parses the source into a kind,
+and the relation wraps the program that comes out. The parse happens at
+lookup, so a missing evaluator or a malformed source fails at
+=Path.lookup= rather than at the first read.
+
+#+begin_src plantuml :file ../images/evaluators-reading.svg
+@startuml
+actor Client
+participant "Path.lookup" as Path
+participant Multigroup
+participant EphemeralRelation as E
+participant Program
+participant "evaluator under\nthe program's name" as Ev
+
+Client -> Path : lookup a relation in a branch state
+Path -> Multigroup : find it
+Multigroup -> E : load (evaluator name, source, heading)
+E -> Program : Program.load root
+Program -> Ev : parse source
+Ev --> Program : kind
+E --> Client : relation wrapping the program
+Client -> E : enumerate
+E -> Program : invoke ~within:branch state
+Program -> Ev : eval kind ~within
+Ev --> Program : result relation
+Program --> E : result relation
+E --> Client : cursor over the result
+@enduml
+#+end_src
+
+#+RESULTS:
+[[file:../images/evaluators-reading.svg]]
 
 * Composition
-Evaluators compose through invocation and result protocols alone. A
-DML program written in B may invoke a retrieval program written in A,
-consume its cursor, and build a successor state from the tuples. A
-retrieval program in A may invoke a procedural relation implemented by
-C. Neither evaluator however knows the other's representation. The
-caller must establish that the callee's contract meets its needs,
-obviously.
+Evaluators compose through programs and results, and neither knows the
+other's kind. When FOL resolves a path to a relation that wraps a
+program, it checks the program's kind.
+
+- A FOL program is inlined into the plan. FOL then sees through it, and
+  refuses a program that reaches itself with =cyclic-program=.
+- A program of any other kind is invoked within the same state, and its
+  result enters the plan like any other relation.
+
+A program in another language reads a FOL program the same way, by
+resolving its path and reading the relation. The [[file:../test/unit/kernel/Branch.ml][branch tests]] do both,
+with a toy language whose programs shout the titles of a FOL relation.
+
+FOL detects cycles only among its own programs. A cycle across
+languages, where a FOL program reads a toy program that reads it back,
+recurses without end. Nothing checks one evaluator's assumptions about
+another's results either, so the caller has to establish that the
+callee's results meet its needs.
 
 * Registration
-Registration is made by the client, and in the case of builtins, 
-automatically at initialization, just as =Relation= and =Schematics=, 
-for example. A foreign registration path is a later concern and is not
-designed for here.
+The system's evaluators are registered at initialization, under
+=\system\evaluator=. A subsystem mounts its own root with
+[[file:../lib/kernel/Initialization.mli][Initialization.mount]], which holds =\[name]\evaluator=, and registers
+its evaluators there. Its programs then name them as =name:language=. A
+foreign registration path is a later concern.
 
-Only =Protocols.Cursor= exists as a result protocol (at least for now), 
-so a successor state, completion, plan persistence, and cross-evaluator 
-optimizations are absent by design.
+* Capability tags
+A client should be able to ask which evaluators serve manipulation, and
+get =B= and =C= back. The intent is that each evaluator declares a set
+of opaque labels, such as =drl=, =dml=, =ddl=, =vcs= or any a client
+invents, and that the registry indexes them. None of this is
+implemented.

@@ -1,0 +1,104 @@
+#+TITLE: Incremental maintenance
+
+* Purpose
+An [[file:../lib/kernel/EphemeralRelation.ml][ephemeral relation]] is computed when it is read. That is right for a
+relation read rarely, and wrong for one read on every commit or over a
+large input, where each read repeats the whole computation. A
+materialized ephemeral relation would store its tuples, so that reading
+it costs what reading a substantial relation costs. Every commit that
+changes its inputs then has to change it as well.
+
+Recomputing it from scratch on each commit costs as much as the
+relation itself. Incremental maintenance computes only the change, from
+the change to the inputs. The literature calls this [[https://en.wikipedia.org/wiki/Materialized_view][incremental view
+maintenance]], and Gupta and Mumick survey it in "Maintenance of
+Materialized Views: Problems, Techniques, and Applications" (1995).
+RNT has none of it yet. This document is the design it should follow.
+
+* Deltas
+A commit changes each relation it touches by a set of inserted tuples,
+Δ⁺, and a set of deleted tuples, Δ⁻. For a relation =D= derived from
+inputs =R₁ … Rₙ=, maintenance computes =ΔD⁺= and =ΔD⁻= from the =ΔRᵢ= and
+the states before and after the commit, operator by operator.
+
+- =Base r= changes exactly as =r= does.
+- =Project (p, A)= gains the projection of each tuple in =Δp⁺= that it
+  did not hold before. It loses the projection of a tuple in =Δp⁻= only
+  if no other tuple of =p= projects to the same tuple, which is the
+  problem [[*Counting][counting]] solves.
+- A join, once [[file:../lib/evaluators/FOL.ml][FOL]] has one, gains =ΔR⁺ ⋈ S= and =R ⋈ ΔS⁺=, against the
+  right states. Computing =ΔR⁺ ⋈ S= means asking =S= for the tuples that
+  agree with each inserted tuple of =R= on the join attributes.
+
+That last question binds some attributes of =S= and leaves the rest
+free. It is the partial binding that no operation in RNT can ask
+today, the gap [[file:modes.org::*Reachable bindings][reachable bindings]] describes. Without it, the only way
+to compute a delta through a join is to read =S= whole, which is
+recomputation by another name.
+
+* Counting
+Deletion through a projection needs to know how many tuples of the input
+produce each tuple of the output. A materialized relation can store that
+count beside each tuple. An inserted input tuple raises the count of
+its projection, a deleted one lowers it, and the projected tuple leaves
+the relation when its count reaches zero. This is the counting algorithm
+of Gupta, Mumick and Subrahmanian ("Maintaining Views Incrementally",
+1993). The same paper gives DRed for recursive relations, where counts
+do not terminate, by deleting an overestimate and rederiving what
+survives.
+
+* Denials are the simplest case
+A [[file:denial.org][denial]] is an ephemeral relation that must stay empty, and checking it
+incrementally is maintenance with most of the work removed.
+
+- Only insertions matter. The state before the commit was admitted, so
+  every denial was empty, and an empty relation has nothing to lose.
+  =ΔD⁻= is always empty.
+- Only emptiness matters. One tuple of =ΔD⁺= is enough to refuse the
+  commit, so the check stops at the first.
+- Nothing is stored. A denial is never materialized, and its delta is
+  thrown away once judged.
+- Nothing is counted, because nothing is ever deleted from a denial.
+
+Incremental denial checking therefore reuses the insertion half of the
+delta rules, stopped at the first tuple. Full maintenance adds
+deletions, counts and storage on top of it.
+
+* What it needs
+Some pieces are shared with incremental denial checking.
+
+1. A binding-aware read, which every relation implements and FOL passes
+   through its plans, to compute deltas through joins.
+2. Indexes, so that such a read is a lookup on a substantial relation
+   rather than a filtered scan.
+3. Read sets, so that RNT knows which relations a derived relation
+   reads and how their attributes line up with its own, and can tell
+   which relations a commit touches.
+4. Tuple deltas. [[file:../lib/kernel/Path.mli][Path.diff]] names the relations that changed between
+   two states, and skips subtrees with equal addresses. The tuples that
+   changed inside a relation can be found the same way, by diffing its
+   two tuple sets, since a prolly tree shares every unchanged subtree.
+   RNT does not expose that diff yet.
+
+Others belong to maintenance alone.
+
+5. Materialization, so that a derived relation can be stored with its
+   tuples and counts, and read like a substantial relation.
+6. Deletion rules and counts, as above.
+
+* When maintenance runs
+A commit would apply its changes to the base relations, maintain every
+materialized relation that reads them, then judge the denials against
+the resulting state, and only then move the head. Maintenance has to
+come before judgement, because a denial may read a materialized
+relation. The maintained relations land in the same state as the change
+that caused them, so no state ever holds a stale one.
+
+* Checking it
+A tuple set is content addressed. If the shape of its tree depended only
+on the tuples it holds, and not on the order they were inserted in, a
+maintained relation and the same relation recomputed from scratch would
+have equal addresses exactly when maintenance was correct, and
+comparing the two addresses would test the delta rules completely. The
+chunking in [[file:../lib/kernel/Merkle.ml][Merkle]] is still naive and does not promise that, so until
+it does, the test has to compare the tuples themselves.

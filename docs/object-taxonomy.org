@@ -21,7 +21,9 @@ may remain invariant while the extension differs between the earlier
 and later states.
 
 A branch identifies one such coherent state and provides the basis
-from which another may be produced. It therefore gives RNT a
+from which another may be produced. Each state names the one it
+succeeded, under =previous=, so the history of a branch is reached by
+path. It therefore gives RNT a
 representation of change without requiring mutation to be part of the
 relational semantics. How successive states are physically
 represented, shared, or persisted is an implementation concern.
@@ -252,6 +254,10 @@ A multigroup is consequently the principal unit of coherent relational
 state exposed through a branch. A branch may reference multiple
 multigroups and determine the particular state of each that is visible
 from that view of the world.
+
+Within a multigroup, relations are grouped into schemas, which for now
+are only namespaces: \multigroup\[m]\schema\[s]\relation\[r]. The
+canonical name of an attribute is therefore =m:s:r:a=.
 
 * Session
 A session contains state specific to an interaction between a client

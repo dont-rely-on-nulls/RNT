@@ -9,7 +9,7 @@
 RNT is an experimental database kernel written in OCaml, modeled on
 the Windows NT kernel. As in NT, the kernel doesn't understand any
 query language itself. It manages objects (relations, tuples,
-branches, sessions, evaluators) and exposes them through named paths,
+branches, sessions, programs, evaluators) and exposes them through named paths,
 handles, and protocols. Query languages and data models are meant to
 sit on top as /subsystems/, the way Win32 and POSIX sit on top of the
 NT native API.
@@ -85,7 +85,7 @@ Relations, branches, sessions, evaluators and every object live in one
 object tree. If you can name it, you can reach it:
 
 #+BEGIN_SRC ocaml
-Path.lookup root ("session" @/ "client" @/ "branch" @/ this)
+Path.lookup root ("system" @/ "session" @/ "client" @/ "branch" @/ this)
 #+END_SRC
 
 See [[file:docs/object-system.org][docs/object-system.org]] and [[file:docs/object-taxonomy.org][docs/object-taxonomy.org]].
@@ -112,29 +112,42 @@ supports it.
 
 ** Bring your own language
 
-The kernel ships no query language. An evaluator is just another
-object that implements the =Evaluator= protocol, so adding a language
-means writing one method. Here is one that counts the tuples of a
-relation:
+The kernel ships no query language. A program names the evaluator that
+runs it and carries a kind, a constructor that evaluator adds to
+=Program.kind=. An evaluator is an object with the =Evaluator= protocol,
+which parses source into its kind and evaluates the kind against a
+directory. Here is a language whose programs count the tuples of the
+relation at a path:
 
 #+BEGIN_SRC ocaml
+type Kernel.Program.kind += Count of Kernel.Path.t
+
+let heading = BatMap.String.singleton "n" {Protocols.Schematics.domain= "integer"; provenance= []}
+
+let counter =
   Protocols.Evaluator.make
     (object
-       method invoke relation =
+       method parse source =
+         Ok (Count (Kernel.Path.of_list (String.split_on_char '\\' source)))
+
+       method eval kind _inputs ~within =
          let open Utilities.Result in
-         let* enumerable = Protocols.Enumerable.require relation in
-         let* cursor = Protocols.Enumerable.enumerate enumerable in
-         let* scan = Protocols.Cursor.require cursor in
-         let* tuples = Protocols.Cursor.drain scan () in
-         Protocols.Handle.release cursor;
-         let n = BatFingerTree.size tuples in
-         Ok (Kernel.Prototype.mixture
-               [Describable (object method describe = string_of_int n end)])
-     end)
+         match kind with
+         | Count path ->
+             let* relation = Kernel.Path.lookup within path in
+             let* _, tuples = Protocols.Relation.read relation in
+             let n = Concepts.Value.Integer (List.length tuples) in
+             Ok
+               (Kernel.EphemeralRelation.literal heading
+                  [{Concepts.Tuple.type_= "count"; attributes= BatMap.String.singleton "n" n}] )
+         | _ -> Error Concepts.Condition.(condition "not-a-count" "Not a count program" empty)
+     end )
 #+END_SRC
 
-Register it in the object tree, and it sits next to the first-order
-logic evaluator that ships with RNT. See [[file:docs/evaluators.org][docs/evaluators.org]].
+Register it under =\system\evaluator\count=, next to the first-order
+logic evaluator that ships with RNT, and a program built with
+=Kernel.Program.make ~root ~evaluator:"count"= runs through it. See
+[[file:docs/evaluators.org][docs/evaluators.org]].
 
 ** Bring your own storage
 
@@ -162,10 +175,18 @@ RNT is early and its APIs will change. What works today, with tests:
 
 - content-addressed tuple storage on LMDB
 - prolly-tree indexes (chunking is still naive; see =lib/kernel/Merkle.ml=)
-- branches, and sessions that pin a snapshot
+- branches whose earlier states stay reachable under =previous=, and
+  sessions that pin a snapshot
+- programs that name their evaluator, stored as ephemeral relations and
+  run against the branch state they are read through
 - path lookup across the object tree
 - substantial and ephemeral relations with pull-based cursors
-- a FOL evaluator supporting scan and projection
+- modes that say what each relation can produce and decide, so that a
+  relation without end is never read to its end
+- denials, which keep a branch head from moving to a state that breaks
+  them
+- a FOL evaluator supporting scan and projection, which reads programs
+  written in other languages
 
 * Building
 

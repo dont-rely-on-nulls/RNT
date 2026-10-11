@@ -134,7 +134,7 @@ RNT exposes its resources as a hierarchy of objects. The root of this tree is an
 #+end_src
 =register= and =unregister=, as implemented by the root of the hierarchy, allows components to register resources that can be retrieved by users of the system through the corresponding =Directory= interface. The handle passed as an argument to =register= must support being "copy"ed.
 
-As a convenience, a =path= represents a pattern of traversal the object tree. The path ="branch" @/ "master" @/ "multigroup" @/ "universe" @/ this= represents the object that can be retrieved by, from a given reference point, "open"ing the child denoted by ="branch"= on the given reference point, then "open"ing the child denoted ="master"= on the retrieved object, and so on. Every traversal assumes that the object in question has a =Directory= protocol. The ability to construct and manipulate paths is implemented by the =Path= module:
+As a convenience, a =path= represents a pattern of traversal the object tree. The path ="system" @/ "branch" @/ "master" @/ "multigroup" @/ "universe" @/ this= represents the object that can be retrieved by, from a given reference point, "open"ing the child denoted by ="system"= on the given reference point, then "open"ing the child denoted ="branch"= on the retrieved object, and so on. Every traversal assumes that the object in question has a =Directory= protocol. The ability to construct and manipulate paths is implemented by the =Path= module:
 #+begin_src ocaml
   module Path : sig
     type path
