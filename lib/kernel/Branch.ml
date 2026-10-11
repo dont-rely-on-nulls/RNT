@@ -126,8 +126,8 @@ module Make (S : Abstract.Storage.STORAGE) = struct
               let* violations = Protocols.Admission.check admission in
               Ok
                 (List.map
-                   (fun (d, tuples) ->
-                     Path.(to_string ("multigroup" @/ m @/ "denial" @/ d @/ this)), tuples )
+                   (fun (d, witness) ->
+                     Path.(to_string ("multigroup" @/ m @/ "denial" @/ d @/ this)), witness )
                    violations ) )
         in
         Protocols.

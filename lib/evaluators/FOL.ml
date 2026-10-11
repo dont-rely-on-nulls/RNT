@@ -121,6 +121,17 @@ let rec describe =
       | _ -> Error (Error.not_a_relation (Protocols.Handle.to_string relation)) )
   | Project (plan, attributes) -> describe plan |> fmap (restrict attributes)
 
+let rec modes =
+  let open Utilities.Result in
+  function
+  | Base relation ->
+      let* relation = Protocols.Relation.require relation in
+      Protocols.Relation.modes relation
+  | Project (plan, attributes) ->
+      modes plan
+      |> Result.map
+           (Concepts.Mode.project (BatSet.String.of_list (BatFingerTree.to_list attributes)))
+
 let enumerate relation =
   let open Utilities.Result in
   let* enumerable = Protocols.Enumerable.require relation in
@@ -154,24 +165,30 @@ let project description relation =
   in
   Ok (Kernel.Generator.cursor_of ~finally:(fun () -> Protocols.Handle.release cursor) produce)
 
-let derive relation description enumerate =
-  Kernel.EphemeralRelation.instantiate ~inputs:[relation] description
+let contains relation tuple =
+  Result.bind (Protocols.Relation.require relation) (fun r -> Protocols.Relation.contains r tuple)
+
+let derive ?decide relation description modes enumerate =
+  Kernel.EphemeralRelation.instantiate ~inputs:[relation] ?decide
+    ~modes:(fun () -> Ok modes)
+    description
     {Kernel.EphemeralRelation.name= None; schematics= `Temporary description; program= None}
     (fun () -> enumerate relation)
 
 let rec execute plan =
   let open Utilities.Result in
   let* description = describe plan in
+  let* modes = modes plan in
   match plan with
   | Base relation ->
       let* relation =
         Protocols.Handle.copy relation
         |> Option.to_result ~none:(Error.released_relation (Protocols.Handle.to_string relation))
       in
-      Ok (derive relation description enumerate)
+      Ok (derive ~decide:(contains relation) relation description modes enumerate)
   | Project (plan, _) ->
       let* relation = execute plan in
-      Ok (derive relation description (project description))
+      Ok (derive relation description modes (project description))
 
 class evaluator =
   object (self)

@@ -1,30 +1,18 @@
-type attribute = string
 type attributes = BatSet.String.t
-type affordance = Decides | Generates of Cardinality.t
-type mode = {bound: attributes; affords: affordance}
+type mode = {bound: attributes; yields: Cardinality.t}
 type t = mode list
 
-let attributes_of_list = BatSet.String.of_list
-let attributes_of_map map = BatMap.String.keys map |> BatSet.String.of_enum
-let decides_when bound = {bound= attributes_of_list bound; affords= Decides}
-let enumerable cardinality = {bound= BatSet.String.empty; affords= Generates cardinality}
-let of_list modes = modes
+let mode bound yields = {bound= BatSet.String.of_list bound; yields}
 
-let generation declaration bound =
+let generation modes bound =
   List.fold_left
-    (fun tightest {bound= declared; affords} ->
-      match affords with
-      | Generates cardinality when BatSet.String.subset declared bound ->
-          Some (Option.fold ~none:cardinality ~some:(Cardinality.meet cardinality) tightest)
-      | Generates _ | Decides -> tightest )
-    None declaration
+    (fun tightest {bound= declared; yields} ->
+      if BatSet.String.subset declared bound then
+        Some (Option.fold ~none:yields ~some:(Cardinality.meet yields) tightest)
+      else tightest )
+    None modes
 
-let exhaustible declaration bound =
-  Option.fold ~none:false ~some:Cardinality.exhaustible (generation declaration bound)
+let exhaustible modes bound =
+  Option.fold ~none:false ~some:Cardinality.exhaustible (generation modes bound)
 
-let decision declaration bound =
-  exhaustible declaration bound
-  || List.exists
-       (fun {bound= declared; affords} ->
-         match affords with Decides -> BatSet.String.equal declared bound | Generates _ -> false )
-       declaration
+let project attributes = List.filter (fun {bound; _} -> BatSet.String.subset bound attributes)

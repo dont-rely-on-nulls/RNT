@@ -69,6 +69,12 @@ module Make (S : Abstract.Storage.STORAGE) = struct
       condition "incomplete-multigroup"
         "A stored multigroup is missing part of its expected structure. Is your storage corrupted?"
         ("address" |=| Concepts.Value.String (Concepts.Hash.to_hum_string addr))
+
+    let unjudgeable denial =
+      condition "unjudgeable-denial"
+        "A denial does not declare that reading it with nothing bound ends, so the state cannot \
+         be judged"
+        ("denial" |=| Concepts.Value.String denial)
   end
 
   module Representation = Concepts.Encoding.Record.Make (struct
@@ -177,16 +183,17 @@ module Make (S : Abstract.Storage.STORAGE) = struct
   let held (name, relation) =
     let open Utilities.Result in
     Protocols.Handle.releasing relation (fun () ->
-        let* enumerable = Protocols.Enumerable.require relation in
-        let* cursor = Protocols.Enumerable.enumerate enumerable in
-        Protocols.Handle.releasing cursor (fun () ->
-            let* scan = Protocols.Cursor.require cursor in
-            let* first = Protocols.Cursor.next scan in
-            match first with
-            | None -> Ok []
-            | Some tuple ->
-                let* rest = Protocols.Cursor.drain scan () in
-                Ok [name, tuple :: BatFingerTree.to_list rest] ) )
+        let* denial = Protocols.Relation.require relation in
+        let* modes = Protocols.Relation.modes denial in
+        if not (Concepts.Mode.exhaustible modes BatSet.String.empty) then
+          Error (Error.unjudgeable name)
+        else
+          let* enumerable = Protocols.Enumerable.require relation in
+          let* cursor = Protocols.Enumerable.enumerate enumerable in
+          Protocols.Handle.releasing cursor (fun () ->
+              let* scan = Protocols.Cursor.require cursor in
+              let* first = Protocols.Cursor.next scan in
+              Ok (Option.to_list (Option.map (fun witness -> name, witness) first)) ) )
 
   class multigroup ?bind conn value schema_tree denial_tree =
     object (self)

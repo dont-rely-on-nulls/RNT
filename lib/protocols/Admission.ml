@@ -6,7 +6,7 @@ module Error = struct
       empty
 end
 
-type violations = (string * Concepts.Tuple.t list) list
+type violations = (string * Concepts.Tuple.t) list
 
 class type implementation = object
   method check : (violations, Concepts.Condition.condition) result

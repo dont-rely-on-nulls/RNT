@@ -1,27 +1,14 @@
-type attribute = string
 type attributes = BatSet.String.t
 
-(** what asking a relation under a given set of bound attributes
-    affords. The answer is to whether anything satisfies the binding,
-    or the bindings of the attributes left free together with the
-    class of what is produced. *)
-type affordance = Decides | Generates of Cardinality.t
+(** given [bound], every matching tuple can be produced, and there are
+    at most [yields]. *)
+type mode = {bound: attributes; yields: Cardinality.t}
 
-type mode = {bound: attributes; affords: affordance}
-type t
+type t = mode list
 
-val attributes_of_list : attribute list -> attributes
-val attributes_of_map : 'a BatMap.String.t -> attributes
-val decides_when : attribute list -> mode
-val enumerable : Cardinality.t -> mode
-val of_list : mode list -> t
-
-(** the tightest class declared for generating under [bound]. A mode
-    declared for fewer bound attributes applies to more, since the
-    attributes left free are then fewer and no more numerous. *)
+val mode : string list -> Cardinality.t -> mode
 val generation : t -> attributes -> Cardinality.t option
-
 val exhaustible : t -> attributes -> bool
 
-(** declared outright, or implied by a generation that can be exhausted. *)
-val decision : t -> attributes -> bool
+(** the modes still usable when only [attributes] can be bound. *)
+val project : attributes -> t -> t

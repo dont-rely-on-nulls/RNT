@@ -8,6 +8,7 @@ end
 
 class type implementation = object
   method contains : Concepts.Tuple.t -> (bool, Concepts.Condition.condition) result
+  method modes : (Concepts.Mode.t, Concepts.Condition.condition) result
 end
 
 type Handle.protocol += Relation of implementation
@@ -17,6 +18,7 @@ let make impl = Relation (impl :> implementation)
 let from handle = Handle.into handle (function Relation impl -> Some impl | _ -> None)
 let require handle = from handle |> Option.to_result ~none:(Error.not_a_relation ())
 let contains i tuple = Handle.invoke i (fun o -> o#contains tuple)
+let modes i = Handle.invoke i (fun o -> o#modes)
 
 let heading relation =
   let open Utilities.Result in

@@ -25,37 +25,33 @@ module Error = struct
 end
 
 let walking ?missing f g handle path =
+  let open Protocols in
+  let open Utilities.Result in
   let rec walk handle = function
-    | [] -> g handle
+    | [] -> g (Handle.keep handle)
     | x :: xs -> (
-        let open Utilities.Result in
-        let open Protocols in
         let* dir =
           Handle.require Directory.from handle
           |> Result.map_error
                Concepts.Condition.(complement ("before-segment" |=| Concepts.Value.String x))
         in
-        let* elem = Directory.find dir x in
+        let* elem = Directory.find dir x |> Result.map (Option.map Handle.autorelease) in
         match elem with
         | None -> (
           match missing with Some m -> m () | None -> Error (Error.path_not_found path) )
         | Some elem -> f x handle (fun () -> walk elem xs) )
   in
-  walk handle path
-  |> Result.map_error
-       Concepts.Condition.(complement ("path" |=| Concepts.Value.String (to_string path)))
+  Handle.with_autorelease (fun () ->
+      walk handle path
+      |> Result.map_error
+           Concepts.Condition.(complement ("path" |=| Concepts.Value.String (to_string path))) )
 
-(* Handles we find in the middle of a walk get released once we're
-   done with them, but never the caller's root.  If you leak one and
-   its refcount never drops, nothing under that path gets collected,
-   and an exclusive object, like a session, stays locked forever. *)
-let releasing root handle f = if handle == root then f () else Protocols.Handle.releasing handle f
-let lookup handle path = walking (fun _ parent -> releasing handle parent) Result.ok handle path
+let lookup handle path = walking (fun _ _ f -> f ()) Result.ok handle path
 
 let find handle path =
   walking
     ~missing:(fun () -> Ok None)
-    (fun _ parent -> releasing handle parent)
+    (fun _ _ f -> f ())
     (fun h -> Ok (Some h))
     handle path
 
@@ -63,9 +59,8 @@ let update handle path key reference value =
   let open Utilities.Result in
   let open Protocols in
   let* target = lookup handle path in
-  releasing handle target (fun () ->
-      let* registry = Handle.require Registry.from target in
-      Registry.update registry key reference value )
+  let* registry = Handle.require Registry.from target in
+  Registry.update registry key reference value
 
 (* The changes at this object, and those beneath each child they reach. *)
 let split changes =
@@ -119,7 +114,7 @@ let assoc_all handle changes =
               | None when binds beneath -> Ok [x, Some (fresh beneath)]
               | None -> Ok []
               | Some child ->
-                  releasing handle child (fun () -> apply (prefix @ [x]) child beneath)
+                  Handle.releasing child (fun () -> apply (prefix @ [x]) child beneath)
                   |> Result.map (fun child' -> [x, Some child']) )
             below
           |> Utilities.List.sequence

@@ -116,6 +116,13 @@ module Make (S : Abstract.Storage.STORAGE) = struct
             let* node = tuple_node tx relation in
             TupleSet.mem tx (Concepts.Tuple.hash tuple) node )
 
+      method modes =
+        Ok
+          Concepts.
+            [ Mode.mode [] Cardinality.Finite;
+              Mode.mode (List.map fst (BatMap.String.bindings description)) (Cardinality.bounded 1)
+            ]
+
       method describe () = Ok (Protocols.Schematics.Relation description)
       method enumerate = enumerate connection relation
 

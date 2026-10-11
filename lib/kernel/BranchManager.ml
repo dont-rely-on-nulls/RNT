@@ -10,11 +10,8 @@ module Error = struct
   let refused violations =
     condition "refused" "The state is not admitted: a denial in it holds tuples"
       (List.fold_left
-         (fun ps (path, tuples) ->
-           ps
-           & path
-             |=| Concepts.Value.String
-                   (String.concat "; " (List.map Concepts.Tuple.to_string tuples)) )
+         (fun ps (path, witness) ->
+           ps & path |=| Concepts.Value.String (Concepts.Tuple.to_string witness) )
          empty violations )
 end
 
