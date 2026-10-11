@@ -11,23 +11,19 @@ let shelf = K.Scope.path library "shelf"
 let s v = C.Value.String v
 let title = BatMap.String.singleton "title" {P.Schematics.domain= "string"; provenance= []}
 
-let books titles =
-  K.EphemeralRelation.literal title
-    (List.map
-       (fun t -> {C.Tuple.type_= "book"; attributes= BatMap.String.singleton "title" (s t)})
-       titles )
+let book t = {C.Tuple.type_= "book"; attributes= BatMap.String.singleton "title" (s t)}
+let books titles = K.EphemeralRelation.literal title (List.map book titles)
 
 let titles relation = ok (Helpers.titles relation)
 let read root path = titles (ok (K.Path.lookup root path))
 
 (* shelf is a stored FOL program reading book where it is stored *)
 let shelved =
-  K.Source.view ~language:"fol" ~heading:title
-    ( Rnt.Evaluators.FOL.(encode (Base (K.Scope.path library "book")))
-    |> C.Blob.bytes_of_blob
-    |> Bytes.to_string )
+  K.EphemeralRelation.of_program title
+    Rnt.Evaluators.FOL.(program (Base (K.Scope.path library "book")))
 
-let publish root changes = ok (K.Scope.publish root ~branch:"master" ~home:library changes)
+let publish ?denials root changes =
+  ok (K.Scope.publish ?denials root ~branch:"master" ~home:library changes)
 
 let fresh books' =
   let root = ok (Rnt.Scratch.root ()) in
@@ -113,47 +109,148 @@ let a_scope_reads_names_from_its_home () =
   check (option string) "but not another relation's" None
     (K.Scope.attribute library "book" "shelf:title")
 
-(* A toy language answers a stored relation with its own name, and a run
-   with the source it was given. *)
-let a_stored_relation_is_viewed_and_a_program_run () =
+type K.Program.kind += Title of string | Endless | Shout of K.Path.t
+
+let endless () =
+  K.EphemeralRelation.instantiate title
+    ~modes:(fun () -> Ok [C.(Mode.mode [] Cardinality.Countable)])
+    {K.EphemeralRelation.name= None; schematics= `Temporary title; pointer= None}
+    (fun () ->
+      Ok
+        (K.Generator.cursor_of (fun ~yield ->
+             let rec from n = yield (book (string_of_int n)); from (n + 1) in
+             from 0 ) ) )
+
+(* A toy language: "endless" answers titles without end, "shout r" the
+   titles of relation r in capitals, and anything else itself as a title. *)
+let parse source =
+  match String.split_on_char ' ' source with
+  | ["endless"] -> Endless
+  | ["shout"; name] -> Shout (K.Scope.path library name)
+  | _ -> Title source
+
+let shout within path =
+  let open Rnt.Utilities.Result in
+  let* relation = K.Path.lookup within path in
+  let* heard = P.Handle.releasing relation (fun () -> Helpers.titles relation) in
+  Ok
+    (books
+       (List.filter_map
+          (function C.Value.String t -> Some (String.uppercase_ascii t) | _ -> None)
+          heard ) )
+
+let toy ?(evaluations = ref 0) () =
+  P.Handle.make
+    object (self)
+      inherit K.Lifecycle.null
+      inherit K.Identity.of_id
+      method to_string = "toy-evaluator"
+      method parse source = Ok (parse source)
+
+      method eval kind _ ~within =
+        incr evaluations;
+        match kind with
+        | Title text -> Ok (books [text])
+        | Endless -> Ok (endless ())
+        | Shout path -> shout within path
+        | _ -> Error (C.Condition.condition "foreign-program" "Not a toy program" C.Condition.empty)
+
+      method protocols : P.Handle.protocol list = [P.Evaluator.make self]
+    end
+
+let with_toys ?evaluations root =
+  ignore (ok (K.Initialization.mount root "toys"));
+  ignore
+    (ok
+       (K.Path.update root K.Path.("toys" @/ "evaluator" @/ this) "toy" None
+          (Some (toy ?evaluations ())) ) )
+
+let toy_program ?root evaluator source = K.Program.make ?root ~evaluator ~source (parse source)
+
+let run root program =
+  Result.bind (P.Executable.require program) (fun executable ->
+      P.Executable.invoke executable [] ~within:root )
+
+let a_program_runs_through_the_evaluator_it_names () =
   let root = fresh ["Codd"] in
-  let answer text = Ok (books [text]) in
-  let toy =
-    K.Source.evaluator ~language:"toy"
-      ~view:(fun ~within:_ ~name source -> answer (name ^ " of " ^ source))
-      (fun ~within:_ source -> answer source)
-  in
-  let _ = ok (K.Initialization.mount root "toys") in
-  ok (K.Source.register root ~scope:"toys" ~language:"toy" toy);
-  publish root ["named", Some (K.Source.view ~language:"toys:toy" ~heading:title "this")];
-  check (list Helpers.value) "read from the branch, the view is asked for it by name"
-    [s "named of this"]
+  with_toys root;
+  publish root
+    ["named", Some (K.EphemeralRelation.of_program title (toy_program "toys:toy" "this"))];
+  check (list Helpers.value) "stored in a branch and read back, it runs"
+    [s "this"]
     (read root (under master (K.Scope.path library "named")));
-  check (list Helpers.value) "run, the program is just run"
+  check (list Helpers.value) "run directly, it runs"
     [s "that"]
-    (titles (ok (K.Source.run root ~language:"toys:toy" ~within:root "that")));
+    (titles (ok (run root (toy_program ~root "toys:toy" "that"))));
   check bool "an unqualified name is the system's" true
-    (Result.is_error (K.Source.run root ~language:"toy" ~within:root "that"))
+    (Result.is_error (run root (toy_program ~root "toy" "that")))
+
+(* shelf, from fresh, is a FOL program reading book *)
+let evaluators_read_each_other () =
+  let root = fresh ["Codd"] in
+  with_toys root;
+  let stored name program = name, Some (K.EphemeralRelation.of_program title program) in
+  publish root
+    [ stored "toy-shelf" (toy_program "toys:toy" "Date");
+      stored "fol-over-toy" Rnt.Evaluators.FOL.(program (Base (K.Scope.path library "toy-shelf")));
+      stored "toy-over-fol" (toy_program "toys:toy" "shout shelf") ];
+  check (list Helpers.value) "FOL reads the relation a toy program generates"
+    [s "Date"]
+    (read root (under master (K.Scope.path library "fol-over-toy")));
+  check (list Helpers.value) "a toy program shouts the relation a FOL program generates"
+    [s "CODD"]
+    (read root (under master (K.Scope.path library "toy-over-fol")))
 
 (* shelf, stored as a denial, says no book may be shelved *)
-let a_head_moves_only_to_a_valid_state () =
+let denied state = List.map fst (ok (P.Admission.check (ok (P.Admission.require state))))
+let no_books = "\\multigroup\\library\\denial\\no-books"
+
+let a_head_moves_only_to_an_admitted_state () =
   let root = fresh [] in
-  publish root ["denial:no-books", Some shelved];
+  publish root ~denials:["no-books", Some shelved] [];
   let head = ok (K.Path.lookup root master) in
+  check (list string) "the head is admitted" [] (denied head);
   let proposed =
-    ok
-      (K.Path.assoc_all head
-         [ ( K.Path.("multigroup" @/ "library" @/ "schema" @/ "default" @/ "relation" @/ this),
-             "book",
-             Some (books ["Codd"]) ) ] )
+    ok (K.Path.assoc_all head [K.Scope.relations library, "book", Some (books ["Codd"])])
   in
-  check bool "a state with a book is judged invalid without landing" true
-    (Result.is_error (K.Denial.check proposed));
+  check (list string) "a state with a book is not, and says by which denial" [no_books]
+    (denied proposed);
   check bool "publishing it is refused" true
     (Result.is_error
        (K.Scope.publish root ~branch:"master" ~home:library ["book", Some (books ["Codd"])]) );
   check bool "and the head stays" true
     (C.Hash.hash_equals (address head) (address (ok (K.Path.lookup root master))))
+
+(* a denial of multigroup audit reads library's books *)
+let a_rule_spans_multigroups () =
+  let root = fresh [] in
+  publish root ~denials:["audit:no-books", Some shelved] ["loan", Some (books ["Codd"])];
+  check bool "a commit to library is judged by audit" true
+    (Result.is_error
+       (K.Scope.publish root ~branch:"master" ~home:library ["book", Some (books ["Codd"])]) );
+  check (list Helpers.value) "one audit's denial does not mind lands"
+    [s "Codd"]
+    (read root (under master (K.Scope.path library "loan")))
+
+let a_denial_without_end_cannot_be_installed () =
+  let root = fresh [] in
+  with_toys root;
+  let endless = K.EphemeralRelation.of_program title (toy_program "toys:toy" "endless") in
+  match K.Scope.publish root ~branch:"master" ~home:library ~denials:["endless", Some endless] [] with
+  | Ok () -> fail "a denial without end was installed"
+  | Error condition ->
+      check bool "the state holding it cannot be judged" true
+        (BatString.starts_with (C.Condition.to_string_hum condition) "unjudgeable-denial")
+
+let a_denial_program_runs_once_per_judgement () =
+  let root = fresh [] in
+  let evaluations = ref 0 in
+  with_toys ~evaluations root;
+  let dated = K.EphemeralRelation.of_program title (toy_program "toys:toy" "Date") in
+  check bool "a denial holding a book refuses the commit" true
+    (Result.is_error
+       (K.Scope.publish root ~branch:"master" ~home:library ~denials:["dated", Some dated] []) );
+  check int "and its program ran once to judge it" 1 !evaluations
 
 let suites () =
   [ ( "kernel/branch",
@@ -161,7 +258,13 @@ let suites () =
         test_case "a-batch-is-one-successor" `Quick a_batch_is_one_successor;
         test_case "unbinding-removes-a-relation" `Quick unbinding_removes_a_relation;
         test_case "a-scope-reads-names-from-its-home" `Quick a_scope_reads_names_from_its_home;
-        test_case "a-stored-relation-is-viewed-and-a-program-run" `Quick
-          a_stored_relation_is_viewed_and_a_program_run;
-        test_case "a-head-moves-only-to-a-valid-state" `Quick a_head_moves_only_to_a_valid_state ] )
-  ]
+        test_case "a-program-runs-through-the-evaluator-it-names" `Quick
+          a_program_runs_through_the_evaluator_it_names;
+        test_case "evaluators-read-each-other" `Quick evaluators_read_each_other;
+        test_case "a-head-moves-only-to-an-admitted-state" `Quick
+          a_head_moves_only_to_an_admitted_state;
+        test_case "a-rule-spans-multigroups" `Quick a_rule_spans_multigroups;
+        test_case "a-denial-without-end-cannot-be-installed" `Quick
+          a_denial_without_end_cannot_be_installed;
+        test_case "a-denial-program-runs-once-per-judgement" `Quick
+          a_denial_program_runs_once_per_judgement ] ) ]

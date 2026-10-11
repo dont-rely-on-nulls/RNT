@@ -1,11 +1,11 @@
-type program = {evaluator: string; code: Concepts.Hash.hash}
+type pointer = {evaluator: string; code: Concepts.Hash.hash}
 
 type t =
   { name: string option;
     schematics:
       [ `Persisted of Concepts.Hash.hash
       | `Temporary of Protocols.Schematics.attribute_description BatMap.String.t ];
-    program: program option }
+    pointer: pointer option }
 
 module Error = struct
   open Concepts.Condition
@@ -27,7 +27,7 @@ module Error = struct
 end
 
 module Persisted = struct
-  type nonrec t = {name: string; schematics: Concepts.Hash.hash; program: program}
+  type nonrec t = {name: string; schematics: Concepts.Hash.hash; pointer: pointer}
 
   module rec Representation : (Concepts.Encoding.Record.S with type t = t) =
     Concepts.Encoding.Record.Make (Body)
@@ -38,7 +38,7 @@ module Persisted = struct
     let tag = 'E'
     let malformed = Error.malformed_relation
 
-    let fields {name; schematics; program= {evaluator; code}} =
+    let fields {name; schematics; pointer= {evaluator; code}} =
       let open Concepts.Encoding in
       [ "name", Field.string name;
         "schema", Value.bencode_of_hash schematics;
@@ -52,15 +52,15 @@ module Persisted = struct
       let* schematics = Bencode.field "schema" fields |> fmap Value.hash_of_bencode in
       let* evaluator = Field.require_string "evaluator" fields in
       let* code = Bencode.field "program" fields |> fmap Value.hash_of_bencode in
-      Ok {name; schematics; program= {evaluator; code}}
+      Ok {name; schematics; pointer= {evaluator; code}}
   end
 end
 
 (* FIXME: Bring the Persisted/Temporary out to avoid using the
    wildcard and optionals *)
 let persisted = function
-  | {name= Some name; schematics= `Persisted schematics; program= Some program} ->
-      Some {Persisted.name; schematics; program}
+  | {name= Some name; schematics= `Persisted schematics; pointer= Some pointer} ->
+      Some {Persisted.name; schematics; pointer}
   | _ -> None
 
 class ephemeral_relation ?program ?decide description value modes enumerate inputs =
@@ -112,7 +112,7 @@ let instantiate ?(inputs = []) ?program ?decide ~modes description value enumera
 let literal description tuples =
   instantiate description
     ~modes:(fun () -> Ok [Concepts.(Mode.mode [] (Cardinality.bounded (List.length tuples)))])
-    {name= None; schematics= `Temporary description; program= None}
+    {name= None; schematics= `Temporary description; pointer= None}
     (fun () -> Ok (Generator.cursor_of (fun ~yield -> List.iter yield tuples; Ok ())))
 
 type binding = {root: Protocols.Handle.t; within: Protocols.Handle.t}
@@ -143,9 +143,6 @@ let enumerate_owned relation =
 let asking f relation =
   Protocols.Handle.releasing relation (fun () -> Result.bind (Protocols.Relation.require relation) f)
 
-(* What a program generates is known only from the relation it
-   returns, so reading it, asking its modes and asking for a tuple
-   all invoke it. *)
 let generated ?program ?within name description value =
   let invoking f () =
     let open Utilities.Result in
@@ -162,36 +159,36 @@ let generated ?program ?within name description value =
 
 let of_program ?within description program =
   generated ~program ?within (Protocols.Handle.to_string program) description
-    {name= None; schematics= `Temporary description; program= None}
+    {name= None; schematics= `Temporary description; pointer= None}
 
 module Make (S : Abstract.Storage.STORAGE) = struct
   module SI = Storage.Make (S)
   module R = SubstantialRelation.Make (S)
 
-  let restore ?program ?within ({Persisted.name; schematics; program= pointer} : Persisted.t)
+  let restore ?program ?within ({Persisted.name; schematics; pointer} : Persisted.t)
       description =
     generated ?program ?within name description
-      {name= Some name; schematics= `Persisted schematics; program= Some pointer}
+      {name= Some name; schematics= `Persisted schematics; pointer= Some pointer}
 
   let load ?bind connection (record : Persisted.t) =
     let open Utilities.Result in
     let* description, source =
       SI.with_read connection (fun tx ->
           let* description = R.schema_of tx record.schematics in
-          let* code = SI.get_req tx (S.Hash record.program.code) in
+          let* code = SI.get_req tx (S.Hash record.pointer.code) in
           Ok (description, Bytes.to_string (Concepts.Blob.bytes_of_blob code)) )
     in
     match bind with
     | None -> Ok (restore record description)
     | Some {root; within} ->
-        let* program = Program.load root ~evaluator:record.program.evaluator ~source in
+        let* program = Program.load root ~evaluator:record.pointer.evaluator ~source in
         Ok (restore ~program ~within record description)
 
   let store tx ~name ~evaluator ~source description =
     let open Utilities.Result in
     let* schematics = R.store_schema tx description in
     let* address = SI.store_blob tx (Concepts.Blob.blob_of_bytes (Bytes.of_string source)) in
-    let record = {Persisted.name; schematics; program= {evaluator; code= address}} in
+    let record = {Persisted.name; schematics; pointer= {evaluator; code= address}} in
     let* _ = SI.store_blob tx (Persisted.Representation.to_blob record) in
     Ok record
 

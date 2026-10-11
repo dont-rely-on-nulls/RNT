@@ -180,20 +180,30 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     let* denials = node_of tx denials in
     Ok (schemas, denials)
 
-  let held (name, relation) =
+  let through_program ?bind relation f =
+    let open Utilities.Result in
+    match Program.image relation, bind with
+    | Some _, Some {EphemeralRelation.within; _} ->
+        let* executable = Protocols.Executable.require relation in
+        let* result = Protocols.Executable.invoke executable [] ~within in
+        Protocols.Handle.releasing result (fun () -> f result)
+    | _ -> f relation
+
+  let held ?bind (name, relation) =
     let open Utilities.Result in
     Protocols.Handle.releasing relation (fun () ->
-        let* denial = Protocols.Relation.require relation in
-        let* modes = Protocols.Relation.modes denial in
-        if not (Concepts.Mode.exhaustible modes BatSet.String.empty) then
-          Error (Error.unjudgeable name)
-        else
-          let* enumerable = Protocols.Enumerable.require relation in
-          let* cursor = Protocols.Enumerable.enumerate enumerable in
-          Protocols.Handle.releasing cursor (fun () ->
-              let* scan = Protocols.Cursor.require cursor in
-              let* first = Protocols.Cursor.next scan in
-              Ok (Option.to_list (Option.map (fun witness -> name, witness) first)) ) )
+        through_program ?bind relation (fun relation ->
+            let* denial = Protocols.Relation.require relation in
+            let* modes = Protocols.Relation.modes denial in
+            if not (Concepts.Mode.exhaustible modes BatSet.String.empty) then
+              Error (Error.unjudgeable name)
+            else
+              let* enumerable = Protocols.Enumerable.require relation in
+              let* cursor = Protocols.Enumerable.enumerate enumerable in
+              Protocols.Handle.releasing cursor (fun () ->
+                  let* scan = Protocols.Cursor.require cursor in
+                  let* first = Protocols.Cursor.next scan in
+                  Ok (Option.to_list (Option.map (fun witness -> name, witness) first)) ) ) )
 
   class multigroup ?bind conn value schema_tree denial_tree =
     object (self)
@@ -222,7 +232,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
       method check =
         let open Utilities.Result in
         let* named = Prototype.Directory.children (relations ?bind storage denial_tree) in
-        List.map held named |> Utilities.List.sequence |> Result.map List.concat
+        List.map (held ?bind) named |> Utilities.List.sequence |> Result.map List.concat
 
       method protocols : Protocols.Handle.protocol list =
         let open Utilities.Result in

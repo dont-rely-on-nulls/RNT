@@ -27,16 +27,16 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
     begin
       let* root = I.initialize ~evaluators:["fol", Evaluators.FOL.make ()] conn in
       let* relation = H.relation conn ["title"; "author"] [titled "SQL and Relational Theory"] in
-      let* view =
-        E.persist conn ~name:"shelf" ~evaluator:Evaluators.FOL.name
-          ~code:Evaluators.FOL.(encode (Project (Base book, BatFingerTree.singleton "title")))
+      let* stored =
+        E.persist conn ~name:"shelf"
+          Evaluators.FOL.(program (Project (Base book, BatFingerTree.singleton "title")))
           (BatMap.String.singleton "title" {Protocols.Schematics.domain= "string"; provenance= []})
       in
       let* multigroup = M.make conn in
       let relations = Kernel.Path.("schema" @/ "default" @/ "relation" @/ this) in
       let* multigroup =
         Kernel.Path.assoc_all multigroup
-          [relations, "book", Some relation; relations, "shelf", Some view]
+          [relations, "book", Some relation; relations, "shelf", Some stored]
       in
       let* branch = B.make conn in
       let* branch' =
@@ -51,16 +51,17 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
         let* root = I.initialize ~evaluators:["fol", Evaluators.FOL.make ()] conn in
         let* branch = Kernel.Path.lookup root stacks in
         let* _ = Kernel.Path.lookup branch book in
-        let* plan = Evaluators.FOL.(instantiate (Kernel.Path.lookup branch) (Base shelf)) in
+        let* plan = Evaluators.FOL.(instantiate branch (Base shelf)) in
         let* description = Evaluators.FOL.describe plan in
-        let* view = Kernel.Path.lookup branch shelf in
-        let* shelved = Helpers.titles view in
+        let* stored = Kernel.Path.lookup branch shelf in
+        let* shelved = Helpers.titles stored in
         Ok (BatMap.String.keys description |> BatList.of_enum, shelved)
       end
       |> Helpers.condition_as_failure
     in
-    check (list string) "the stored view reads the book it was defined over" ["title"] attributes;
-    check (list Helpers.value) "read through the branch, the stored view runs"
+    check (list string) "the stored program reads the book it was defined over" ["title"]
+      attributes;
+    check (list Helpers.value) "read through the branch, the stored program runs"
       [Concepts.Value.String "SQL and Relational Theory"]
       shelved
 

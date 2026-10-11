@@ -19,10 +19,6 @@ module Error = struct
     condition "unknown-attribute" "A plan projected an attribute its relation does not have"
       ("attribute" |=| Concepts.Value.String name)
 
-  let released_relation name =
-    condition "released-relation" "A plan named a relation that was already released"
-      ("object" |=| Concepts.Value.String name)
-
   let malformed_program () =
     condition "malformed-fol-program"
       "A stored FOL program did not conform to what was expected. Is your database corrupted?" empty
@@ -172,7 +168,7 @@ let derive ?decide relation description modes enumerate =
   Kernel.EphemeralRelation.instantiate ~inputs:[relation] ?decide
     ~modes:(fun () -> Ok modes)
     description
-    {Kernel.EphemeralRelation.name= None; schematics= `Temporary description; program= None}
+    {Kernel.EphemeralRelation.name= None; schematics= `Temporary description; pointer= None}
     (fun () -> enumerate relation)
 
 let rec execute plan =
@@ -181,10 +177,7 @@ let rec execute plan =
   let* modes = modes plan in
   match plan with
   | Base relation ->
-      let* relation =
-        Protocols.Handle.copy relation
-        |> Option.to_result ~none:(Error.released_relation (Protocols.Handle.to_string relation))
-      in
+      let relation = Protocols.Handle.move relation in
       Ok (derive ~decide:(contains relation) relation description modes enumerate)
   | Project (plan, _) ->
       let* relation = execute plan in

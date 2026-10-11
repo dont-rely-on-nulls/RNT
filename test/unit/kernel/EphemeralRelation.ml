@@ -12,11 +12,21 @@ let description =
     { Protocols.Schematics.domain= "integer";
       provenance= [{Protocols.Schematics.source= ["example"]; attribute= "value"}] }
 
-let temporary = {Ephemeral.name= None; schematics= `Temporary description; program= None}
+let temporary = {Ephemeral.name= None; schematics= `Temporary description; pointer= None}
 
 let over ?inputs ?(value = temporary) members =
-  Ephemeral.instantiate ?inputs description value (fun () ->
-      Ok (Rnt.Kernel.Generator.cursor_of (fun ~yield -> List.iter yield members; Ok ())) )
+  Ephemeral.instantiate ?inputs description value
+    ~modes:(fun () -> Ok [Concepts.(Mode.mode [] (Cardinality.bounded (List.length members)))])
+    (fun () -> Ok (Rnt.Kernel.Generator.cursor_of (fun ~yield -> List.iter yield members; Ok ())))
+
+let endless () =
+  Ephemeral.instantiate description temporary
+    ~modes:(fun () -> Ok [Concepts.(Mode.mode [] Cardinality.Countable)])
+    (fun () ->
+      Ok
+        (Rnt.Kernel.Generator.cursor_of (fun ~yield ->
+             let rec from n = yield (member n); from (n + 1) in
+             from 0 ) ) )
 
 let values tuples =
   BatFingerTree.to_list tuples
@@ -55,6 +65,17 @@ let decides_membership () =
   check bool "a member is held" true holds;
   check bool "a stranger is refused" false rejects
 
+let refuses_to_scan_without_end () =
+  match Protocols.Relation.require (endless ()) with
+  | Error condition -> fail (Concepts.Condition.to_string_hum condition)
+  | Ok relation -> (
+    match Protocols.Relation.contains relation (member 9) with
+    | Error condition ->
+        check bool "it fails as undecidable instead of scanning" true
+          (BatString.starts_with (Concepts.Condition.to_string_hum condition)
+             "undecidable-membership" )
+    | Ok _ -> fail "an endless relation with no test decided membership" )
+
 let describes_itself () =
   let described =
     begin
@@ -83,7 +104,7 @@ let addressed_once_persisted () =
   let persisted code =
     { Ephemeral.name= Some "example";
       schematics= `Persisted (Concepts.Hash.hash_of_int 1);
-      program= Some {Ephemeral.evaluator= "fol"; code= Concepts.Hash.hash_of_int code} }
+      pointer= Some {Ephemeral.evaluator= "fol"; code= Concepts.Hash.hash_of_int code} }
   in
   let address value =
     Protocols.Addressable.from (over ~value []) |> Option.map Protocols.Addressable.address
@@ -97,9 +118,9 @@ let releasing_releases_its_inputs () =
   let released = ref false in
   let input =
     object
-      method reference = true
-      method release = released := true
-      method hash = Concepts.Hash.hash_of_int 0
+      inherit Rnt.Kernel.Lifecycle.null
+      inherit Rnt.Kernel.Identity.of_id
+      method! release = released := true
       method to_string = "input"
       method protocols : Protocols.Handle.protocol list = []
     end
@@ -113,6 +134,7 @@ let suites () =
   [ ( "kernel/ephemeral-relation",
       [ test_case "enumerates-every-member" `Quick enumerates_every_member;
         test_case "decides-membership" `Quick decides_membership;
+        test_case "refuses-to-scan-without-end" `Quick refuses_to_scan_without_end;
         test_case "describes-itself" `Quick describes_itself;
         test_case "addressed-once-persisted" `Quick addressed_once_persisted;
         test_case "releasing-releases-its-inputs" `Quick releasing_releases_its_inputs ] ) ]
