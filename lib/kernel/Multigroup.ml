@@ -226,7 +226,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
       method check =
         let open Utilities.Result in
         let* named = Prototype.Directory.children (relations ?bind storage denial_tree) in
-        List.map (held ?bind) named |> Utilities.List.sequence |> Result.map List.concat
+        Utilities.List.concat_map (held ?bind) named
 
       method protocols : Protocols.Handle.protocol list =
         let open Utilities.Result in

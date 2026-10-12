@@ -55,9 +55,7 @@ let catalog_of branch =
         Ok (List.map (name prefix) (BatFingerTree.to_list names))
     | Some level, rest ->
         let* named = Prototype.Directory.children level in
-        List.map (fun (n, child) -> down (n :: prefix) child rest) named
-        |> Utilities.List.sequence
-        |> Result.map List.concat
+        Utilities.List.concat_map (fun (n, child) -> down (n :: prefix) child rest) named
   in
   down [] branch ["multigroup"; "schema"; "relation"]
 

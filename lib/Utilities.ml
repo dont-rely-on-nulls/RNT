@@ -55,6 +55,7 @@ module List = struct
 
   include Generic (ListSequence)
 
+  let concat_map f xs = List.map f xs |> sequence |> Stdlib.Result.map List.concat
   let hd_opt = function x :: _ -> Some x | [] -> None
 end
 

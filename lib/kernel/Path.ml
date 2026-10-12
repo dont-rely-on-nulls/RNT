@@ -106,7 +106,7 @@ let assoc_all handle changes =
     | Some (_, key, _) -> Error (Error.overlapping_change (prefix @ [key]))
     | None ->
         let* children =
-          List.map
+          Utilities.List.concat_map
             (fun (x, beneath) ->
               let* dir = Handle.require Directory.from node in
               let* found = Directory.find dir x in
@@ -117,8 +117,6 @@ let assoc_all handle changes =
                   Handle.releasing child (fun () -> apply (prefix @ [x]) child beneath)
                   |> Result.map (fun child' -> [x, Some child']) )
             below
-          |> Utilities.List.sequence
-          |> Result.map List.concat
         in
         (* each step derives from the last; only the steps in between are
            ours to release *)
@@ -156,7 +154,7 @@ let diff a b =
     let* left = names a in
     let* right = names b in
     List.sort_uniq String.compare (left @ right)
-    |> List.map (fun name ->
+    |> Utilities.List.concat_map (fun name ->
         let path = prefix @ [name] in
         let* x = find a name in
         let* y = find b name in
@@ -170,7 +168,5 @@ let diff a b =
                 let* below = walk path x y in
                 Ok (if below = [] then [path] else below)
             | _ -> Ok [path] ) )
-    |> Utilities.List.sequence
-    |> Result.map List.concat
   in
   walk [] a b

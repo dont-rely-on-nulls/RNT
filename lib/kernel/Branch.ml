@@ -136,7 +136,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
               object
                 method check =
                   let* named = Prototype.Directory.children multigroups in
-                  List.map admits named |> Utilities.List.sequence |> Result.map List.concat
+                  Utilities.List.concat_map admits named
               end;
             Prototype.Associative.(
               of_properties
