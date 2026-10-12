@@ -31,9 +31,5 @@ let heading relation =
 let read relation =
   let open Utilities.Result in
   let* heading = heading relation in
-  let* enumerable = Enumerable.require relation in
-  let* cursor = Enumerable.enumerate enumerable in
-  Handle.releasing cursor (fun () ->
-      let* scan = Cursor.require cursor in
-      let* tuples = Cursor.drain scan () in
-      Ok (heading, BatFingerTree.to_list tuples) )
+  let* tuples = Enumerable.scan relation (fun scan -> Cursor.drain scan ()) in
+  Ok (heading, BatFingerTree.to_list tuples)

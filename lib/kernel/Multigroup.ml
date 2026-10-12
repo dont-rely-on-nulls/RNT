@@ -192,12 +192,8 @@ module Make (S : Abstract.Storage.STORAGE) = struct
             if not (Concepts.Mode.exhaustible modes BatSet.String.empty) then
               Error (Error.unjudgeable name)
             else
-              let* enumerable = Protocols.Enumerable.require relation in
-              let* cursor = Protocols.Enumerable.enumerate enumerable in
-              Protocols.Handle.releasing cursor (fun () ->
-                  let* scan = Protocols.Cursor.require cursor in
-                  let* first = Protocols.Cursor.next scan in
-                  Ok (Option.to_list (Option.map (fun witness -> name, witness) first)) ) ) )
+              let* first = Protocols.Enumerable.scan relation Protocols.Cursor.next in
+              Ok (Option.to_list (Option.map (fun witness -> name, witness) first)) ) )
 
   class multigroup ?bind conn value schema_tree denial_tree =
     object (self)

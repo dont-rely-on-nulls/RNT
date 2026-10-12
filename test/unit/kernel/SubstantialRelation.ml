@@ -19,11 +19,9 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
 
   let enumerate relation =
     let open Utilities.Result in
-    let* enumerable = Protocols.Enumerable.require relation in
-    let* cursor = Protocols.Enumerable.enumerate enumerable in
-    let* scan = Protocols.Cursor.require cursor in
-    let* enumerated = Protocols.Cursor.drain scan () in
-    Protocols.Handle.release cursor;
+    let* enumerated =
+      Protocols.Enumerable.scan relation (fun scan -> Protocols.Cursor.drain scan ())
+    in
     Ok (BatFingerTree.to_list enumerated)
 
   let contain_and_enumerate conn =

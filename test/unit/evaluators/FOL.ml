@@ -31,11 +31,7 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
 
   let drain result =
     let open Utilities.Result in
-    let* enumerable = Protocols.Enumerable.require result in
-    let* cursor = Protocols.Enumerable.enumerate enumerable in
-    let* scan = Protocols.Cursor.require cursor in
-    let* tuples = Protocols.Cursor.drain scan () in
-    Protocols.Handle.release cursor;
+    let* tuples = Protocols.Enumerable.scan result (fun scan -> Protocols.Cursor.drain scan ()) in
     Protocols.Handle.release result;
     Ok (BatFingerTree.to_list tuples)
 
@@ -229,11 +225,8 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
       begin
         let open Utilities.Result in
         let* result = values (counter ~produced ~closed ()) in
-        let* enumerable = Protocols.Enumerable.require result in
-        let* cursor = Protocols.Enumerable.enumerate enumerable in
-        let* scan = Protocols.Cursor.require cursor in
-        let* first = Protocols.Cursor.next scan in
-        Protocols.Handle.release cursor; Protocols.Handle.release result; Ok first
+        let* first = Protocols.Enumerable.scan result Protocols.Cursor.next in
+        Protocols.Handle.release result; Ok first
       end
       |> Helpers.condition_as_failure
     in

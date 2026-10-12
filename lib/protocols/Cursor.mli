@@ -19,3 +19,9 @@ val drain :
   ?limit:int ->
   unit ->
   (Concepts.Tuple.t BatFingerTree.t, Concepts.Condition.condition) result
+
+(** [f] over [cursor], which is released once [f] returns. *)
+val consuming :
+  Handle.t ->
+  (t Handle.interface -> ('a, Concepts.Condition.condition) result) ->
+  ('a, Concepts.Condition.condition) result

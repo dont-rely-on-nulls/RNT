@@ -118,14 +118,9 @@ let rec modes =
       |> Result.map
            (Concepts.Mode.project (BatSet.String.of_list (BatFingerTree.to_list attributes)))
 
-let enumerate relation =
-  let open Utilities.Result in
-  let* enumerable = Protocols.Enumerable.require relation in
-  Protocols.Enumerable.enumerate enumerable
-
 let project description relation =
   let open Utilities.Result in
-  let* cursor = enumerate relation in
+  let* cursor = Protocols.Enumerable.cursor relation in
   let produce ~yield =
     let* scan = Protocols.Cursor.require cursor in
     let rec distinct seen =
@@ -168,7 +163,7 @@ let rec execute plan =
   match plan with
   | Base relation ->
       let relation = Protocols.Handle.move relation in
-      Ok (derive ~decide:(contains relation) relation description modes enumerate)
+      Ok (derive ~decide:(contains relation) relation description modes Protocols.Enumerable.cursor)
   | Project (plan, _) ->
       let* relation = execute plan in
       Ok (derive relation description modes (project description))

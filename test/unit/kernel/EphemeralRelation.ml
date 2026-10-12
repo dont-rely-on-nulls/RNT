@@ -40,11 +40,11 @@ let enumerates_every_member () =
   let enumerated =
     begin
       let open Rnt.Utilities.Result in
-      let* enumerable = Protocols.Enumerable.require (over [member 1; member 2; member 3]) in
-      let* cursor = Protocols.Enumerable.enumerate enumerable in
-      let* scan = Protocols.Cursor.require cursor in
-      let* tuples = Protocols.Cursor.drain scan () in
-      Protocols.Handle.release cursor;
+      let* tuples =
+        Protocols.Enumerable.scan
+          (over [member 1; member 2; member 3])
+          (fun scan -> Protocols.Cursor.drain scan ())
+      in
       Ok (values tuples)
     end
     |> Helpers.condition_as_failure

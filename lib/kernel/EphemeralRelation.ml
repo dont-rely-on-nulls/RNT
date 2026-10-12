@@ -84,8 +84,7 @@ class ephemeral_relation ?program ?decide description value modes enumerate inpu
             Error (Error.undecidable_membership ())
           else
             let* cursor = self#enumerate in
-            Protocols.Handle.releasing cursor (fun () ->
-                let* scan = Protocols.Cursor.require cursor in
+            Protocols.Cursor.consuming cursor (fun scan ->
                 Protocols.Cursor.exists scan (fun member ->
                     Concepts.Hash.hash_equals (Concepts.Tuple.hash member)
                       (Concepts.Tuple.hash tuple) ) )
@@ -119,7 +118,6 @@ type binding = {root: Protocols.Handle.t; within: Protocols.Handle.t}
 
 (* The relation a program produced has to outlive the cursor over it. *)
 let enumerate_owned relation =
-  let open Utilities.Result in
   let owner =
     object
       method reference = true
@@ -127,10 +125,7 @@ let enumerate_owned relation =
       method is_managed = true
     end
   in
-  match
-    let* enumerable = Protocols.Enumerable.require relation in
-    Protocols.Enumerable.enumerate enumerable
-  with
+  match Protocols.Enumerable.cursor relation with
   | Error c -> Protocols.Handle.release relation; Error c
   | Ok cursor ->
       Ok

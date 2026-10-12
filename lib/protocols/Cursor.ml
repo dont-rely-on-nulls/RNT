@@ -39,3 +39,5 @@ let drain i ?(limit = 256) () =
     if batch.exhausted then Ok tuples else loop tuples
   in
   loop BatFingerTree.empty
+
+let consuming cursor f = Handle.releasing cursor (fun () -> Result.bind (require cursor) f)

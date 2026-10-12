@@ -19,3 +19,5 @@ let make impl = Enumerable (impl :> implementation)
 let from handle = Handle.into handle (function Enumerable impl -> Some impl | _ -> None)
 let require handle = from handle |> Option.to_result ~none:(Error.not_enumerable ())
 let enumerate i = Handle.invoke i (fun o -> o#enumerate)
+let cursor handle = Result.bind (require handle) enumerate
+let scan handle f = Result.bind (cursor handle) (fun cursor -> Cursor.consuming cursor f)
