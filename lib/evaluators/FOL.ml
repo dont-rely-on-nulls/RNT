@@ -92,15 +92,14 @@ let instantiate within =
 
 let restrict attributes description =
   let open Utilities.Result in
-  BatFingerTree.fold_left
+  Utilities.FingerTree.fold_left
     (fun restricted name ->
-      let* restricted = restricted in
       let* attribute =
         BatMap.String.find_opt name description
         |> Option.to_result ~none:(Error.unknown_attribute name)
       in
       Ok (BatMap.String.add name attribute restricted) )
-    (Ok BatMap.String.empty) attributes
+    BatMap.String.empty attributes
 
 let rec describe =
   let open Utilities.Result in

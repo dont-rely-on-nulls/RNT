@@ -21,6 +21,7 @@ module type SEQUENCE = sig
   val empty : 'a t
   val cons : 'a -> 'a t -> 'a t
   val fold : ('a -> 'b -> 'b) -> 'a t -> 'b -> 'b
+  val fold_left : ('b -> 'a -> 'b) -> 'b -> 'a t -> 'b
 end
 
 module Generic (S : SEQUENCE) = struct
@@ -32,6 +33,14 @@ module Generic (S : SEQUENCE) = struct
         let* m = m in
         Ok (S.cons m acc) )
       ms (Ok S.empty)
+
+  let fold_left f init ms =
+    let open Result in
+    S.fold_left
+      (fun acc m ->
+        let* acc = acc in
+        f acc m )
+      (Ok init) ms
 end
 
 module List = struct
@@ -41,6 +50,7 @@ module List = struct
     let empty = []
     let cons x xs = x :: xs
     let fold = List.fold_right
+    let fold_left = List.fold_left
   end
 
   include Generic (ListSequence)
@@ -55,6 +65,7 @@ module FingerTree = struct
     let empty = BatFingerTree.empty
     let cons x xs = BatFingerTree.cons xs x
     let fold f xs acc = BatFingerTree.fold_right (Fun.flip f) acc xs
+    let fold_left = BatFingerTree.fold_left
   end
 
   include Generic (FingerTreeSequence)

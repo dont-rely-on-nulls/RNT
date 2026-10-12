@@ -14,15 +14,7 @@ let bind namespace (name, handle) =
 
 let namespace entries =
   let into = Namespace.make () in
-  let open Utilities.Result in
-  let* () =
-    List.fold_left
-      (fun acc entry ->
-        let* () = acc in
-        bind into entry )
-      (Ok ()) entries
-  in
-  Ok into
+  Utilities.List.fold_left (fun () -> bind into) () entries |> Result.map (fun () -> into)
 
 (* A subsystem's root holds what is its own and not data: its
    evaluators, and whatever else it registers beside them. *)

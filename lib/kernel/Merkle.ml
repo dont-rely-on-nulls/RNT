@@ -29,9 +29,7 @@ module type TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> sig
   val insert :
     S.transaction -> K.t -> address -> node -> (node, Concepts.Condition.condition) result
 
-  val of_list :
-    S.transaction -> (K.t * address) list -> (node, Concepts.Condition.condition) result
-
+  val of_list : S.transaction -> (K.t * address) list -> (node, Concepts.Condition.condition) result
   val remove : S.transaction -> K.t -> node -> (node, Concepts.Condition.condition) result
   val lookup : S.transaction -> K.t -> node -> (address option, Concepts.Condition.condition) result
 
@@ -330,11 +328,9 @@ functor
       let open Utilities.Result in
       with_batch tx (fun () ->
           let* _ = empty_under tx in
-          List.fold_left
-            (fun node (key, value) ->
-              let* node = node in
-              insert tx key value node )
-            (Ok empty) bindings )
+          Utilities.List.fold_left
+            (fun node (key, value) -> insert tx key value node)
+            empty bindings )
 
     let rec fold_left tx f acc =
       let open Utilities.Result in
@@ -344,12 +340,11 @@ functor
           |> BatFingerTree.fold_left (fun acc (k, v) -> f acc k v) acc
           |> Result.ok
       | Trunk {children; _} ->
-          BatFingerTree.fold_left
+          Utilities.FingerTree.fold_left
             (fun acc addr ->
-              let* acc = acc in
               let* node = find' tx addr in
               fold_left tx f acc node )
-            (Ok acc) children
+            acc children
 
     let keys tx node =
       fold_left tx (fun acc k _ -> BatFingerTree.snoc acc k) BatFingerTree.empty node

@@ -11,6 +11,7 @@ end
 
 module List : sig
   val sequence : ('a, 'b) result list -> ('a list, 'b) result
+  val fold_left : ('a -> 'b -> ('a, 'e) result) -> 'a -> 'b list -> ('a, 'e) result
   val hd_opt : 'a list -> 'a option
 end
 
@@ -31,6 +32,7 @@ module FingerTree : sig
   val map2 : ('a -> 'b -> 'c) -> 'a BatFingerTree.t -> 'b BatFingerTree.t -> 'c BatFingerTree.t
   val zip : 'a BatFingerTree.t -> 'b BatFingerTree.t -> ('a * 'b) BatFingerTree.t
   val sequence : ('a, 'b) result BatFingerTree.t -> ('a BatFingerTree.t, 'b) result
+  val fold_left : ('a -> 'b -> ('a, 'e) result) -> 'a -> 'b BatFingerTree.t -> ('a, 'e) result
   val join : string BatFingerTree.t -> string -> string
 end
 

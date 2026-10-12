@@ -122,13 +122,12 @@ let assoc_all handle changes =
         in
         (* each step derives from the last; only the steps in between are
            ours to release *)
-        List.fold_left
+        Utilities.List.fold_left
           (fun current change ->
-            let* current = current in
             let* next = assoc_on current change in
             if current != node then Handle.release current;
             Ok next )
-          (Ok node)
+          node
           (children @ List.map (fun (_, key, value) -> key, value) here)
   in
   apply [] handle changes
