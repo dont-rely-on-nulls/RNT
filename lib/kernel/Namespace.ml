@@ -12,7 +12,7 @@ class namespace =
         Utilities.Atomic.mswap entries (fun e ->
             let existing = BatMap.find_opt key e in
             if existing = reference then begin
-              Option.map Protocols.Handle.release existing |> ignore;
+              Option.iter Protocols.Handle.release existing;
               match value with
               | Some v -> Ok (BatMap.add key (Protocols.Handle.move v) e)
               | None -> Ok (BatMap.remove key e)

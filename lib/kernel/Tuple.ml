@@ -89,15 +89,7 @@ module Make (S : Abstract.Storage.STORAGE) = struct
 
   let make tx ~type_ attributes =
     let open Utilities.Result in
-    let* node =
-      AttributeM.with_batch tx (fun () ->
-          BatMap.String.enum attributes
-          |> BatEnum.fold
-               (fun node (name, value) ->
-                 let* node = node in
-                 AttributeM.insert tx name value node )
-               (Ok AttributeM.empty) )
-    in
+    let* node = AttributeM.of_list tx (BatMap.String.bindings attributes) in
     Ok {type_; attributes= AttributeM.hash_of node}
 
   let attribute tx tuple name =

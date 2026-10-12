@@ -29,6 +29,9 @@ module type TREE = functor (S : Abstract.Storage.STORAGE) (K : KEY) -> sig
   val insert :
     S.transaction -> K.t -> address -> node -> (node, Concepts.Condition.condition) result
 
+  val of_list :
+    S.transaction -> (K.t * address) list -> (node, Concepts.Condition.condition) result
+
   val remove : S.transaction -> K.t -> node -> (node, Concepts.Condition.condition) result
   val lookup : S.transaction -> K.t -> node -> (address option, Concepts.Condition.condition) result
 
@@ -323,6 +326,16 @@ functor
           let* _ = persist tx new_root in
           Ok new_root
 
+    let of_list tx bindings =
+      let open Utilities.Result in
+      with_batch tx (fun () ->
+          let* _ = empty_under tx in
+          List.fold_left
+            (fun node (key, value) ->
+              let* node = node in
+              insert tx key value node )
+            (Ok empty) bindings )
+
     let rec fold_left tx f acc =
       let open Utilities.Result in
       function
@@ -407,6 +420,7 @@ module type INTERFACE = functor (S : Abstract.Storage.STORAGE) (K : KEY) (V : VA
   val empty_under : S.transaction -> (address, Concepts.Condition.condition) result
   val hash_of : node -> address
   val insert : S.transaction -> K.t -> V.t -> node -> (node, Concepts.Condition.condition) result
+  val of_list : S.transaction -> (K.t * V.t) list -> (node, Concepts.Condition.condition) result
   val remove : S.transaction -> K.t -> node -> (node, Concepts.Condition.condition) result
   val lookup : S.transaction -> K.t -> node -> (V.t option, Concepts.Condition.condition) result
   val mem : S.transaction -> K.t -> node -> (bool, Concepts.Condition.condition) result
@@ -457,6 +471,11 @@ functor
     let insert tx k v node =
       let* addr = intern tx v in
       Tree.insert tx k addr node
+
+    let of_list tx bindings =
+      List.map (fun (k, v) -> intern tx v |> Result.map (fun addr -> k, addr)) bindings
+      |> Utilities.List.sequence
+      |> fmap (Tree.of_list tx)
 
     let remove = Tree.remove
 

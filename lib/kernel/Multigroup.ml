@@ -116,15 +116,9 @@ module Make (S : Abstract.Storage.STORAGE) = struct
     |> Utilities.List.sequence
 
   let tree_of tx admissions =
-    let open Utilities.Result in
-    let* _ = T.empty_under tx in
-    T.with_batch tx (fun () ->
-        List.fold_left
-          (fun node (name, store) ->
-            let* node = node in
-            let* addr = store tx in
-            T.insert tx name addr node )
-          (Ok T.empty) admissions )
+    List.map (fun (name, store) -> store tx |> Result.map (fun addr -> name, addr)) admissions
+    |> Utilities.List.sequence
+    |> Utilities.Result.fmap (T.of_list tx)
 
   let admit_schema _ h =
     let open Utilities.Result in

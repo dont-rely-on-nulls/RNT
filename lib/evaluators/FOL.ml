@@ -11,10 +11,6 @@ module Error = struct
   let not_a_plan () =
     condition "not-a-fol-program" "The evaluator was given a program of another kind" empty
 
-  let not_a_relation name =
-    condition "not-a-relation" "A plan named an object that does not describe itself as a relation"
-      ("object" |=| Concepts.Value.String name)
-
   let unknown_attribute name =
     condition "unknown-attribute" "A plan projected an attribute its relation does not have"
       ("attribute" |=| Concepts.Value.String name)
@@ -109,12 +105,7 @@ let restrict attributes description =
 let rec describe =
   let open Utilities.Result in
   function
-  | Base relation -> (
-      let* schematics = Protocols.Handle.require Protocols.Schematics.from relation in
-      let* description = Protocols.Schematics.describe schematics in
-      match description with
-      | Protocols.Schematics.Relation description -> Ok description
-      | _ -> Error (Error.not_a_relation (Protocols.Handle.to_string relation)) )
+  | Base relation -> Protocols.Relation.heading relation
   | Project (plan, attributes) -> describe plan |> fmap (restrict attributes)
 
 let rec modes =

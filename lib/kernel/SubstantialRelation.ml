@@ -144,14 +144,8 @@ module Make (S : Abstract.Storage.STORAGE) = struct
   let store tx description tuples =
     let open Utilities.Result in
     let* schematics = store_schema tx description in
-    let* _ = TupleSet.empty_under tx in
     let* node =
-      TupleSet.with_batch tx (fun () ->
-          List.fold_left
-            (fun node tuple ->
-              let* node = node in
-              TupleSet.insert tx (Concepts.Tuple.hash tuple) tuple node )
-            (Ok TupleSet.empty) tuples )
+      TupleSet.of_list tx (List.map (fun tuple -> Concepts.Tuple.hash tuple, tuple) tuples)
     in
     let relation = {schematics; tuples= TupleSet.hash_of node} in
     let* _ = SI.store_blob tx (encode relation) in
