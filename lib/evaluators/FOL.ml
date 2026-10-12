@@ -153,7 +153,7 @@ let derive ?decide relation description modes enumerate =
   Kernel.EphemeralRelation.instantiate ~inputs:[relation] ?decide
     ~modes:(fun () -> Ok modes)
     description
-    {Kernel.EphemeralRelation.name= None; schematics= `Temporary description; pointer= None}
+    (Kernel.EphemeralRelation.temporary description)
     (fun () -> enumerate relation)
 
 let rec execute plan =

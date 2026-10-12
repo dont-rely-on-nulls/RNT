@@ -63,6 +63,8 @@ let persisted = function
       Some {Persisted.name; schematics; pointer}
   | _ -> None
 
+let temporary description = {name= None; schematics= `Temporary description; pointer= None}
+
 class ephemeral_relation ?program ?decide description value modes enumerate inputs =
   object (self)
     inherit Lifecycle.counted
@@ -111,7 +113,7 @@ let instantiate ?(inputs = []) ?program ?decide ~modes description value enumera
 let literal description tuples =
   instantiate description
     ~modes:(fun () -> Ok [Concepts.(Mode.mode [] (Cardinality.bounded (List.length tuples)))])
-    {name= None; schematics= `Temporary description; pointer= None}
+    (temporary description)
     (fun () -> Ok (Generator.cursor_of (fun ~yield -> List.iter yield tuples; Ok ())))
 
 type binding = {root: Protocols.Handle.t; within: Protocols.Handle.t}
@@ -153,8 +155,9 @@ let generated ?program ?within name description value =
     description value (invoking enumerate_owned)
 
 let of_program ?within description program =
-  generated ~program ?within (Protocols.Handle.to_string program) description
-    {name= None; schematics= `Temporary description; pointer= None}
+  generated ~program ?within
+    (Protocols.Handle.to_string program)
+    description (temporary description)
 
 module Make (S : Abstract.Storage.STORAGE) = struct
   module SI = Storage.Make (S)

@@ -114,7 +114,7 @@ type K.Program.kind += Title of string | Endless | Shout of K.Path.t
 let endless () =
   K.EphemeralRelation.instantiate title
     ~modes:(fun () -> Ok [C.(Mode.mode [] Cardinality.Countable)])
-    {K.EphemeralRelation.name= None; schematics= `Temporary title; pointer= None}
+    (K.EphemeralRelation.temporary title)
     (fun () ->
       Ok
         (K.Generator.cursor_of (fun ~yield ->

@@ -12,7 +12,7 @@ let description =
     { Protocols.Schematics.domain= "integer";
       provenance= [{Protocols.Schematics.source= ["example"]; attribute= "value"}] }
 
-let temporary = {Ephemeral.name= None; schematics= `Temporary description; pointer= None}
+let temporary = Ephemeral.temporary description
 
 let over ?inputs ?(value = temporary) members =
   Ephemeral.instantiate ?inputs description value

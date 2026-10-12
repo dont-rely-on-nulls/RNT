@@ -214,7 +214,7 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
     in
     Kernel.EphemeralRelation.instantiate description
       ~modes:(fun () -> Ok [Concepts.(Mode.mode [] Cardinality.Countable)])
-      {Kernel.EphemeralRelation.name= None; schematics= `Temporary description; pointer= None}
+      (Kernel.EphemeralRelation.temporary description)
       (fun () -> Ok (Kernel.Generator.cursor_of ~finally:(fun () -> closed := true) (count 0)))
 
   let values source = Rnt.Evaluators.FOL.(execute (Project (Base source, BatFingerTree.singleton "value")))
@@ -268,7 +268,7 @@ module Make (S : Abstract.Storage.STORAGE) (C : Helpers.Storage.CONFIGURATOR) = 
     let relation =
       Kernel.EphemeralRelation.instantiate ~inputs:[tracker] heading
         ~modes:(fun () -> Ok [])
-        {Kernel.EphemeralRelation.name= None; schematics= `Temporary heading; pointer= None}
+        (Kernel.EphemeralRelation.temporary heading)
         (fun () -> Ok (Kernel.Generator.cursor_of (fun ~yield:_ -> Ok ())))
     in
     let result = Rnt.Evaluators.FOL.(execute (Base relation)) |> Helpers.condition_as_failure in
